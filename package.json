@@ -1,0 +1,31 @@
+{
+  "name": "laialehmann-com",
+  "version": "0.1.0",
+  "description": "Personal website of Laia Lehmann",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/laia-wq/laialehmann.com.git"
+  },
+  "bugs": {
+    "url": "https://github.com/laia-wq/laialehmann.com/issues"
+  },
+  "homepage": "https://github.com/laia-wq/laialehmann.com#readme",
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "private": true,
+  "type": "module"
+}
