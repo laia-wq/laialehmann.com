@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { studioScene } from './studio';
-import { backdropTexture, clay, contactShadow, glass, palette } from './materials';
+import { backdropTexture, glass, glassBack } from './materials';
 import { Snow } from './snow';
 import { crackMaterial, fractureSphere, type Fracture } from './fracture';
 import { ShatterSim } from './shatter';
-import { builders } from './objects';
-import { plaqueTexture } from './plaque';
+import { buildPedestal, type Pedestal } from './pedestal';
+import { buildInterior, type Interior } from './interior';
+import { Post } from './post';
 import type { Project } from '../content/projects';
 
 export type Phase = 'globe' | 'cracking' | 'shattering' | 'world' | 'focus';
@@ -20,12 +21,10 @@ export interface ExperienceEvents {
 
 // Scene dimensions (world units, floor at y = 0).
 const R = 1;
-const PEDESTAL_TOP = 0.9;
-const COLLAR_TOP = 1.0;
-const GLOBE_Y = 1.6;
-const STAGE_Y = 1.08;
-const STAGE_R = 0.8;
-const CUT_Y = -0.6; // relative to the globe centre: where the collar hides the glass
+const CUP_TOP = 0.955; // rim of the bronze cup the sphere rests in
+const CUP_R = 0.43;
+const CUT_Y = -Math.sqrt(1 - CUP_R * CUP_R); // relative to the centre: the cup hides the glass below this
+const GLOBE_Y = CUP_TOP - CUT_Y;
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const damp = (a: number, b: number, lambda: number, dt: number) => THREE.MathUtils.lerp(a, b, 1 - Math.exp(-lambda * dt));
@@ -50,9 +49,11 @@ export class Experience {
   private shardMaterial!: THREE.MeshPhysicalMaterial;
   private shardEdgeMaterial!: THREE.MeshPhysicalMaterial;
   private hitSphere!: THREE.Mesh;
-  private pedestalParts: THREE.Mesh[] = [];
-  private floorParts: THREE.Mesh[] = [];
-  private islandShadow!: THREE.Mesh;
+  private pedestal!: Pedestal;
+  private interior!: Interior;
+  private post!: Post;
+  private quality: 0 | 1 = 1;
+  private frameTimes: number[] = [];
   private snow!: Snow;
   private fracture: Fracture | null = null;
   private shardGroup = new THREE.Group();
@@ -100,8 +101,8 @@ export class Experience {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -109,16 +110,25 @@ export class Experience {
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = backdropTexture();
+    this.scene.fog = new THREE.Fog('#9d9993', 10, 26);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(studioScene(), 0.02).texture;
-    this.scene.environmentIntensity = 0.7;
+    this.scene.environment = pmrem.fromScene(studioScene(), 0, 0.1, 100, { size: 512 }).texture;
+    this.scene.environmentIntensity = 0.85;
     pmrem.dispose();
 
+    void projects; // miniatures arrive with the landscape (Phase B)
     this.buildLights();
-    this.buildPedestal();
+    this.pedestal = buildPedestal('Laia Lehmann', 'Systems Design Engineering');
+    this.root.add(this.pedestal.group);
+    this.interior = buildInterior(this.globeCenter, R);
+    this.root.add(this.interior.group);
     this.buildGlobe();
-    this.buildWorld(projects);
     this.scene.add(this.root);
+
+    const lowPower = (navigator.hardwareConcurrency ?? 8) <= 4 || new URLSearchParams(location.search).get('quality') === 'low';
+    this.quality = lowPower ? 0 : 1;
+    this.post = new Post(this.renderer, this.scene, this.camera, this.quality);
+    this.post.aoExclude = [this.glassMesh, this.shardGroup, this.snow.points, ...this.interior.transparents];
 
     this.setCameraForGlobe(true);
     this.bindEvents();
@@ -134,92 +144,52 @@ export class Experience {
   // ---------------------------------------------------------------- build
 
   private buildLights() {
-    const hemi = new THREE.HemisphereLight('#fff8ef', '#d6ccbf', 0.9);
-    this.scene.add(hemi);
-    const key = new THREE.DirectionalLight('#fff3e4', 2.1);
-    key.position.set(-3.2, 6.5, 4.2);
-    key.target.position.set(0, 1, 0);
+    // Fill: very low, slightly warm from below/cool from above.
+    this.scene.add(new THREE.HemisphereLight('#dfe6ee', '#4a4038', 0.35));
+    // Key: warm, soft, up-left and in front. Casts the shadows.
+    const key = new THREE.DirectionalLight('#ffe2c2', 2.6);
+    key.position.set(-4.2, 6.4, 4.6);
+    key.target.position.set(0, 1.1, 0);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.left = -2.4;
-    key.shadow.camera.right = 2.4;
-    key.shadow.camera.top = 3;
-    key.shadow.camera.bottom = -2;
-    key.shadow.camera.near = 2;
-    key.shadow.camera.far = 14;
-    key.shadow.radius = 6;
-    key.shadow.blurSamples = 16;
-    key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.02;
+    Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3.4, bottom: -3, near: 2, far: 20 });
+    key.shadow.radius = 5;
+    key.shadow.blurSamples = 20;
+    key.shadow.bias = -0.0003;
+    key.shadow.normalBias = 0.015;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#e8eef4', 0.9);
-    rim.position.set(4, 3, -4);
+    // Rim: cool, from behind-right, separates the bronze and the glass edge.
+    const rim = new THREE.DirectionalLight('#cfe0f5', 1.6);
+    rim.position.set(3.5, 3.5, -5);
     this.scene.add(rim);
 
-    this.floorParts = [];
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 0.09 }));
-    floor.rotation.x = -Math.PI / 2;
+    // Studio sweep (cyclorama): the floor curves up into the back wall, so
+    // there's no horizon line, and the lights give it a natural falloff.
+    const prof: THREE.Vector2[] = [];
+    const W = 14, D = 4.5, Rr = 2.6;
+    for (let i = 0; i <= 40; i++) {
+      const a = (i / 40) * (Math.PI / 2);
+      prof.push(new THREE.Vector2(-D - Math.sin(a) * Rr, Rr - Math.cos(a) * Rr));
+    }
+    const sweep = new THREE.PlaneGeometry(W, 1, 1, 1);
+    const pos: number[] = [], idx: number[] = [];
+    const rowsPts = [new THREE.Vector2(9, 0), new THREE.Vector2(-D, 0), ...prof, new THREE.Vector2(-D - Rr, 12)];
+    for (let i = 0; i < rowsPts.length; i++) {
+      const pz = rowsPts[i].x, py = rowsPts[i].y;
+      pos.push(-W / 2, py, pz, W / 2, py, pz);
+      if (i > 0) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+    }
+    sweep.dispose();
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    // Make sure normals face the camera side.
+    const nrm = g.getAttribute('normal') as THREE.BufferAttribute;
+    if (nrm.getY(0) < 0) { for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, -nrm.getX(i), -nrm.getY(i), -nrm.getZ(i)); }
+    const floor = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#b8b4ad', roughness: 0.95, metalness: 0, side: THREE.DoubleSide }));
     floor.receiveShadow = true;
     this.scene.add(floor);
-    const blob = contactShadow(3.4, 0.55);
-    blob.position.y = 0.002;
-    this.scene.add(blob);
-    this.floorParts.push(floor, blob);
-  }
-
-  private buildPedestal() {
-    const prof = (pts: [number, number][]) => pts.map(([x, y]) => new THREE.Vector2(x, y));
-    const ped = new THREE.Mesh(
-      new THREE.LatheGeometry(
-        prof([
-          [0, 0], [0.985, 0], [1.0, 0.012], [1.003, 0.055], [0.99, 0.072], [0.975, 0.08],
-          [0.9, 0.78], [0.912, 0.79], [0.926, 0.82], [0.928, 0.86], [0.915, 0.89],
-          [0.9, PEDESTAL_TOP], [0, PEDESTAL_TOP],
-        ]),
-        128,
-      ),
-      clay(palette.porcelain, 0.55),
-    );
-    ped.castShadow = true;
-    ped.receiveShadow = true;
-    this.root.add(ped);
-    this.pedestalParts.push(ped);
-
-    const collar = new THREE.Mesh(
-      new THREE.LatheGeometry(
-        prof([
-          [0.78, PEDESTAL_TOP], [0.86, PEDESTAL_TOP], [0.868, 0.915], [0.868, 0.975],
-          [0.858, 0.993], [0.84, COLLAR_TOP], [0.78, COLLAR_TOP],
-        ]),
-        128,
-      ),
-      clay(palette.bone, 0.5),
-    );
-    collar.castShadow = true;
-    collar.receiveShadow = true;
-    this.root.add(collar);
-    this.pedestalParts.push(collar);
-
-    // Engraved plaque on the front, following the pedestal curve.
-    // The side tapers, so the plaque is a matching frustum segment.
-    const arc = 0.74;
-    const sideR = (y: number) => 0.975 - ((y - 0.08) * 0.075) / 0.7 + 0.003;
-    const py = 0.43, ph = 0.25;
-    const plaqueGeo = new THREE.CylinderGeometry(sideR(py + ph / 2), sideR(py - ph / 2), ph, 48, 1, true, -arc / 2, arc);
-    const plaque = new THREE.Mesh(plaqueGeo, clay('#ffffff', 0.6));
-    plaque.position.y = py;
-    plaque.receiveShadow = true;
-    plaque.visible = false;
-    plaque.userData.loaded = false;
-    this.root.add(plaque);
-    this.pedestalParts.push(plaque);
-    plaqueTexture('Laia Lehmann', 'Systems Design Engineering').then((tex) => {
-      const m = plaque.material as THREE.MeshPhysicalMaterial;
-      m.map = tex;
-      m.needsUpdate = true;
-      plaque.userData.loaded = true;
-      plaque.visible = m.opacity > 0.001;
-    });
   }
 
   private buildGlobe() {
@@ -227,6 +197,10 @@ export class Experience {
     this.glassMesh = new THREE.Mesh(new THREE.SphereGeometry(R, 128, 96, 0, Math.PI * 2, 0, theta), this.glassMaterial);
     this.glassMesh.position.copy(this.globeCenter);
     this.glassMesh.renderOrder = 3;
+    this.glassMesh.castShadow = false;
+    const back = new THREE.Mesh(this.glassMesh.geometry, glassBack());
+    back.renderOrder = 1;
+    this.glassMesh.add(back);
     this.root.add(this.glassMesh);
 
     this.hitSphere = new THREE.Mesh(new THREE.SphereGeometry(R, 24, 16), new THREE.MeshBasicMaterial({ visible: false }));
@@ -239,19 +213,21 @@ export class Experience {
     // (Cheaper than transmission and it reads better while moving.)
     this.shardMaterial = new THREE.MeshPhysicalMaterial({
       color: '#f4f8f7',
-      roughness: 0.03,
+      roughness: 0.02,
       metalness: 0,
       transparent: true,
-      opacity: 0.16,
-      envMapIntensity: 1.2,
+      opacity: 0.14,
+      envMapIntensity: 2.2,
+      specularIntensity: 1,
+      ior: 1.5,
       clearcoat: 1,
       clearcoatRoughness: 0.02,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     this.shardEdgeMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#cfe0da',
-      roughness: 0.1,
+      color: '#e3efe9',
+      roughness: 0.08,
       transparent: true,
       opacity: 0,
       depthWrite: false,
@@ -259,47 +235,8 @@ export class Experience {
     });
     this.root.add(this.shardGroup);
 
-    this.snow = new Snow({ count: 420, radius: R * 0.96, center: this.globeCenter, floorY: STAGE_Y });
+    this.snow = new Snow({ count: 900, radius: R * 0.96, center: this.globeCenter, floorY: this.interior.groundY, groundAt: this.interior.groundAt });
     this.root.add(this.snow.points);
-  }
-
-  private buildWorld(projects: Project[]) {
-    const prof = (pts: [number, number][]) => pts.map(([x, y]) => new THREE.Vector2(x, y));
-    const stage = new THREE.Mesh(
-      new THREE.LatheGeometry(
-        prof([
-          [0, STAGE_Y], [STAGE_R - 0.03, STAGE_Y], [STAGE_R - 0.006, STAGE_Y - 0.01], [STAGE_R, STAGE_Y - 0.03],
-          [STAGE_R - 0.004, STAGE_Y - 0.1], [STAGE_R - 0.03, STAGE_Y - 0.125], [STAGE_R - 0.1, STAGE_Y - 0.14], [0, STAGE_Y - 0.14],
-        ].reverse() as [number, number][]), // lathe profiles run bottom-to-top for outward normals
-        128,
-      ),
-      clay(palette.porcelain, 0.7),
-    );
-    stage.receiveShadow = true;
-    stage.castShadow = true;
-    this.root.add(stage);
-    // Once the pedestal is gone, a soft shadow far below lets the world float.
-    this.islandShadow = contactShadow(2.6, 0.32);
-    this.islandShadow.position.y = STAGE_Y - 0.7;
-    this.islandShadow.visible = false;
-    this.root.add(this.islandShadow);
-
-    // Layout: objects on a gentle ring. Phase 1 only has the acorn.
-    const placed = projects.filter((p) => p.object && builders[p.object]);
-    placed.forEach((p, i) => {
-      const group = builders[p.object!]();
-      const n = placed.length;
-      const a = n === 1 ? 0 : (i / n) * Math.PI * 2;
-      const rr = n === 1 ? 0.05 : 0.45;
-      group.position.set(Math.sin(a) * rr, STAGE_Y, Math.cos(a) * rr);
-      group.userData.baseY = STAGE_Y;
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
-      hit.position.y = 0.1;
-      hit.userData.id = p.id;
-      group.add(hit);
-      this.root.add(group);
-      this.objects.push({ id: p.id, group, hit, anchor: new THREE.Vector3(0, 0.27, 0), hover: 0 });
-    });
   }
 
   // ---------------------------------------------------------------- camera
@@ -307,21 +244,21 @@ export class Experience {
   private globeView() {
     const aspect = this.camera.aspect || 1;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const hh = 2.05; // half the height to frame (pedestal + globe + room for the label)
-    const hw = aspect < 0.8 ? 1.22 : 1.5;
+    const hh = 2.05; // half the height to frame (stand + sphere + room for the label)
+    const hw = aspect < 0.8 ? 1.2 : 1.45;
     const dist = Math.max(hh / t, hw / (t * aspect));
-    // Look a little below the middle so the label has room under the pedestal.
-    const look = new THREE.Vector3(0, aspect < 0.8 ? 1.0 : 1.1, 0);
-    return { pos: new THREE.Vector3(0, look.y + dist * 0.1, dist), look };
+    // Look a little below the middle so the label has room under the stand.
+    const look = new THREE.Vector3(0, aspect < 0.8 ? 1.15 : 1.22, 0);
+    return { pos: new THREE.Vector3(0, look.y + dist * 0.09, dist), look };
   }
 
   private worldView() {
     const aspect = this.camera.aspect || 1;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const hw = 1.15;
-    const dist = Math.max(0.78 / t, hw / (t * aspect));
-    const look = new THREE.Vector3(0, STAGE_Y + 0.02, 0);
-    const dir = new THREE.Vector3(0, 0.5, 1).normalize();
+    const hw = 1.05;
+    const dist = Math.max(0.62 / t, hw / (t * aspect));
+    const look = new THREE.Vector3(0, this.interior.groundY + 0.05, -0.05);
+    const dir = new THREE.Vector3(0, 0.42, 1).normalize();
     return { pos: look.clone().addScaledVector(dir, dist), look };
   }
 
@@ -408,7 +345,6 @@ export class Experience {
     this.shardGroup.visible = false;
     if (this.crackMesh) this.crackMesh.visible = false;
     this.snow.open = true;
-    this.setPedestalOpacity(0);
     this.yaw = 0;
     this.yawVel = 0;
     const v = this.worldView();
@@ -437,20 +373,6 @@ export class Experience {
 
   hasObject(id: string) {
     return this.objects.some((o) => o.id === id);
-  }
-
-  private setPedestalOpacity(o: number) {
-    for (const m of [...this.pedestalParts, ...this.floorParts]) {
-      const mat = m.material as THREE.Material & { opacity: number; userData: { base?: number } };
-      mat.userData.base ??= mat.opacity;
-      mat.transparent = true;
-      mat.opacity = mat.userData.base! * o;
-      if (m.userData.loaded !== false) m.visible = o > 0.001;
-      if (this.pedestalParts.includes(m)) m.castShadow = o > 0.5;
-    }
-    const sm = this.islandShadow.material as THREE.MeshBasicMaterial;
-    sm.opacity = 0.32 * (1 - o);
-    this.islandShadow.visible = o < 0.999;
   }
 
   private setPhase(p: Phase) {
@@ -487,13 +409,14 @@ export class Experience {
     this.crackMesh.renderOrder = 4;
     this.crackMesh.frustumCulled = false;
     this.root.add(this.crackMesh);
+    this.post.aoExclude.push(this.crackMesh);
     this.sim = new ShatterSim(this.shardGroup.children as THREE.Mesh[], this.fracture.shards, this.globeCenter, impact, {
-      pedestalTop: PEDESTAL_TOP,
-      pedestalRadius: 0.93,
-      collarTop: COLLAR_TOP,
-      collarRadius: 0.87,
-      stageTop: STAGE_Y,
-      stageRadius: STAGE_R + 0.01,
+      pedestalTop: this.pedestal.baseTop,
+      pedestalRadius: this.pedestal.baseRadius,
+      collarTop: CUP_TOP,
+      collarRadius: CUP_R + 0.03,
+      stageTop: this.interior.groundY,
+      stageRadius: this.interior.radius,
       floorY: 0,
     });
     // Swap the smooth sphere for the (still intact) shards.
@@ -529,16 +452,15 @@ export class Experience {
       if (since > 0.28 && this.camVia === null && this.camT >= 1) {
         // Dive: rise slightly over the broken rim, then down into the world.
         const v = this.worldView();
-        const via = new THREE.Vector3(0.1, GLOBE_Y + 1.5, 3.4);
-        this.tweenCamera(v.pos, v.look, 2.8, via);
+        // Rise above the sphere's top, then swing down into it.
+        const via = new THREE.Vector3(0.15, GLOBE_Y + 1.9, 2.6);
+        this.tweenCamera(v.pos, v.look, 3.0, via);
       }
       // Bring the diorama round to face the camera during the dive.
       this.yaw = damp(this.yaw, Math.round(this.yaw / (Math.PI * 2)) * Math.PI * 2, 1.6, dt);
-      const fade = THREE.MathUtils.clamp((since - 1.3) / 1.0, 0, 1);
-      this.shardMaterial.opacity = 0.16 * (1 - fade);
-      this.shardEdgeMaterial.opacity = 0.8 * Math.min(1, since * 6) * (1 - fade);
-      // The pedestal dissolves as we arrive, leaving the world floating.
-      this.setPedestalOpacity(1 - THREE.MathUtils.clamp((since - 1.7) / 1.2, 0, 1));
+      const fade = THREE.MathUtils.clamp((since - 2.0) / 1.2, 0, 1);
+      this.shardMaterial.opacity = 0.14 * (1 - fade);
+      this.shardEdgeMaterial.opacity = 0.6 * Math.min(1, since * 6) * (1 - fade);
       if (since > 3.6) {
         this.shardGroup.visible = false;
         this.camVia = null;
@@ -688,6 +610,7 @@ export class Experience {
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
+    this.post?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.snow.setPointScale(Math.min(w, h * 1.4) * 0.03);
@@ -708,8 +631,34 @@ export class Experience {
     const dt = Math.min((now - this.last) / 1000, 1 / 20);
     this.last = now;
     this.tick(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.updateFocusBand();
+    this.post.render(this.time);
+    this.adapt(now);
   };
+
+  /** Keep the tilt-shift sharp band on the subject. */
+  private updateFocusBand() {
+    const target = this.phase === 'globe' || this.phase === 'cracking' ? this.globeCenter.clone().setY(GLOBE_Y - 0.25) : this.camLook.clone();
+    const p = this.root.localToWorld(target).project(this.camera);
+    const inGlobe = this.phase === 'globe' || this.phase === 'cracking';
+    this.post.setFocus(p.y * 0.5 + 0.5, inGlobe ? 0.3 : 0.14, inGlobe ? 0.8 : 1.2);
+  }
+
+  /** If the first seconds run slowly, drop to the cheaper pipeline. */
+  private adapt(now: number) {
+    if (this.quality === 0 || this.frameTimes.length > 240) return;
+    this.frameTimes.push(now);
+    if (this.frameTimes.length === 240) {
+      const avg = (this.frameTimes[239] - this.frameTimes[60]) / 179;
+      if (avg > 26) {
+        this.quality = 0;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+        this.post = new Post(this.renderer, this.scene, this.camera, 0);
+        this.post.aoExclude = [this.glassMesh, this.shardGroup, this.snow.points, ...this.interior.transparents];
+        this.resize();
+      }
+    }
+  }
 
   private tick(dt: number) {
     this.time += dt;
@@ -717,6 +666,7 @@ export class Experience {
     this.updateBreak(dt);
     this.updateCamera(dt);
     this.snow.update(dt);
+    this.interior.update(this.time);
     this.updateObjects(dt);
   }
 

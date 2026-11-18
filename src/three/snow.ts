@@ -14,7 +14,9 @@ export interface SnowOptions {
   count: number;
   radius: number; // inner radius of the glass
   center: THREE.Vector3;
-  floorY: number; // stage top, in local coords
+  floorY: number; // ground level, in local coords
+  /** Optional terrain height; flakes settle on it. */
+  groundAt?: (x: number, z: number) => number;
 }
 
 export class Snow {
@@ -101,7 +103,7 @@ export class Snow {
         const x = (Math.random() * 2 - 1) * radius;
         const y = (Math.random() * 2 - 1) * radius;
         const z = (Math.random() * 2 - 1) * radius;
-        if (x * x + y * y + z * z < radius * radius * 0.9 && center.y + y > floorY + 0.02) {
+        if (x * x + y * y + z * z < radius * radius * 0.9 && center.y + y > this.ground(center.x + x, center.z + z) + 0.02) {
           this.pos[k] = center.x + x;
           this.pos[k + 1] = center.y + y;
           this.pos[k + 2] = center.z + z;
@@ -229,7 +231,7 @@ export class Snow {
       }
 
       // Settle on the stage.
-      const fy = floorY + 0.006 + s * 0.004;
+      const fy = this.ground(x, z) + 0.004 + s * 0.004;
       if (y < fy) {
         const rx = x - center.x, rz = z - center.z;
         const onStage = rx * rx + rz * rz < (this.open ? r2 * 0.6 : r2);
@@ -252,6 +254,10 @@ export class Snow {
       const i = Math.floor(Math.random() * n);
       if (this.resting[i] && Math.random() < 0.5) this.spawn(i, false);
     }
+  }
+
+  private ground(x: number, z: number) {
+    return this.opt.groundAt ? this.opt.groundAt(x, z) : this.opt.floorY;
   }
 
   setOpacity(o: number) {

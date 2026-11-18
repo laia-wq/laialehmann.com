@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { fbmField, fieldToTexture } from './textures';
 
 /** One muted palette shared by every object in the scene. */
 export const palette = {
-  backdropTop: '#ebe6de',
-  backdropBottom: '#c9bfb2',
+  backdropTop: '#d6d3ce',
+  backdropBottom: '#8e8a84',
   porcelain: '#efe9e0',
   bone: '#e4dccf',
   clay: '#c08a68',
@@ -28,20 +29,55 @@ export function clay(color: string, roughness = 0.62): THREE.MeshPhysicalMateria
 }
 
 export function glass(): THREE.MeshPhysicalMaterial {
+  // Faint smudges and wipe marks: the glass is almost, but not quite, perfect.
+  const S = 512;
+  const broad = fbmField(S, 5, 4, 71);
+  const fine = fbmField(S, 40, 3, 72);
+  const rough = fieldToTexture(new Float32Array(S * S).map((_, i) => {
+    const smudge = Math.max(0, broad[i] - 0.6) * 0.12;
+    return 0.004 + smudge + fine[i] * 0.004;
+  }), S, S, (v) => { const g = Math.min(255, v * 255); return [g, g, g]; });
+  const m = new THREE.MeshPhysicalMaterial({
+    color: '#ffffff',
+    metalness: 0,
+    roughness: 1,
+    roughnessMap: rough,
+    transmission: 1,
+    thickness: 0.05,
+    ior: 1.5,
+    dispersion: 0.12,
+    envMapIntensity: 1.35,
+    specularIntensity: 1,
+    attenuationColor: new THREE.Color('#e6efe9'),
+    attenuationDistance: 3.5,
+    side: THREE.FrontSide,
+  });
+  // Real studio glass shows the softboxes and window it reflects, not the
+  // pin-point glints of analytic lights, so drop direct specular here.
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace(
+      'vec3 totalSpecular = reflectedLight.directSpecular + reflectedLight.indirectSpecular;',
+      'vec3 totalSpecular = reflectedLight.indirectSpecular;',
+    );
+  };
+  return m;
+}
+
+/**
+ * The inside surface of the sphere: no transmission (that is what caused
+ * edge smearing), just faint reflections of the room, which is what you
+ * see on the far wall of a real glass ball.
+ */
+export function glassBack(): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     color: '#ffffff',
     metalness: 0,
-    roughness: 0.04,
-    transmission: 1,
-    thickness: 0.12,
-    ior: 1.45,
-    envMapIntensity: 1.1,
-    specularIntensity: 1,
-    clearcoat: 1,
-    clearcoatRoughness: 0.03,
-    attenuationColor: new THREE.Color('#eef3f2'),
-    attenuationDistance: 2.5,
-    side: THREE.DoubleSide,
+    roughness: 0.03,
+    transparent: true,
+    opacity: 0.1,
+    envMapIntensity: 1.6,
+    side: THREE.BackSide,
+    depthWrite: false,
   });
 }
 
@@ -54,7 +90,7 @@ export function backdropTexture(): THREE.CanvasTexture {
   g.fillRect(0, 0, 512, 512);
   const grad = g.createRadialGradient(256, 200, 10, 256, 230, 420);
   grad.addColorStop(0, palette.backdropTop);
-  grad.addColorStop(0.55, '#ddd6cc');
+  grad.addColorStop(0.5, '#b9b5af');
   grad.addColorStop(1, palette.backdropBottom);
   g.fillStyle = grad;
   g.fillRect(0, 0, 512, 512);
