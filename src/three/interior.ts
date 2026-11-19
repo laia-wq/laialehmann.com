@@ -452,7 +452,7 @@ export function buildInterior(c: THREE.Vector3, R: number): Interior {
   leaf.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.5, 0.12, 0, 1, 0, 0, 0.5, -0.12, 0], 3));
   leaf.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
   leaf.setIndex([0, 1, 2, 0, 2, 3]);
-  const PER_PAD = 240, PER_TUFT = 70;
+  const PER_PAD = 420, PER_TUFT = 70;
   const leafMat = new THREE.MeshStandardMaterial({ roughness: 0.65, side: THREE.DoubleSide });
   const uTime = { value: 0 };
   leafMat.onBeforeCompile = (sh) => {
@@ -472,7 +472,7 @@ export function buildInterior(c: THREE.Vector3, R: number): Interior {
       pv.set(pad.p.x + Math.sin(v) * Math.cos(u) * rr, pad.p.y + Math.cos(v) * rr * 0.45 + 0.01, pad.p.z + Math.sin(v) * Math.sin(u) * rr);
       e.set(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28);
       q.setFromEuler(e);
-      const s = 0.014 + rnd() * 0.012;
+      const s = 0.009 + rnd() * 0.008;
       sc.set(s, s, s);
       m4.compose(pv, q, sc);
       leaves.setMatrixAt(li, m4);

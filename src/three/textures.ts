@@ -60,20 +60,36 @@ export function fbm3(noise: (x: number, y: number, z: number) => number, x: numb
   return s;
 }
 
-/** Grayscale fBm field, values 0..1, tileable. */
+/**
+ * Grayscale fBm field, values 0..1, tileable. `scale` is the number of noise
+ * cells across the texture for the first octave; each octave doubles it.
+ */
 export function fbmField(size: number, scale: number, octaves = 4, seed = 1): Float32Array {
-  const period = 256;
-  const n = makeNoise2(seed, period);
+  const r = rng(seed);
+  const hashTable = new Float32Array(4096);
+  for (let i = 0; i < hashTable.length; i++) hashTable[i] = r();
+  const perm = new Uint16Array(4096);
+  for (let i = 0; i < 4096; i++) perm[i] = i;
+  for (let i = 4095; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+  const lat = (xi: number, yi: number, per: number) => {
+    const x = ((xi % per) + per) % per, y = ((yi % per) + per) % per;
+    return hashTable[perm[(perm[x & 4095] + y) & 4095]];
+  };
+  const fade = (t: number) => t * t * (3 - 2 * t);
   const out = new Float32Array(size * size);
+  const base = Math.max(1, Math.round(scale));
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let a = 0.5, f = scale / size, s = 0, norm = 0;
+      let a = 0.5, s = 0, norm = 0, per = base;
       for (let o = 0; o < octaves; o++) {
-        // Keep tiling: lattice frequency must divide the period.
-        s += a * n(x * f * (period / scale), y * f * (period / scale));
+        const fx = (x / size) * per, fy = (y / size) * per;
+        const xi = Math.floor(fx), yi = Math.floor(fy);
+        const u = fade(fx - xi), v = fade(fy - yi);
+        const n00 = lat(xi, yi, per), n10 = lat(xi + 1, yi, per), n01 = lat(xi, yi + 1, per), n11 = lat(xi + 1, yi + 1, per);
+        s += a * (n00 + (n10 - n00) * u + (n01 - n00) * v + (n00 - n10 - n01 + n11) * u * v);
         norm += a;
         a *= 0.5;
-        f *= 2;
+        per *= 2;
       }
       out[y * size + x] = s / norm;
     }

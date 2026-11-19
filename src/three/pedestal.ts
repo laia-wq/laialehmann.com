@@ -119,7 +119,7 @@ function turnedWood(): THREE.MeshPhysicalMaterial {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
       // Rings run around (along x); the warp makes them wander like real grain.
-      const t = (y / H) * 9 + n1[i] * 4 + n3[i] * 1.2;
+      const t = (y / H) * 8 + n1[i] * 1.4 + n3[i] * 0.45 + (x / W) * 0.6;
       const f = t - Math.floor(t);
       const late = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 3); // dark latewood band
       // Fibres: noise stretched along the rings, so it reads as streaks, not speckle.
