@@ -168,7 +168,7 @@ def massif_h(x, y):
     if h > 0:
         ridged = 1 - abs(fbm(x * 6 + 7, 1, y * 6, 4)) * 2
         gullies = abs(fbm(math.atan2(y - 0.06, x) * 2.2, 3, h * 3, 3))  # vertical erosion runnels
-        h = h * (0.86 + ridged * 0.2) * (0.94 + gullies * 0.12)
+        h = h * (0.88 + ridged * 0.16) * (0.95 + gullies * 0.1)
         h = strata(h, x, y)
         # A gorge on the front face where the falls drop.
         # Gorge for the falls, cut into three tiers: flat plunge pools with
@@ -184,7 +184,7 @@ def massif_h(x, y):
         for (mx, my), (dx, dy) in CLEFTS:
             along = (x - mx) * dx + (y - my) * dy
             perp = abs(-(x - mx) * dy + (y - my) * dx)
-            h -= 0.2 * math.exp(-(along * along) / 0.00035) * smoothstep(0.1, 0.04, perp)
+            h -= 0.15 * math.exp(-(along * along) / 0.0008) * smoothstep(0.1, 0.035, perp)
         h = max(h, 0.0)
     r2 = 0.0
     for px, py, ph, pr in RIDGE:
@@ -230,8 +230,10 @@ def slope_at(x, y, e=0.01):
 def in_water(x, y, margin=0.0):
     return poly_dist(x, y, STREAM) < 0.035 + margin or lake_d(x, y) < 1.0 + margin * 6 or pond_d(x, y) < 1.0 + margin * 10
 
-def ok(x, y, *, water=0.02, steps=0.04, max_slope=0.45, edge=0.93, path=0.035, build=0.09):
+def ok(x, y, *, water=0.02, steps=0.04, max_slope=0.45, edge=0.93, path=0.035, build=0.012):
     if math.hypot(x, y) > EDGE * edge:
+        return False
+    if fall_weight(x, y, 0.004, 0.06) > 0.12:
         return False
     if in_water(x, y, water) or path_d(x, y) < path:
         return False
@@ -333,7 +335,7 @@ def build_soil():
 
 # ------------------------------------------------------------------ layer 2: terrain
 def build_terrain():
-    RINGS, SEG = 150, 380
+    RINGS, SEG = 220, 420
     verts, faces, bed = [(0, 0, ground_at(0, 0))], [], [(0.0, 0.0, 0.0)]
     for i in range(1, RINGS + 1):
         rr = (i / RINGS) ** 0.9 * EDGE
@@ -518,6 +520,16 @@ def mist(name, x, y, z, size, density):
     o = bpy.context.object; o.name = name; o.scale = size; o.data.materials.append(m)
     return o
 
+def spring(name, x, y, z, sc):
+    """A dark, wet fissure where a falls emerges: a sunken dark slot with the
+    rock's own material around it."""
+    dark = bpy.data.materials.get('spring_dark')
+    if not dark:
+        dark = bpy.data.materials.new('spring_dark'); dark.use_nodes = True
+        b = dark.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value = (0.01, 0.012, 0.012, 1); b.inputs['Roughness'].default_value = 0.15
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1, location=(x, y + 0.004, z + 0.002))
+    o = bpy.context.object; o.name = name; o.scale = (0.009 * sc + 0.004, 0.006, 0.012 * sc + 0.004); o.data.materials.append(dark); o['tag'] = 'structure'
+
 def build_fall(name, fx, y_top, sc, cm):
     """A falls that cascades down its tiered gorge, following the rock, then
     plunges into the lake. White and lifted off the rock where it drops; dark
@@ -529,7 +541,11 @@ def build_fall(name, fx, y_top, sc, cm):
         y -= 0.002
     if len(prof) < 8:
         return
-    base_y = y
+    # Carry on past the shore and plunge into the water.
+    ly, lz = prof[-1]
+    for k in range(1, 9):
+        prof.append((ly - 0.003 * k, lz + (LAKE_Z - 0.016 - lz) * (k / 8) ** 0.8))
+    base_y = prof[-1][0]
     verts, faces, uvs, drops = [], [], [], []
     cols = 8
     total = len(prof)
@@ -563,8 +579,13 @@ def build_fall(name, fx, y_top, sc, cm):
         if prof[i - 3][1] - prof[i][1] > 0.025 and abs(prof[i][1] - prof[i + 3][1]) < 0.004:
             foam(f'foam_{name}{i}', fx(prof[i][0]), prof[i][0] - 0.006, prof[i][1] + 0.01, 0.024 * sc, 0.01 * sc)
     # Where the water hits the pool: churned foam and a contained plume of spray.
-    foam(f'foam_{name}_lake', fx(base_y), base_y - 0.018, LAKE_Z + 0.002, 0.05 * sc, 0.035 * sc)
-    mist(f'mist_{name}', fx(base_y), base_y - 0.01, LAKE_Z + 0.028, (0.045 * sc, 0.035 * sc, 0.05 * sc), 45)
+    foam(f'foam_{name}_lake', fx(base_y), base_y - 0.014, LAKE_Z + 0.002, 0.05 * sc, 0.035 * sc)
+    # Thick spray: a dense plume at the plunge and a softer cloud rising up the drop.
+    mist(f'mist_{name}', fx(base_y), base_y - 0.006, LAKE_Z + 0.03, (0.075 * sc, 0.06 * sc, 0.07 * sc), 90)
+    mist(f'mist_{name}_rise', fx(base_y + 0.03), base_y + 0.02, LAKE_Z + 0.08, (0.06 * sc, 0.05 * sc, 0.09 * sc), 25)
+    # The source: a dark wet cleft in the rock that the water spills out of.
+    ty, tz = prof[0]
+    spring(f'spring_{name}', fx(ty), ty, tz, sc)
 
 def build_water():
     wm = water_material()
@@ -583,7 +604,7 @@ def build_water():
     cm = curtain_material()
     for name, fx, top, sc, _ in FALLS:
         build_fall(name, fx, top, sc, cm)
-    mist('mist_lake', LAKE[0], LAKE[1] + 0.03, LAKE_Z + 0.018, (0.18, 0.08, 0.016), 1.5)
+    mist('mist_lake', LAKE[0], LAKE[1] + 0.04, LAKE_Z + 0.03, (0.24, 0.11, 0.035), 9)
     return None
 
 # ------------------------------------------------------------------ structures
@@ -739,11 +760,11 @@ def tube(name, pts, r, mat, seg=8):
     o = bpy.data.objects.new(name, cu); scene.collection.objects.link(o); cu.materials.append(mat); o['tag'] = 'structure'
     return o
 
-def build_rope_bridges():
-    plank = wood_mat('rope_plank', (0.2, 0.13, 0.075))
-    rope = wood_mat('rope', (0.32, 0.26, 0.17)); rope.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.95
+def rope_spans():
+    """For each cleft: (main-side end, far end, deck height). Both ends sit at
+    the same height: the lower of the two lips."""
+    out = []
     for (mx, my), (dx, dy) in CLEFTS:
-        # Anchor both ends at the same height: the lower of the two lips.
         reach = lambda sgn, k: ground_at(mx + dx * k * sgn, my + dy * k * sgn)
         lip = {sgn: max(reach(sgn, k / 200) for k in range(4, 20)) for sgn in (-1, 1)}
         target = min(lip.values()) - 0.004
@@ -753,6 +774,77 @@ def build_rope_bridges():
             while k < 0.1 and reach(sgn, k) < target:
                 k += 0.002
             ends.append((mx + dx * (k + 0.008) * sgn, my + dy * (k + 0.008) * sgn))
+        out.append((ends[0], ends[1], target))
+    return out
+
+TUNNEL_R = (0.017, 0.024)  # half-width, height
+
+def tunnel_axis():
+    (a, _, za), (b, _, zb) = rope_spans()
+    return Vector((a[0], a[1], za)), Vector((b[0], b[1], zb))
+
+def in_tunnel(p, pad=0.0):
+    A, B = tunnel_axis()
+    ab = B - A; t = max(-0.25, min(1.25, (p - A).dot(ab) / ab.length_squared))
+    floor = A.z + ab.z * max(0, min(1, t))
+    q = A + ab * t
+    side = Vector((-(ab.y), ab.x, 0)).normalized()
+    across = (p - q).dot(side)
+    up = p.z - floor
+    if up < 0.001 or t < -0.25 or t > 1.25:
+        return False
+    return (across / (TUNNEL_R[0] + pad)) ** 2 + (up / (TUNNEL_R[1] + pad)) ** 2 < 1
+
+def carve_tunnel(terrain):
+    """Bore a walkway tunnel through the main peak, mouth to mouth, so the two
+    rope bridges join one path through the mountain."""
+    me = terrain.data
+    bm = bmesh.new(); bm.from_mesh(me)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if any(in_tunnel(v.co, 0.002) for v in f.verts)], context='FACES')
+    bm.to_mesh(me); bm.free()
+    A, B = tunnel_axis()
+    ab = B - A; side = Vector((-(ab.y), ab.x, 0)).normalized()
+    verts, faces = [], []
+    NS, NA = 40, 20
+    for i in range(NS + 1):
+        t = -0.25 + 1.5 * i / NS
+        q = A + ab * t
+        floor = A.z + ab.z * max(0, min(1, t))
+        for j in range(NA + 1):
+            a = math.pi * j / NA
+            jig = 1 + 0.12 * fbm(i * 0.4, j * 0.5, 3, 2)
+            verts.append(tuple(Vector((q.x, q.y, floor)) + side * math.cos(a) * TUNNEL_R[0] * jig + Vector((0, 0, math.sin(a) * TUNNEL_R[1] * jig))))
+            if i and j:
+                k = (i - 1) * (NA + 1) + j - 1
+                faces.append((k, k + 1, k + NA + 2, k + NA + 1))
+    # Floor strip.
+    base = len(verts)
+    for i in range(NS + 1):
+        t = -0.25 + 1.5 * i / NS
+        q = A + ab * t; floor = A.z + ab.z * max(0, min(1, t))
+        for sgn in (-1, 1):
+            verts.append(tuple(Vector((q.x, q.y, floor + 0.0005)) + side * TUNNEL_R[0] * sgn))
+        if i:
+            k = base + (i - 1) * 2
+            faces.append((k, k + 2, k + 3, k + 1))
+    tm = bpy.data.meshes.new('tunnel'); tm.from_pydata(verts, [], faces)
+    o = bpy.data.objects.new('tunnel', tm); scene.collection.objects.link(o); o['tag'] = 'structure'
+    bm = bmesh.new(); bm.from_mesh(tm)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.calc_center_median().z > ground_at(*f.calc_center_median().xy) + 0.001], context='FACES')
+    bm.to_mesh(tm); bm.free()
+    tm.shade_smooth()
+    shade_like_mountain(o, 0.7)
+    # Lanterns inside, so it glows from the bridges.
+    for t in (0.3, 0.7):
+        q = A + ab * t
+        lp = bpy.data.lights.new('tunnel_lamp', 'POINT'); lp.energy = 0.05; lp.color = (1, 0.64, 0.32)
+        lo = bpy.data.objects.new('tunnel_lamp', lp); lo.location = (q.x, q.y, q.z + 0.018); scene.collection.objects.link(lo)
+
+def build_rope_bridges():
+    plank = wood_mat('rope_plank', (0.2, 0.13, 0.075))
+    rope = wood_mat('rope', (0.32, 0.26, 0.17)); rope.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.95
+    for ((mx, my), (dx, dy)), (e0, e1, target) in zip(CLEFTS, rope_spans()):
+        ends = [e0, e1]
         (ax, ay), (bx, by) = ends
         za = zb = target + 0.003
         for (ex, ey) in ends:  # small timber landing on each lip
@@ -792,6 +884,15 @@ def in_chamber(p, pad=0.0):
     a = v.x * dx + v.y * dy; c = -v.x * dy + v.y * dx
     return (a / (ra + pad)) ** 2 + (c / (rc + pad)) ** 2 + (v.z / (ru + pad)) ** 2 < 1 and p.z > floor + 0.001
 
+def shade_like_mountain(o, darkness):
+    """Give a mesh the terrain's own material, darkened (via the 'wet' channel)
+    so cave and tunnel walls read as the same rock as the mountain."""
+    o.data.materials.append(bpy.data.materials['terrain'])
+    for nm, val in (('bed', 0.0), ('path', 0.0), ('wet', darkness)):
+        a = o.data.color_attributes.new(nm, 'FLOAT_COLOR', 'POINT')
+        for i in range(len(a.data)):
+            a.data[i].color = (val, val, val, 1)
+
 def carve_cave(terrain):
     """Open the mountain face: remove terrain inside the chamber, then build the
     chamber's rock walls only where they're inside the mountain."""
@@ -799,47 +900,27 @@ def carve_cave(terrain):
     bm = bmesh.new(); bm.from_mesh(me)
     kill = [f for f in bm.faces if any(in_chamber(v.co, 0.002) for v in f.verts)]
     bmesh.ops.delete(bm, geom=kill, context='FACES')
-    # Rough rock lip around the opening hides the cut edge.
-    edges = [e for e in bm.edges if e.is_boundary and (e.verts[0].co.xy - Vector(CAVE)).length < 0.12]
-    loop = []
-    if edges:
-        adj = {}
-        for e in edges:
-            a_, b_ = e.verts
-            adj.setdefault(a_, []).append(b_); adj.setdefault(b_, []).append(a_)
-        start = edges[0].verts[0]; prev, cur = None, start
-        while True:
-            loop.append(cur.co.copy())
-            nxt = [v for v in adj.get(cur, []) if v is not prev]
-            if not nxt or nxt[0] is start or len(loop) > 2000:
-                break
-            prev, cur = cur, nxt[0]
+    # Round the cut edge into the opening: relax the boundary outline, then
+    # curl the rim and the ring of vertices behind it inward and down.
+    bm.verts.ensure_lookup_table()
+    C0, _, floor0 = cave_chamber()
+    rim = {v for e in bm.edges if e.is_boundary and (e.verts[0].co.xy - Vector(CAVE)).length < 0.12 for v in e.verts}
+    ring2 = {n for v in rim for e in v.link_edges for n in e.verts if n not in rim}
+    for _ in range(4):  # smooth the outline so it isn't jagged
+        new = {}
+        for v in rim:
+            nb = [e.other_vert(v) for e in v.link_edges if e.other_vert(v) in rim]
+            if len(nb) == 2:
+                new[v] = v.co * 0.5 + (nb[0].co + nb[1].co) * 0.25
+        for v, c in new.items():
+            v.co = c
+    for vs, k in ((rim, 0.008), (ring2, 0.004)):
+        for v in vs:
+            d = (C0 - v.co); d.z = 0
+            if d.length > 1e-6:
+                v.co += d.normalized() * k
+            v.co.z -= k * 0.4 if v.co.z > floor0 + 0.02 else 0.0
     bm.to_mesh(me); bm.free()
-    if len(loop) > 6:
-        # Irregular lip: overlapping lumpy rocks of varied size along the cut edge,
-        # bigger along the top (the brow) and at the sides.
-        lipm = stone_mat('cave_lip')
-        lipm.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (2.2, 2.2, 2.2)  # match the mountain's rock scale
-        [n for n in lipm.node_tree.nodes if n.type == 'HUE_SAT'][0].inputs['Saturation'].default_value = 0.9
-        [n for n in lipm.node_tree.nodes if n.type == 'HUE_SAT'][0].inputs['Value'].default_value = 0.85
-        zs = [v.z for v in loop]; zmin, zmax = min(zs), max(zs)
-        step = max(1, len(loop) // 48)
-        for i in range(0, len(loop), step):
-            v = loop[i]
-            t = (v.z - zmin) / max(1e-4, zmax - zmin)
-            r = random.uniform(0.0035, 0.006) * (1 + 0.6 * t)
-            inset = 0.004
-            bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=1, location=(v.x - CAVE_DIR[0] * inset, v.y - CAVE_DIR[1] * inset, v.z))
-            o = bpy.context.object; o['tag'] = 'structure'
-            seed = random.uniform(0, 50)
-            for vv in o.data.vertices:
-                n = vv.co.normalized()
-                vv.co = n * (1 + 0.35 * fbm(n.x * 2 + seed, n.y * 2, n.z * 2, 3))
-            o.scale = (r * random.uniform(0.9, 1.5), r * random.uniform(0.9, 1.4), r * random.uniform(0.6, 1.0))
-            o.rotation_euler = (random.uniform(0, 3), random.uniform(0, 3), random.uniform(0, 3))
-            bpy.ops.object.transform_apply(scale=True, rotation=True)
-            o.data.shade_smooth() if hasattr(o.data, 'shade_smooth') else None
-            o.data.materials.append(lipm)
     C, (ra, rc, ru), floor = cave_chamber()
     dx, dy = CAVE_DIR
     bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=40, radius=1, location=(0, 0, 0))
@@ -859,9 +940,7 @@ def carve_cave(terrain):
     bmesh.ops.reverse_faces(bm, faces=bm.faces)  # face inward
     bm.to_mesh(o.data); bm.free()
     o.data.shade_smooth()
-    m = stone_mat('cave_rock')
-    hsv = [n for n in m.node_tree.nodes if n.type == 'HUE_SAT'][0]; hsv.inputs['Value'].default_value = 0.4
-    o.data.materials.append(m)
+    shade_like_mountain(o, 0.75)
     STRUCTS.append((CAVE[0], CAVE[1], 0.06))
 
 def build_cave():
@@ -968,6 +1047,102 @@ def build_well():
         bpy.ops.mesh.primitive_torus_add(major_radius=0.0044 if zz > 0.025 else 0.0041, minor_radius=0.0004, location=(wx, wy - 0.003, g + zz))
         bpy.context.object.data.materials.append(iron)
     tube('bucket_bail', [(wx - 0.0045, wy - 0.003, g + 0.0298), (wx, wy - 0.003, g + 0.0335), (wx + 0.0045, wy - 0.003, g + 0.0298)], 0.0004, iron)
+
+def build_lilies():
+    """Water lilies: notched pads in drifts on the pond and the lake's quiet
+    edges (not near the falls), a few pink and white flowers."""
+    pad_m = bpy.data.materials.new('lily_pad'); pad_m.use_nodes = True
+    pb = pad_m.node_tree.nodes['Principled BSDF']; pb.inputs['Base Color'].default_value = (0.08, 0.2, 0.05, 1); pb.inputs['Roughness'].default_value = 0.3
+    pinks = [wood_mat('lily_pink', (0.85, 0.42, 0.55)), wood_mat('lily_white', (0.92, 0.9, 0.86))]
+    # One pad mesh: a disc with a wedge cut out.
+    verts = [(0, 0, 0)]; faces = []
+    n = 24
+    for k in range(n + 1):
+        a = 0.35 + (math.tau - 0.7) * k / n
+        verts.append((math.cos(a), math.sin(a), 0))
+        if k:
+            faces.append((0, k, k + 1))
+    me = bpy.data.meshes.new('lily_pad'); me.from_pydata(verts, [], faces); me.materials.append(pad_m)
+    spots = []
+    for _ in range(14):
+        a = random.uniform(0, math.tau); r = math.sqrt(random.random()) * 0.85
+        spots.append((POND[0] + math.cos(a) * POND[2] * r, POND[1] + math.sin(a) * POND[3] * r, ground_at(POND[0], POND[1]) + 0.0205))
+    for _ in range(80):
+        if len(spots) >= 34:
+            break
+        a = random.uniform(0, math.tau); r = random.uniform(0.55, 0.92)
+        x, y = LAKE[0] + math.cos(a) * LAKE[2] * r, LAKE[1] + math.sin(a) * LAKE[3] * r
+        if fall_weight(x, y, 0.01, 0.12) > 0.05 or y > LAKE[1] + 0.04:
+            continue
+        spots.append((x, y, LAKE_Z + 0.0005))
+    for i, (x, y, z) in enumerate(spots):
+        o = bpy.data.objects.new('lily_pad', me); scene.collection.objects.link(o); o['tag'] = 'structure'
+        s_ = random.uniform(0.0045, 0.008)
+        o.location = (x, y, z); o.scale = (s_, s_, 1); o.rotation_euler = (random.uniform(-0.05, 0.05), random.uniform(-0.05, 0.05), random.uniform(0, math.tau))
+        if i % 4 == 0:
+            for k in range(6):
+                a = k / 6 * math.tau
+                bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.0012, radius2=0.0001, depth=0.003, location=(x + math.cos(a) * 0.0011, y + math.sin(a) * 0.0011, z + 0.0015))
+                pt = bpy.context.object; pt.rotation_euler = (math.sin(a) * 0.6, -math.cos(a) * 0.6, a); pt.data.materials.append(pinks[i % 8 == 0])
+
+def build_maples():
+    """Canadian maples in autumn: a trunk with a few scanned leafy crowns,
+    tinted scarlet, orange and gold, standing in clearings and meadows."""
+    bushes = lib('shrub_02', ['shrub_02_a_LOD2', 'shrub_02_b_LOD2', 'shrub_02_c_LOD2'])
+    tints = [(0.17, 1.6, 0.95, 'scarlet'), (0.22, 1.6, 1.0, 'crimson'), (0.27, 1.5, 1.05, 'orange'), (0.31, 1.4, 1.1, 'gold')]
+    crowns = {t[3]: [tinted(o, *t) for o in bushes] for t in tints}
+    bark = wood_mat('maple_bark', (0.09, 0.065, 0.05))
+    k = 0
+    for _ in range(4000):
+        if k >= 14:
+            break
+        x, y = rand_disc(0.88)
+        if not ok(x, y, max_slope=0.5, path=0.05, build=0.12) or massif_h(x, y) > 0.04:
+            continue
+        H = random.uniform(0.075, 0.11)
+        g = ground_at(x, y)
+        lean = Vector((random.uniform(-0.01, 0.01), random.uniform(-0.01, 0.01), H * 0.6))
+        base = Vector((x, y, g - 0.004))
+        tube('maple_trunk', [tuple(base), tuple(base + lean * 0.5 + Vector((0.003, 0, 0))), tuple(base + lean)], 0.0028, bark)
+        # Two or three crowns, one hue per tree with a neighbouring hue mixed in.
+        hue = random.choice(list(crowns))
+        for c in range(random.randint(2, 3)):
+            src = random.choice(crowns[hue if c < 2 else random.choice(list(crowns))])
+            top = base + lean + Vector((random.uniform(-0.012, 0.012), random.uniform(-0.012, 0.012), random.uniform(-0.008, 0.01)))
+            o = place(src, top.x, top.y, height=H * random.uniform(0.5, 0.7), sink=0, tilt=0.15, tag='maple')
+            o.location.z = top.z - H * 0.15
+        k += 1
+
+def build_lamps():
+    """Stone lanterns along the paths, each with a warm light."""
+    stone = stone_mat('lamp_stone'); stone.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (40, 40, 40)
+    glow = bpy.data.materials.new('lamp_glow'); glow.use_nodes = True
+    gb = glow.node_tree.nodes['Principled BSDF']; gb.inputs['Base Color'].default_value = (1, 0.8, 0.5, 1)
+    gb.inputs['Emission Color'].default_value = (1, 0.62, 0.28, 1); gb.inputs['Emission Strength'].default_value = 12
+    placed = []
+    for pth in PATHS[:3]:
+        acc = 0.0
+        for (ax, ay), (bx, by) in zip(pth, pth[1:]):
+            seg = math.hypot(bx - ax, by - ay); acc += seg
+            if acc < 0.17:
+                continue
+            acc = 0.0
+            nx, ny = -(by - ay) / seg, (bx - ax) / seg
+            side = random.choice((-1, 1))
+            x, y = bx + nx * 0.028 * side, by + ny * 0.028 * side
+            if in_water(x, y, 0.01) or any(math.hypot(x - px, y - py) < 0.1 for px, py in placed) or slope_at(x, y) > 0.6:
+                continue
+            if any(math.hypot(x - sx, y - sy) < r + 0.01 for sx, sy, r in STRUCTS):
+                continue
+            g = ground_at(x, y); yaw = math.atan2(ny, nx)
+            box('lamp_base', (x, y, g + 0.002), (0.008, 0.008, 0.005), yaw, stone, bevel=0.0008)
+            box('lamp_post', (x, y, g + 0.011), (0.004, 0.004, 0.014), yaw, stone, bevel=0.0005)
+            box('lamp_box', (x, y, g + 0.021), (0.0065, 0.0065, 0.006), yaw, glow, bevel=0.0005)
+            bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.0068, radius2=0.0008, depth=0.005, location=(x, y, g + 0.0265))
+            c = bpy.context.object; c.rotation_euler.z = yaw + math.pi / 4; c.data.materials.append(stone); c['tag'] = 'structure'
+            lp = bpy.data.lights.new('lamp', 'POINT'); lp.energy = 0.02; lp.color = (1, 0.64, 0.32); lp.shadow_soft_size = 0.003
+            lo = bpy.data.objects.new('lamp_light', lp); lo.location = (x, y, g + 0.021); scene.collection.objects.link(lo)
+            STRUCTS.append((x, y, 0.008)); placed.append((x, y))
 
 def build_tower():
     """An old ruined stone watchtower."""
@@ -1094,16 +1269,32 @@ def build_cave_rocks(rocks):
         stone(qx, qy, random.uniform(0.009, 0.014), 0.007, ground_at(qx, qy) - 0.002)
 
 def build_stepping_stones(rocks, put):
-    """Flat stones across the stream where the front path crosses it."""
+    """Rounded, flat-topped stepping stones across the stream where the front
+    path meets it, standing just proud of the water."""
     cx, cy = STEP_CROSSING
     i = min(range(len(STREAM) - 1), key=lambda k: math.hypot(STREAM[k][0] - cx, STREAM[k][1] - cy))
     tx, ty = STREAM[i + 1][0] - STREAM[i][0], STREAM[i + 1][1] - STREAM[i][1]
     l = math.hypot(tx, ty); ax, ay = -ty / l, tx / l
-    for k in range(-2, 3):
-        x, y = cx + ax * k * 0.024 + random.uniform(-0.004, 0.004), cy + ay * k * 0.024 + random.uniform(-0.004, 0.004)
-        put(x, y, random.uniform(0.018, 0.024), 0.45, 'stone', srcs=rocks, keep=True)
+    m = stone_mat('step_stone'); m.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (40, 40, 40)
+    for k in range(-3, 4):
+        x = cx + ax * k * 0.014 + random.uniform(-0.002, 0.002); y = cy + ay * k * 0.014 + random.uniform(-0.002, 0.002)
+        r = random.uniform(0.0055, 0.007)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=10, radius=1, location=(x, y, 0))
+        o = bpy.context.object; o['tag'] = 'structure'
+        seed = random.uniform(0, 40)
+        for v in o.data.vertices:
+            n = v.co.normalized()
+            v.co = n * (1 + 0.1 * fbm(n.x * 2 + seed, n.y * 2, n.z * 2, 2))
+            if v.co.z > 0.35:
+                v.co.z = 0.35 + (v.co.z - 0.35) * 0.3  # flat top
+        o.scale = (r * random.uniform(1.0, 1.25), r, r * 0.9)
+        o.rotation_euler.z = random.uniform(0, 3)
+        top = max(ground_at(x, y), LAKE_Z - 0.004) + 0.006
+        o.location.z = top - r * 0.9 * 0.42
+        o.data.shade_smooth() if hasattr(o.data, 'shade_smooth') else None
+        o.data.materials.append(m)
 
-# ------------------------------------------------------------------ assets
+
 def mesh_size(o):
     """Real evaluated size of a source at scale 1 (measured in the scene, so
     odd source units or modifiers can't skew placement)."""
@@ -1289,18 +1480,8 @@ def build_vegetation():
         src = random.choice(saplings) if on_mtn else (random.choice(firs) if r < 0.45 else random.choice(saplings if r < 0.72 else pines))
         place(src, x, y, height=h, sink=0.04, tilt=0.05, tag='tree')
         pts.append((x, y)); n += 1
-    # Small leafy trees: the scanned bushes, larger, some in autumn colours.
     bushes = lib('shrub_02', ['shrub_02_a_LOD2', 'shrub_02_b_LOD2', 'shrub_02_c_LOD2'])
-    autumn = [tinted(o, hue, sat, val, tag) for o in bushes for hue, sat, val, tag in ((0.42, 1.5, 1.05, 'amber'), (0.38, 1.4, 0.9, 'rust'))]
-    k = 0
-    for _ in range(3000):
-        if k >= 16:
-            break
-        x, y = rand_disc(0.88)
-        if not ok(x, y, max_slope=0.5, path=0.05, build=0.12) or massif_h(x, y) > 0.05:
-            continue
-        src = random.choice(autumn if random.random() < 0.55 else bushes)
-        place(src, x, y, height=random.uniform(0.07, 0.11), sink=0.05, tilt=0.04, tag='leafy_tree'); k += 1
+    build_maples()
 
     # Shrubs and bushes at forest edges and around boulders.
     scatter(bushes, 40, lambda: random.uniform(0.05, 0.1) * VEG / 0.72, lambda x, y: ok(x, y, max_slope=0.6) and y > -0.4, 'shrub', cluster=(4, 2, -0.05), min_d=0.04)
@@ -1346,7 +1527,7 @@ def build_moss(terrain):
     vg = terrain.vertex_groups.new(name='moss')
     for v in terrain.data.vertices:
         x, y, _ = v.co
-        near = any(math.hypot(x - sx, y - sy) < r + 0.015 for sx, sy, r in STRUCTS)
+        near = any(math.hypot(x - sx, y - sy) < r + 0.002 for sx, sy, r in STRUCTS) or fall_weight(x, y, 0.004, 0.06) > 0.2
         w = 0.0 if (near or in_water(x, y, -0.005) or path_d(x, y) < 0.028 or cave_dark(x, y) > 0.1) else max(0.0, min(1.0, (0.7 - slope_at(x, y)) / 0.5))
         w *= 0.6 + 0.4 * max(0, fbm(x * 9, 3, y * 9) + 0.5)
         vg.add([v.index], w, 'REPLACE')
@@ -1410,6 +1591,7 @@ if __name__ == '__main__':
     build_soil()
     terrain = build_terrain()
     carve_cave(terrain)
+    carve_tunnel(terrain)
     global SHELF
     SHELF = build_water()
     build_pavilions()
@@ -1419,6 +1601,8 @@ if __name__ == '__main__':
     build_tower()
     build_garden()
     build_well()
+    build_lamps()
+    build_lilies()
     build_rocks()
     build_vegetation()
     if MODE == 'render':
