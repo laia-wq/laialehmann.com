@@ -87,7 +87,7 @@ def fall_weight(x, y, spread=0.0012, pad=0.05):
     """1 on a falls line, falling off to 0 across it; 0 above its source."""
     w = 0.0
     for _, fx, top, sc, _ in FALLS:
-        w = max(w, math.exp(-((x - fx(y)) ** 2) / (spread * sc)) * smoothstep(top + pad, top - 0.1, y))
+        w = max(w, math.exp(-((x - fx(y)) ** 2) / (spread * sc)) * smoothstep(top + pad, top - 0.1, y) * smoothstep(LAKE[1] - 0.02, LAKE[1] + 0.04, y))
     return w
 LAKE = (0.0, -0.4, 0.2, 0.12)            # centre x, y, radius x, radius y
 LAKE_Z = GROUND + 0.012
@@ -760,7 +760,15 @@ def tube(name, pts, r, mat, seg=8):
     o = bpy.data.objects.new(name, cu); scene.collection.objects.link(o); cu.materials.append(mat); o['tag'] = 'structure'
     return o
 
+_SPANS = None
 def rope_spans():
+    global _SPANS
+    if _SPANS is not None:
+        return _SPANS
+    _SPANS = _rope_spans()
+    return _SPANS
+
+def _rope_spans():
     """For each cleft: (main-side end, far end, deck height). Both ends sit at
     the same height: the lower of the two lips."""
     out = []
@@ -779,7 +787,14 @@ def rope_spans():
 
 TUNNEL_R = (0.017, 0.024)  # half-width, height
 
+_AXIS = None
 def tunnel_axis():
+    global _AXIS
+    if _AXIS is None:
+        _AXIS = _tunnel_axis()
+    return _AXIS
+
+def _tunnel_axis():
     (a, _, za), (b, _, zb) = rope_spans()
     return Vector((a[0], a[1], za)), Vector((b[0], b[1], zb))
 
