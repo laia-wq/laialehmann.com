@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { studioScene } from './studio';
-import { backdropTexture, glass, glassBack } from './materials';
+import { glass, glassBack, noDirectSpecular } from './materials';
 import { Snow } from './snow';
 import { crackMaterial, fractureSphere, type Fracture } from './fracture';
 import { ShatterSim } from './shatter';
 import { buildPedestal, type Pedestal } from './pedestal';
 import { buildInterior, type Interior } from './interior';
+import { contactBlob, paperBackdrop, shadowCatcher } from './setting';
 import { Post } from './post';
 import type { Project } from '../content/projects';
 
@@ -21,8 +22,8 @@ export interface ExperienceEvents {
 
 // Scene dimensions (world units, floor at y = 0).
 const R = 1;
-const CUP_TOP = 0.955; // rim of the bronze cup the sphere rests in
-const CUP_R = 0.43;
+const CUP_TOP = 0.45; // rim of the wooden cup the sphere rests in
+const CUP_R = 0.5;
 const CUT_Y = -Math.sqrt(1 - CUP_R * CUP_R); // relative to the centre: the cup hides the glass below this
 const GLOBE_Y = CUP_TOP - CUT_Y;
 
@@ -50,6 +51,7 @@ export class Experience {
   private shardEdgeMaterial!: THREE.MeshPhysicalMaterial;
   private hitSphere!: THREE.Mesh;
   private pedestal!: Pedestal;
+  private backdrop!: { texture: THREE.Texture; fit(aspect: number): void };
   private interior!: Interior;
   private post!: Post;
   private quality: 0 | 1 = 1;
@@ -101,31 +103,34 @@ export class Experience {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
     this.renderer.domElement.className = 'scene-canvas';
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = backdropTexture();
-    this.scene.fog = new THREE.Fog('#9d9993', 10, 26);
+    this.backdrop = paperBackdrop();
+    this.scene.background = this.backdrop.texture;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(studioScene(), 0, 0.1, 100, { size: 512 }).texture;
-    this.scene.environmentIntensity = 0.85;
+    this.scene.environmentIntensity = 0.55;
     pmrem.dispose();
 
     void projects; // miniatures arrive with the landscape (Phase B)
     this.buildLights();
     this.pedestal = buildPedestal('Laia Lehmann', 'Systems Design Engineering');
     this.root.add(this.pedestal.group);
+    const t0 = performance.now();
     this.interior = buildInterior(this.globeCenter, R);
+    if (new URLSearchParams(location.search).has('debug')) console.info(`interior built in ${(performance.now() - t0).toFixed(0)} ms`);
     this.root.add(this.interior.group);
     this.buildGlobe();
     this.scene.add(this.root);
 
-    const lowPower = (navigator.hardwareConcurrency ?? 8) <= 4 || new URLSearchParams(location.search).get('quality') === 'low';
+    const qp = new URLSearchParams(location.search).get('quality');
+    const lowPower = qp === 'low' || (qp !== 'high' && (navigator.hardwareConcurrency ?? 8) <= 4);
     this.quality = lowPower ? 0 : 1;
     this.post = new Post(this.renderer, this.scene, this.camera, this.quality);
     this.post.aoExclude = [this.glassMesh, this.shardGroup, this.snow.points, ...this.interior.transparents];
@@ -144,52 +149,28 @@ export class Experience {
   // ---------------------------------------------------------------- build
 
   private buildLights() {
-    // Fill: very low, slightly warm from below/cool from above.
-    this.scene.add(new THREE.HemisphereLight('#dfe6ee', '#4a4038', 0.35));
-    // Key: warm, soft, up-left and in front. Casts the shadows.
-    const key = new THREE.DirectionalLight('#ffe2c2', 2.6);
-    key.position.set(-4.2, 6.4, 4.6);
-    key.target.position.set(0, 1.1, 0);
+    // Daylight in a quiet room: soft fill, a warm key, a cool rim.
+    this.scene.add(new THREE.HemisphereLight('#f3f1ec', '#6e604f', 0.6));
+    const key = new THREE.DirectionalLight('#fff1dd', 2.8);
+    key.position.set(-3.6, 6.2, 4.4);
+    key.target.position.set(0, 0.9, 0);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3.4, bottom: -3, near: 2, far: 20 });
-    key.shadow.radius = 5;
-    key.shadow.blurSamples = 20;
+    Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3.2, bottom: -3, near: 1, far: 18 });
+    key.shadow.radius = 6;
+    key.shadow.blurSamples = 24;
     key.shadow.bias = -0.0003;
     key.shadow.normalBias = 0.015;
     this.scene.add(key, key.target);
-    // Rim: cool, from behind-right, separates the bronze and the glass edge.
-    const rim = new THREE.DirectionalLight('#cfe0f5', 1.6);
-    rim.position.set(3.5, 3.5, -5);
+    const rim = new THREE.DirectionalLight('#dce8f5', 1.3);
+    rim.position.set(4, 3.5, -4.5);
     this.scene.add(rim);
+    const fill = new THREE.DirectionalLight('#e8eef5', 0.5);
+    fill.position.set(4, 1.5, 4);
+    this.scene.add(fill);
 
-    // Studio sweep (cyclorama): the floor curves up into the back wall, so
-    // there's no horizon line, and the lights give it a natural falloff.
-    const prof: THREE.Vector2[] = [];
-    const W = 14, D = 4.5, Rr = 2.6;
-    for (let i = 0; i <= 40; i++) {
-      const a = (i / 40) * (Math.PI / 2);
-      prof.push(new THREE.Vector2(-D - Math.sin(a) * Rr, Rr - Math.cos(a) * Rr));
-    }
-    const sweep = new THREE.PlaneGeometry(W, 1, 1, 1);
-    const pos: number[] = [], idx: number[] = [];
-    const rowsPts = [new THREE.Vector2(9, 0), new THREE.Vector2(-D, 0), ...prof, new THREE.Vector2(-D - Rr, 12)];
-    for (let i = 0; i < rowsPts.length; i++) {
-      const pz = rowsPts[i].x, py = rowsPts[i].y;
-      pos.push(-W / 2, py, pz, W / 2, py, pz);
-      if (i > 0) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
-    }
-    sweep.dispose();
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    // Make sure normals face the camera side.
-    const nrm = g.getAttribute('normal') as THREE.BufferAttribute;
-    if (nrm.getY(0) < 0) { for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, -nrm.getX(i), -nrm.getY(i), -nrm.getZ(i)); }
-    const floor = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#b8b4ad', roughness: 0.95, metalness: 0, side: THREE.DoubleSide }));
-    floor.receiveShadow = true;
-    this.scene.add(floor);
+    this.scene.add(shadowCatcher());
+    this.scene.add(contactBlob(2.2, 0.55));
   }
 
   private buildGlobe() {
@@ -216,8 +197,8 @@ export class Experience {
       roughness: 0.02,
       metalness: 0,
       transparent: true,
-      opacity: 0.14,
-      envMapIntensity: 2.2,
+      opacity: 0.07,
+      envMapIntensity: 2.4,
       specularIntensity: 1,
       ior: 1.5,
       clearcoat: 1,
@@ -226,16 +207,20 @@ export class Experience {
       side: THREE.DoubleSide,
     });
     this.shardEdgeMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#e3efe9',
+      color: '#f3e6d6',
       roughness: 0.08,
       transparent: true,
-      opacity: 0,
+      opacity: 0.35,
       depthWrite: false,
       envMapIntensity: 1.2,
     });
+    this.shardMaterial.onBeforeCompile = noDirectSpecular;
+    this.shardEdgeMaterial.onBeforeCompile = noDirectSpecular;
+    // Until it actually breaks, the clear sphere stays; only the cracks show.
+    this.shardGroup.visible = false;
     this.root.add(this.shardGroup);
 
-    this.snow = new Snow({ count: 900, radius: R * 0.96, center: this.globeCenter, floorY: this.interior.groundY, groundAt: this.interior.groundAt });
+    this.snow = new Snow({ count: 300, radius: R * 0.96, center: this.globeCenter, floorY: this.interior.groundY, groundAt: this.interior.groundAt });
     this.root.add(this.snow.points);
   }
 
@@ -244,12 +229,12 @@ export class Experience {
   private globeView() {
     const aspect = this.camera.aspect || 1;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const hh = 2.05; // half the height to frame (stand + sphere + room for the label)
-    const hw = aspect < 0.8 ? 1.2 : 1.45;
+    const hh = 1.6; // half the height to frame (stand + sphere + room for the label)
+    const hw = aspect < 0.8 ? 1.18 : 1.4;
     const dist = Math.max(hh / t, hw / (t * aspect));
     // Look a little below the middle so the label has room under the stand.
-    const look = new THREE.Vector3(0, aspect < 0.8 ? 1.15 : 1.22, 0);
-    return { pos: new THREE.Vector3(0, look.y + dist * 0.09, dist), look };
+    const look = new THREE.Vector3(0, aspect < 0.8 ? 0.98 : 1.05, 0);
+    return { pos: new THREE.Vector3(0, look.y + dist * 0.12, dist), look };
   }
 
   private worldView() {
@@ -419,14 +404,15 @@ export class Experience {
       stageRadius: this.interior.radius,
       floorY: 0,
     });
-    // Swap the smooth sphere for the (still intact) shards.
-    this.glassMesh.visible = false;
     this.setPhase('cracking');
   }
 
   private shatter() {
     if (!this.sim) return;
     this.sim.start();
+    // Swap the smooth sphere for the shards at the moment it breaks.
+    this.glassMesh.visible = false;
+    this.shardGroup.visible = true;
     if (this.crackMesh) this.crackMesh.visible = false;
     this.breakTime = this.time;
     this.yawVel = 0;
@@ -459,8 +445,8 @@ export class Experience {
       // Bring the diorama round to face the camera during the dive.
       this.yaw = damp(this.yaw, Math.round(this.yaw / (Math.PI * 2)) * Math.PI * 2, 1.6, dt);
       const fade = THREE.MathUtils.clamp((since - 2.0) / 1.2, 0, 1);
-      this.shardMaterial.opacity = 0.14 * (1 - fade);
-      this.shardEdgeMaterial.opacity = 0.6 * Math.min(1, since * 6) * (1 - fade);
+      this.shardMaterial.opacity = 0.07 * (1 - fade);
+      this.shardEdgeMaterial.opacity = 0.35 * (1 - fade);
       if (since > 3.6) {
         this.shardGroup.visible = false;
         this.camVia = null;
@@ -612,8 +598,9 @@ export class Experience {
     this.renderer.setSize(w, h, false);
     this.post?.setSize(w, h);
     this.camera.aspect = w / h;
+    this.backdrop.fit(w / h);
     this.camera.updateProjectionMatrix();
-    this.snow.setPointScale(Math.min(w, h * 1.4) * 0.03);
+    this.snow.setPointScale(Math.min(w, h * 1.4) * 0.022);
     if (this.camT >= 1) {
       const v =
         this.phase === 'world' ? this.worldView()
@@ -641,12 +628,12 @@ export class Experience {
     const target = this.phase === 'globe' || this.phase === 'cracking' ? this.globeCenter.clone().setY(GLOBE_Y - 0.25) : this.camLook.clone();
     const p = this.root.localToWorld(target).project(this.camera);
     const inGlobe = this.phase === 'globe' || this.phase === 'cracking';
-    this.post.setFocus(p.y * 0.5 + 0.5, inGlobe ? 0.3 : 0.14, inGlobe ? 0.8 : 1.2);
+    this.post.setFocus(p.y * 0.5 + 0.5, inGlobe ? 0.5 : 0.16, inGlobe ? 0.4 : 1.0);
   }
 
   /** If the first seconds run slowly, drop to the cheaper pipeline. */
   private adapt(now: number) {
-    if (this.quality === 0 || this.frameTimes.length > 240) return;
+    if (this.quality === 0 || this.frameTimes.length > 240 || new URLSearchParams(location.search).get('quality') === 'high') return;
     this.frameTimes.push(now);
     if (this.frameTimes.length === 240) {
       const avg = (this.frameTimes[239] - this.frameTimes[60]) / 179;

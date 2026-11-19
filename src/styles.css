@@ -327,3 +327,7 @@ html[data-phase='world'] .world-nav { opacity: 1; pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* ------------------------------------------------------------ 3D chrome on paper */
+html[data-mode='3d'] body { background: #efe8dc; }
+html[data-mode='3d'] .hint { color: var(--ink-soft); }

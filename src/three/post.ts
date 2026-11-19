@@ -46,8 +46,8 @@ const Finish = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
     uTime: { value: 0 },
-    uVignette: { value: 0.32 },
-    uGrain: { value: 0.035 },
+    uVignette: { value: 0.18 },
+    uGrain: { value: 0.018 },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: /* glsl */ `
@@ -108,7 +108,7 @@ export class Post {
       this.gtao = gtao;
     }
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.28, 0.55, 0.9);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.16, 0.4, 0.95);
     this.composer.addPass(this.bloom);
 
     this.tiltH = new ShaderPass(TiltShift);

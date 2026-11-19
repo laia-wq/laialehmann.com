@@ -140,7 +140,7 @@ export class ShatterSim {
       const horiz = new THREE.Vector3(n.x, 0, n.z);
       if (horiz.lengthSq() < 0.04) horiz.set(rnd() - 0.5, 0, rnd() - 0.5);
       horiz.normalize();
-      b.vel.addScaledVector(horiz, 1.25 + rnd() * 0.5);
+      b.vel.addScaledVector(horiz, 1.25 + rnd() * 0.5 + Math.max(0, n.y) * 1.2);
       b.vel.y += 0.25 + rnd() * 0.4;
       b.ang.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(6 * (0.4 + near));
     }

@@ -45,11 +45,9 @@ export function glass(): THREE.MeshPhysicalMaterial {
     transmission: 1,
     thickness: 0.05,
     ior: 1.5,
-    dispersion: 0.12,
-    envMapIntensity: 1.35,
+    dispersion: 0.2,
+    envMapIntensity: 3.6,
     specularIntensity: 1,
-    attenuationColor: new THREE.Color('#e6efe9'),
-    attenuationDistance: 3.5,
     side: THREE.FrontSide,
   });
   // Real studio glass shows the softboxes and window it reflects, not the
@@ -69,16 +67,25 @@ export function glass(): THREE.MeshPhysicalMaterial {
  * see on the far wall of a real glass ball.
  */
 export function glassBack(): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({
+  const m = new THREE.MeshPhysicalMaterial({
     color: '#ffffff',
     metalness: 0,
     roughness: 0.03,
     transparent: true,
-    opacity: 0.1,
-    envMapIntensity: 1.6,
+    opacity: 0.08,
+    envMapIntensity: 3.0,
     side: THREE.BackSide,
     depthWrite: false,
   });
+  m.onBeforeCompile = noDirectSpecular;
+  return m;
+}
+
+export function noDirectSpecular(sh: { fragmentShader: string }) {
+  sh.fragmentShader = sh.fragmentShader.replace(
+    'vec3 totalSpecular = reflectedLight.directSpecular + reflectedLight.indirectSpecular;',
+    'vec3 totalSpecular = reflectedLight.indirectSpecular;',
+  );
 }
 
 /** Soft radial backdrop (lighter behind the globe), also seen through glass. */

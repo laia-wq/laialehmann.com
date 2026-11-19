@@ -313,7 +313,7 @@ export function crackMaterial(): THREE.ShaderMaterial {
     side: THREE.DoubleSide,
     uniforms: {
       uProgress: { value: 0 },
-      uWidth: { value: 0.0042 },
+      uWidth: { value: 0.0028 },
       uOpacity: { value: 1 },
     },
     vertexShader: /* glsl */ `

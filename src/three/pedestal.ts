@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { canvasToField, fbmField, fieldToTexture, makeNoise3, normalMapFromField, rng } from './textures';
+import { canvasToField, fbmField, makeNoise3, normalMapFromField, rng } from './textures';
 
 /**
- * Turned bronze pedestal in the spirit of an antique crystal-ball stand:
- * a wide fluted foot with a polished marble disc, a baluster stem with a
- * beaded knop, and a gadrooned cup that holds the sphere. The ornament is
- * real geometry (the radius is modulated around the axis), so it catches
- * light and casts shadow; crevices get a darker patina via vertex colour.
+ * Turned, varnished wooden base for the crystal globe: a moulded foot, a
+ * carved band of flutes between bead rows, and a shallow cup. The ornament
+ * is real geometry (the radius is modulated around the axis), so it catches
+ * light and casts shadow; crevices get darker via vertex colour.
  */
 
 export interface Band {
@@ -102,75 +101,56 @@ export function revolve(profile: [number, number][], segments: number, bands: Ba
   return g;
 }
 
-function bronzeMaterial(): THREE.MeshPhysicalMaterial {
-  // Hammered micro-surface + uneven polish.
-  const S = 512;
-  const fine = fbmField(S, 24, 3, 21);
-  const broad = fbmField(S, 6, 4, 22);
-  const rough = new Float32Array(S * S);
-  for (let i = 0; i < rough.length; i++) rough[i] = 0.36 + broad[i] * 0.3 + (fine[i] - 0.5) * 0.14;
-  const roughnessMap = fieldToTexture(rough, S, S, (v) => { const g = Math.max(0, Math.min(255, v * 255)); return [g, g, g]; });
-  roughnessMap.repeat.set(3, 2);
-  const normalMap = normalMapFromField(fine, S, S, 1.4);
-  normalMap.wrapT = THREE.RepeatWrapping;
-  normalMap.repeat.set(3, 2);
-  const tint = fieldToTexture(broad, S, S, (v) => {
-    // Old bronze: warm brown with darker, slightly olive patches.
-    const t = Math.min(1, Math.max(0, (v - 0.35) * 2));
-    const a = [138, 100, 62], b = [86, 66, 46];
-    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] as [number, number, number];
-  }, true);
-  tint.repeat.set(2, 1);
-  return new THREE.MeshPhysicalMaterial({
-    color: '#ffffff',
-    map: tint,
-    vertexColors: true,
-    metalness: 1,
-    roughness: 1,
-    roughnessMap,
-    normalMap,
-    normalScale: new THREE.Vector2(0.07, 0.07),
-    envMapIntensity: 1.15,
-  });
-}
-
-/** Polished oxblood marble with cream veins (2D domain-warped noise). */
-function marbleMaterial(): THREE.MeshPhysicalMaterial {
-  const S = 1024;
-  const n1 = fbmField(S, 4, 5, 31);
-  const n2 = fbmField(S, 9, 4, 32);
+/**
+ * Varnished mahogany as it looks on turned work: growth rings sweep around
+ * the piece, with darker latewood lines, uneven colour and a glossy coat.
+ */
+function turnedWood(): THREE.MeshPhysicalMaterial {
+  const W = 1024, H = 1024;
+  const n1 = fbmField(W, 4, 5, 51);
+  const n2 = fbmField(W, 64, 3, 52);
+  const n3 = fbmField(W, 12, 4, 53);
   const c = document.createElement('canvas');
-  c.width = c.height = S;
+  c.width = W; c.height = H;
   const g = c.getContext('2d')!;
-  const img = g.createImageData(S, S);
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const i = y * S + x;
-      // Thin meandering veins along iso-lines of a warped field.
-      const w = n1[i] + (n2[i] - 0.5) * 0.25 + (x / S) * 0.35;
-      const f1 = Math.abs(((w * 7) % 1) - 0.5);
-      const f2 = Math.abs(((n2[i] * 5 + (y / S) * 0.4) % 1) - 0.5);
-      const vein = Math.exp(-f1 * 70) * 0.85 + Math.exp(-f2 * 110) * 0.35;
-      const base = 0.72 + (n1[i] - 0.5) * 0.5;
-      const r = 98 * base, gg = 46 * base, b = 38 * base;
-      const vm = Math.min(1, vein);
-      img.data[i * 4] = r + (214 - r) * vm;
-      img.data[i * 4 + 1] = gg + (196 - gg) * vm;
-      img.data[i * 4 + 2] = b + (172 - b) * vm;
+  const img = g.createImageData(W, H);
+  const height = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      // Rings run around (along x); the warp makes them wander like real grain.
+      const t = (y / H) * 9 + n1[i] * 4 + n3[i] * 1.2;
+      const f = t - Math.floor(t);
+      const late = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 3); // dark latewood band
+      // Fibres: noise stretched along the rings, so it reads as streaks, not speckle.
+      const pores = Math.pow(n2[y * W + ((x * 0.08) | 0)], 2.2);
+      const tone = 0.95 + n3[i] * 0.4 - late * 0.55 - pores * 0.18;
+      // Deep mahogany / walnut.
+      img.data[i * 4] = Math.min(255, Math.max(0, 92 * tone));
+      img.data[i * 4 + 1] = Math.min(255, Math.max(0, 44 * tone));
+      img.data[i * 4 + 2] = Math.min(255, Math.max(0, 22 * tone));
       img.data[i * 4 + 3] = 255;
+      height[i] = 1 - late * 0.5 - pores * 0.3;
     }
   }
   g.putImageData(img, 0, 0);
   const map = new THREE.CanvasTexture(c);
   map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(2, 1);
   map.anisotropy = 8;
+  const normalMap = normalMapFromField(height, W, H, 0.9);
+  normalMap.wrapT = THREE.RepeatWrapping;
+  normalMap.repeat.set(3, 1);
   return new THREE.MeshPhysicalMaterial({
     map,
-    roughness: 0.16,
-    metalness: 0,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.08,
-    envMapIntensity: 0.9,
+    vertexColors: true,
+    roughness: 0.5,
+    normalMap,
+    normalScale: new THREE.Vector2(0.25, 0.25),
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 1.8,
   });
 }
 
@@ -214,9 +194,9 @@ async function plaqueMaterials(name: string, role: string) {
     const v = field[i];
     const engraved = v < 0.35 ? 1 : 0;
     const grain = (r() - 0.5) * 10;
-    img.data[i * 4] = engraved ? 34 : 150 + grain;
-    img.data[i * 4 + 1] = engraved ? 26 : 118 + grain;
-    img.data[i * 4 + 2] = engraved ? 18 : 74 + grain * 0.6;
+    img.data[i * 4] = engraved ? 34 : 200 + grain;
+    img.data[i * 4 + 1] = engraved ? 26 : 160 + grain;
+    img.data[i * 4 + 2] = engraved ? 18 : 96 + grain * 0.6;
     img.data[i * 4 + 3] = 255;
   }
   cg.putImageData(img, 0, 0);
@@ -251,76 +231,57 @@ export interface Pedestal {
 
 export function buildPedestal(name: string, role: string): Pedestal {
   const group = new THREE.Group();
-  const bronze = bronzeMaterial();
-  const S = 0.86; // base scale
+  const wood = turnedWood();
 
+  // Squat turned base: foot, cove, a carved band (flutes between bead rows),
+  // a shoulder, and a shallow cup the sphere sits in.
+  const CUP_TOP = 0.45, CUP_R = 0.5;
+  const profile: [number, number][] = [
+    [0, 0], [0.8, 0], [0.82, 0.012], [0.825, 0.055], [0.81, 0.075], [0.79, 0.085],
+    [0.79, 0.1], [0.775, 0.115], [0.745, 0.13], [0.72, 0.15], [0.69, 0.175],
+    [0.675, 0.19], [0.68, 0.205], [0.67, 0.215], [0.655, 0.22],
+    [0.655, 0.345], // carved band
+    [0.67, 0.35], [0.68, 0.365], [0.67, 0.38], [0.645, 0.39], [0.6, 0.405],
+    [0.57, 0.42], [0.56, 0.435], [0.54, 0.448], [CUP_R, CUP_TOP], [0, CUP_TOP],
+  ];
   const base = new THREE.Mesh(
-    revolve(
-      [
-        [0, 0], [0.86 * S, 0], [0.9 * S, 0.012], [0.915 * S, 0.035], [0.9 * S, 0.06], [0.885 * S, 0.075],
-        [0.87 * S, 0.09], [0.84 * S, 0.165], [0.86 * S, 0.18], [0.875 * S, 0.195], [0.86 * S, 0.21], [0.82 * S, 0.215], [0.81 * S, 0.205],
-      ],
-      256,
-      [
-        { y0: 0.012, y1: 0.06, lobes: 72, amp: 0.025, shape: 'bead' },
-        { y0: 0.09, y1: 0.165, lobes: 40, amp: 0.06, shape: 'flute' },
-        { y0: 0.178, y1: 0.212, lobes: 96, amp: 0.012, shape: 'bead' },
-      ],
-    ),
-    bronze,
+    revolve(profile, 320, [
+      { y0: 0.015, y1: 0.07, lobes: 96, amp: 0.012, shape: 'bead' },
+      { y0: 0.19, y1: 0.215, lobes: 120, amp: 0.018, shape: 'bead' },
+      { y0: 0.222, y1: 0.343, lobes: 44, amp: 0.05, shape: 'flute' },
+      { y0: 0.348, y1: 0.38, lobes: 120, amp: 0.018, shape: 'bead' },
+      { y0: 0.4, y1: 0.445, lobes: 60, amp: 0.025, shape: 'flute' },
+    ], 7),
+    wood,
   );
   base.castShadow = base.receiveShadow = true;
   group.add(base);
 
-  // Marble disc set into the base, very slightly domed.
-  const marble = new THREE.Mesh(new THREE.CylinderGeometry(0.81 * S, 0.81 * S, 0.02, 128, 1), marbleMaterial());
-  marble.position.y = 0.197;
-  marble.receiveShadow = true;
-  group.add(marble);
-
-  const stemProfile: [number, number][] = [
-    [0.36, 0.205], [0.37, 0.22], [0.355, 0.245], [0.3, 0.262], [0.23, 0.3], [0.165, 0.36], [0.13, 0.41],
-    [0.125, 0.44], [0.15, 0.47], [0.2, 0.5], [0.215, 0.53], [0.2, 0.56], [0.145, 0.585], [0.11, 0.62],
-    [0.105, 0.66], [0.13, 0.69], [0.13, 0.71], [0.17, 0.73], [0.26, 0.78], [0.35, 0.835], [0.41, 0.88],
-    [0.44, 0.91], [0.455, 0.93], [0.45, 0.945], [0.43, 0.955], [0.0, 0.955],
-  ];
-  const stem = new THREE.Mesh(
-    revolve(stemProfile, 256, [
-      { y0: 0.21, y1: 0.255, lobes: 36, amp: 0.03, shape: 'bead' },
-      { y0: 0.485, y1: 0.575, lobes: 18, amp: 0.1, shape: 'flute' },
-      { y0: 0.695, y1: 0.715, lobes: 40, amp: 0.05, shape: 'bead' },
-      { y0: 0.73, y1: 0.9, lobes: 26, amp: 0.09, shape: 'flute' },
-      { y0: 0.91, y1: 0.95, lobes: 80, amp: 0.018, shape: 'bead' },
-    ], 7),
-    bronze,
+  // Brass plaque set into the front of the carved band, following its curve.
+  const arc = 0.62, ph = 0.1, pr = 0.675;
+  const plaque = new THREE.Mesh(
+    new THREE.CylinderGeometry(pr, pr, ph, 48, 1, true, -arc / 2, arc),
+    new THREE.MeshPhysicalMaterial({ color: '#c9a061', metalness: 1, roughness: 0.4 }),
   );
-  stem.castShadow = stem.receiveShadow = true;
-  group.add(stem);
-
-  // Brass plaque, leaning on a small foot at the front of the marble.
-  const plaque = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.125, 0.008), new THREE.MeshPhysicalMaterial({ color: '#ffffff', metalness: 1, roughness: 0.4 }));
-  plaque.position.set(0, 0.258, 0.545);
-  plaque.rotation.x = -0.55;
+  plaque.position.y = 0.283;
   plaque.castShadow = true;
-  plaque.receiveShadow = true;
   plaque.visible = false;
   plaque.userData.loaded = false;
   group.add(plaque);
   plaqueMaterials(name, role).then(({ map, normalMap, roughnessMap }) => {
-    const front = new THREE.MeshPhysicalMaterial({ map, normalMap, roughnessMap, normalScale: new THREE.Vector2(1, 1), metalness: 1, roughness: 1, envMapIntensity: 1.2 });
-    const edge = new THREE.MeshPhysicalMaterial({ color: '#b08a55', metalness: 1, roughness: 0.35 });
-    // Box faces: +x, -x, +y, -y, +z (front), -z.
-    (plaque as THREE.Mesh).material = [edge, edge, edge, edge, front, edge];
+    (plaque as THREE.Mesh).material = new THREE.MeshPhysicalMaterial({
+      map, normalMap, roughnessMap, normalScale: new THREE.Vector2(1, 1), metalness: 1, roughness: 1, envMapIntensity: 1.3,
+    });
     plaque.userData.loaded = true;
     plaque.visible = true;
   });
 
   return {
     group,
-    meshes: [base, marble, stem, plaque],
-    cupTop: 0.955,
-    cupRadius: 0.43,
-    baseTop: 0.207,
-    baseRadius: 0.8 * S,
+    meshes: [base, plaque],
+    cupTop: CUP_TOP,
+    cupRadius: CUP_R,
+    baseTop: 0.39,
+    baseRadius: 0.68,
   };
 }
