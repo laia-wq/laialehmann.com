@@ -331,3 +331,6 @@ html[data-phase='world'] .world-nav { opacity: 1; pointer-events: auto; }
 /* ------------------------------------------------------------ 3D chrome on paper */
 html[data-mode='3d'] body { background: #efe8dc; }
 html[data-mode='3d'] .hint { color: var(--ink-soft); }
+
+.mode-note { max-width: 720px; margin: 16px auto 0; padding: 10px 16px; font-size: 13px; color: var(--ink-soft); background: var(--bg-soft); border-radius: 8px; }
+.mode-note a { color: var(--ink); }

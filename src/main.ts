@@ -16,14 +16,18 @@ function webglAvailable(): boolean {
   }
 }
 
+let reason = '';
+
 function chooseMode(): Mode {
   const q = new URLSearchParams(location.search).get('mode');
-  if (q === '2d' || q === '3d') return q === '3d' && !webglAvailable() ? '2d' : q;
-  if (!webglAvailable()) return '2d';
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return '2d';
+  if (q === '2d') { reason = 'You asked for the simple version.'; return '2d'; }
+  if (!webglAvailable()) { reason = 'This browser has WebGL 2 turned off or unavailable (check that hardware acceleration is on).'; return '2d'; }
+  if (q === '3d') return '3d';
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { reason = 'Your system asks for reduced motion (on Windows: Settings → Accessibility → Visual effects → Animation effects).'; return '2d'; }
   const small = matchMedia('(max-width: 720px)').matches && matchMedia('(pointer: coarse)').matches;
   const lowPower = (navigator.hardwareConcurrency ?? 8) <= 2;
-  if (small || lowPower) return '2d';
+  if (small) { reason = 'Small touch screens get the simple version.'; return '2d'; }
+  if (lowPower) { reason = 'This device looks low-powered.'; return '2d'; }
   return '3d';
 }
 
@@ -45,7 +49,11 @@ function renderIndex(): string {
 
 function boot2D() {
   document.documentElement.dataset.mode = '2d';
-  app.innerHTML = `<main id="content">${renderIndex()}</main>`;
+  const canTry = webglAvailable();
+  const note = reason
+    ? `<p class="mode-note">Showing the simple version. ${reason}${canTry ? ' <a href="?mode=3d">Show the 3D globe</a>' : ''}</p>`
+    : '';
+  app.innerHTML = `<main id="content">${note}${renderIndex()}</main>`;
 }
 
 async function boot3D() {
@@ -137,5 +145,5 @@ async function boot3D() {
   if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __exp: unknown }).__exp = exp;
 }
 
-if (chooseMode() === '3d') boot3D().catch((err) => { console.error(err); boot2D(); });
+if (chooseMode() === '3d') boot3D().catch((err) => { console.error(err); reason = `The 3D scene hit an error: ${String(err?.message ?? err)}`; boot2D(); });
 else boot2D();
