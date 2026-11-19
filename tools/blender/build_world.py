@@ -1102,35 +1102,156 @@ def build_lilies():
                 bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.0012, radius2=0.0001, depth=0.003, location=(x + math.cos(a) * 0.0011, y + math.sin(a) * 0.0011, z + 0.0015))
                 pt = bpy.context.object; pt.rotation_euler = (math.sin(a) * 0.6, -math.cos(a) * 0.6, a); pt.data.materials.append(pinks[i % 8 == 0])
 
+def maple_leaf_image():
+    """A sugar-maple leaf: five pointed, toothed lobes, painted into an RGBA
+    image (white leaf with darker veins; colour comes per leaf)."""
+    import numpy as np
+    S = 256
+    y, x = np.mgrid[0:S, 0:S].astype(np.float32)
+    u = (x - S / 2) / (S / 2); v = (y - S * 0.62) / (S / 2)
+    r = np.hypot(u, v); th = np.arctan2(-v, u)  # up = +pi/2
+    a = th - np.pi / 2
+    lobe = 0.38 + 0.5 * np.abs(np.cos(a * 2.5)) ** 1.6       # five lobes
+    lobe *= np.where(np.abs(a) > 2.4, 0.55, 1.0)              # notch at the stem
+    lobe += 0.05 * np.abs(np.sin(a * 17))                     # teeth
+    alpha = np.clip((lobe - r) * 30, 0, 1)
+    stem = (np.abs(u) < 0.025) & (v > 0) & (v < 0.55)
+    alpha = np.maximum(alpha, stem.astype(np.float32))
+    vein = np.zeros_like(r)
+    for k in range(5):
+        ang = np.pi / 2 + (k - 2) * 0.8
+        d = np.abs(-np.sin(ang) * u + np.cos(ang) * (-v))
+        along = np.cos(ang) * u + np.sin(ang) * (-v)
+        vein = np.maximum(vein, np.clip(1 - d / 0.02, 0, 1) * (along > 0))
+    shade = 0.82 + 0.18 * (1 - r) - 0.25 * vein
+    img = bpy.data.images.new('maple_leaf', S, S, alpha=True)
+    px = np.stack([shade, shade, shade, alpha], -1)[::-1].reshape(-1)
+    img.pixels.foreach_set(px.astype(np.float32))
+    img.pack()
+    return img
+
+def maple_material():
+    m = bpy.data.materials.get('maple_leaves')
+    if m:
+        return m
+    m = bpy.data.materials.new('maple_leaves'); m.use_nodes = True
+    nt = m.node_tree; N = nt.nodes; L = nt.links; b = N['Principled BSDF']
+    t = N.new('ShaderNodeTexImage'); t.image = maple_leaf_image(); t.interpolation = 'Linear'
+    col = N.new('ShaderNodeAttribute'); col.attribute_name = 'leaf_col'
+    mul = N.new('ShaderNodeMix'); mul.data_type = 'RGBA'; mul.blend_type = 'MULTIPLY'; mul.inputs['Factor'].default_value = 1
+    L.new(col.outputs['Color'], mul.inputs[6]); L.new(t.outputs['Color'], mul.inputs[7])
+    L.new(mul.outputs[2], b.inputs['Base Color']); L.new(t.outputs['Alpha'], b.inputs['Alpha'])
+    b.inputs['Roughness'].default_value = 0.55
+    # Light through the leaves: they glow when backlit, like real maples.
+    b.inputs['Subsurface Weight'].default_value = 0.0
+    tr = N.new('ShaderNodeBsdfTranslucent'); L.new(mul.outputs[2], tr.inputs['Color'])
+    mx = N.new('ShaderNodeMixShader'); mx.inputs['Fac'].default_value = 0.35
+    L.new(b.outputs['BSDF'], mx.inputs[1]); L.new(tr.outputs['BSDF'], mx.inputs[2])
+    L.new(mx.outputs['Shader'], N['Material Output'].inputs['Surface'])
+    m.blend_method = 'HASHED' if hasattr(m, 'blend_method') else None
+    return m
+
+MAPLE_PALETTES = {
+    # linear RGB; per-leaf jitter is added around these
+    'scarlet': [(0.9, 0.06, 0.02), (0.75, 0.03, 0.015), (1.0, 0.16, 0.03)],
+    'orange': [(1.0, 0.3, 0.02), (0.95, 0.18, 0.02), (1.0, 0.45, 0.05)],
+    'gold': [(1.0, 0.6, 0.05), (0.95, 0.42, 0.03), (1.0, 0.75, 0.12)],
+    'mixed': [(0.9, 0.07, 0.02), (1.0, 0.32, 0.03), (1.0, 0.62, 0.06)],
+    'magenta': [(0.8, 0.05, 0.22), (0.9, 0.08, 0.12), (0.6, 0.03, 0.25)],
+}
+
+def maple_tree(x, y, H, palette):
+    """A small maple: a short trunk forking into a few limbs, a broad rounded
+    crown of flat leaf cards, and a scatter of fallen leaves underneath."""
+    g = ground_at(x, y)
+    bark = bpy.data.materials.get('maple_bark') or wood_mat('maple_bark', (0.07, 0.05, 0.04))
+    base = Vector((x, y, g - 0.003))
+    fork = base + Vector((random.uniform(-0.004, 0.004), random.uniform(-0.004, 0.004), H * 0.38))
+    tube('maple_trunk', [tuple(base), tuple((base + fork) / 2 + Vector((0.002, 0, 0))), tuple(fork)], H * 0.035, bark)
+    crown_c = fork + Vector((0, 0, H * 0.32))
+    CR = Vector((H * 0.42, H * 0.42, H * 0.34))
+    tips = []
+    for k in range(random.randint(4, 6)):
+        a = k / 5 * math.tau + random.uniform(-0.4, 0.4)
+        tip = crown_c + Vector((math.cos(a) * CR.x * 0.6, math.sin(a) * CR.y * 0.6, random.uniform(-0.1, 0.5) * CR.z))
+        mid = fork + (tip - fork) * 0.5 + Vector((0, 0, H * 0.04))
+        tube('maple_limb', [tuple(fork), tuple(mid), tuple(tip)], H * 0.015, bark)
+        tips.append(tip)
+    # Leaves: on a rounded, slightly lumpy crown, denser near the limb tips.
+    verts, faces, cols = [], [], []
+    pal = MAPLE_PALETTES[palette]
+    n_leaves = int(1700 * (H / 0.12) ** 2)
+    for i in range(n_leaves):
+        if random.random() < 0.55:
+            c = random.choice(tips); r = H * 0.16 * random.random() ** 0.5
+            d = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized() * r
+            p = c + d
+        else:
+            d = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized()
+            p = crown_c + Vector((d.x * CR.x, d.y * CR.y, d.z * CR.z)) * (0.65 + 0.35 * random.random()) * (1 + 0.12 * fbm(d.x * 3, d.y * 3, d.z * 3, 2))
+        size = H * random.uniform(0.055, 0.08)
+        # Mostly facing up and outward, with flutter.
+        out = (p - crown_c); out.z = abs(out.z) + 0.3 * out.length
+        nrm = (out.normalized() + Vector((random.gauss(0, .5), random.gauss(0, .5), random.gauss(0, .5)))).normalized()
+        t1 = nrm.cross(Vector((0, 0, 1)) if abs(nrm.z) < 0.9 else Vector((1, 0, 0))).normalized()
+        t2 = nrm.cross(t1)
+        rot = random.uniform(0, math.tau)
+        t1, t2 = t1 * math.cos(rot) + t2 * math.sin(rot), -t1 * math.sin(rot) + t2 * math.cos(rot)
+        k0 = len(verts)
+        for su, sv in ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)):
+            verts.append(tuple(p + t1 * su * size + t2 * sv * size))
+        faces.append((k0, k0 + 1, k0 + 2, k0 + 3))
+        base_c = random.choice(pal)
+        depth = (p - crown_c).length / max(CR.x, 1e-4)
+        lit = (0.45 + 0.65 * min(1.0, depth)) * (0.8 + 0.35 * max(0.0, (p - crown_c).z / CR.z + 0.4))  # inner leaves darker, top brighter
+        jit = random.uniform(0.85, 1.15)
+        cols.append(tuple(min(1.0, ch * lit * jit) for ch in base_c))
+    # Fallen leaves on the ground beneath.
+    for i in range(int(140 * H / 0.12)):
+        a = random.uniform(0, math.tau); r = H * 0.55 * math.sqrt(random.random())
+        px, py = x + math.cos(a) * r, y + math.sin(a) * r
+        if in_water(px, py) or path_d(px, py) < 0.02:
+            continue
+        pz = ground_at(px, py) + 0.0012
+        size = H * random.uniform(0.04, 0.055); rot = random.uniform(0, math.tau)
+        c_, s_ = math.cos(rot) * size / 2, math.sin(rot) * size / 2
+        k0 = len(verts)
+        verts += [(px - c_ + s_, py - s_ - c_, pz), (px + c_ + s_, py + s_ - c_, pz), (px + c_ - s_, py + s_ + c_, pz), (px - c_ - s_, py - s_ + c_, pz)]
+        faces.append((k0, k0 + 1, k0 + 2, k0 + 3))
+        cols.append(tuple(ch * random.uniform(0.6, 0.95) for ch in random.choice(pal)))
+    me = bpy.data.meshes.new('maple_leaves'); me.from_pydata(verts, [], faces)
+    uv = me.uv_layers.new()
+    for poly in me.polygons:
+        for li, (uu, vv) in zip(poly.loop_indices, ((0, 0), (1, 0), (1, 1), (0, 1))):
+            uv.data[li].uv = (uu, vv)
+    ca = me.color_attributes.new('leaf_col', 'FLOAT_COLOR', 'CORNER')
+    for fi, poly in enumerate(me.polygons):
+        for li in poly.loop_indices:
+            ca.data[li].color = (*cols[fi], 1)
+    me.materials.append(maple_material())
+    o = bpy.data.objects.new('maple_leaves', me); scene.collection.objects.link(o); o['tag'] = 'maple'
+    PLACED.append(o)
+
 def build_maples():
-    """Canadian maples in autumn: a trunk with a few scanned leafy crowns,
-    tinted scarlet, orange and gold, standing in clearings and meadows."""
-    bushes = lib('shrub_02', ['shrub_02_a_LOD2', 'shrub_02_b_LOD2', 'shrub_02_c_LOD2'])
-    tints = [(0.235, 1.7, 1.0, 'scarlet'), (0.255, 1.7, 1.05, 'red-orange'), (0.29, 1.6, 1.1, 'orange'), (0.33, 1.5, 1.15, 'gold')]
-    crowns = {t[3]: [tinted(o, *t) for o in bushes] for t in tints}
-    bark = wood_mat('maple_bark', (0.09, 0.065, 0.05))
+    """Canadian maples in autumn, standing in clearings and meadows."""
+    names = list(MAPLE_PALETTES)
+    weights = [0.28, 0.24, 0.2, 0.18, 0.1]  # magenta as a minority
     k = 0
-    for _ in range(4000):
-        if k >= 14:
+    for _ in range(5000):
+        if k >= 22:
             break
         x, y = rand_disc(0.88)
-        if not ok(x, y, max_slope=0.5, path=0.05, build=0.12) or massif_h(x, y) > 0.04:
+        if not ok(x, y, max_slope=0.5, path=0.04, build=0.08) or massif_h(x, y) > 0.04:
             continue
         if abs(x - LAKE[0]) < LAKE[2] * 1.2 and LAKE[1] - 0.4 < y < LAKE[1]:
             continue
-        H = random.uniform(0.1, 0.14)
-        g = ground_at(x, y)
-        lean = Vector((random.uniform(-0.01, 0.01), random.uniform(-0.01, 0.01), H * 0.6))
-        base = Vector((x, y, g - 0.004))
-        tube('maple_trunk', [tuple(base), tuple(base + lean * 0.5 + Vector((0.003, 0, 0))), tuple(base + lean)], 0.0028, bark)
-        # Two or three crowns, one hue per tree with a neighbouring hue mixed in.
-        hue = random.choice(list(crowns))
-        for c in range(random.randint(4, 5)):
-            src = random.choice(crowns[hue if c < 2 else random.choice(list(crowns))])
-            top = base + lean + Vector((random.uniform(-0.016, 0.016), random.uniform(-0.016, 0.016), random.uniform(-0.012, 0.012)))
-            o = place(src, top.x, top.y, height=H * random.uniform(0.45, 0.65), sink=0, tilt=0.25, tag='maple')
-            o.location.z = top.z - H * 0.15
+        if any(math.hypot(x - o.location.x, y - o.location.y) < 0.07 for o in PLACED if o.get('tag') == 'maple_root'):
+            continue
+        H = random.uniform(0.09, 0.14)
+        maple_tree(x, y, H, random.choices(names, weights)[0])
+        m = bpy.data.objects.new('maple_root', None); m.location = (x, y, 0); m['tag'] = 'maple_root'; scene.collection.objects.link(m); PLACED.append(m)
         k += 1
+
 
 def build_lamps():
     """Stone lanterns along the paths, each with a warm light."""
@@ -1336,11 +1457,37 @@ def tinted(src, hue, sat, val, tag):
         nt = m2.node_tree
         # Tint the colour texture itself (works whether the shader is a
         # Principled BSDF or Poly Haven's node group).
-        for t in [n for n in nt.nodes if n.type == 'TEX_IMAGE' and n.image and n.image.colorspace_settings.name == 'sRGB']:
+        def foliage(img):
+            n_ = img.name.lower()
+            return 'diff' in n_ and ('twig' in n_ or 'leaf' in n_ or 'leaves' in n_ or n_.startswith('shrub'))
+        for t in [n for n in nt.nodes if n.type == 'TEX_IMAGE' and n.image and foliage(n.image)]:
             for link in list(t.outputs['Color'].links):
                 hsv = nt.nodes.new('ShaderNodeHueSaturation')
                 hsv.inputs['Hue'].default_value = hue; hsv.inputs['Saturation'].default_value = sat; hsv.inputs['Value'].default_value = val
                 nt.links.new(t.outputs['Color'], hsv.inputs['Color']); nt.links.new(hsv.outputs['Color'], link.to_socket)
+        o.data.materials[i] = m2
+    o['size'] = tuple(mesh_size(src))
+    return o
+
+def recolored(src, dark, light, tag):
+    """Copy of a plant whose foliage texture is remapped by brightness onto a
+    dark->light colour ramp (bright, predictable autumn colours; bark untouched)."""
+    o = src.copy(); o.data = src.data.copy(); o.name = f'{src.name}_{tag}'
+    for i, m in enumerate(o.data.materials):
+        if not m or not m.node_tree:
+            continue
+        m2 = m.copy(); m2.name = f'{m.name}_{tag}'
+        nt = m2.node_tree
+        for t in [n for n in nt.nodes if n.type == 'TEX_IMAGE' and n.image and 'diff' in n.image.name.lower()
+                  and any(k in n.image.name.lower() for k in ('twig', 'leaf', 'leaves', 'shrub'))]:
+            for link in list(t.outputs['Color'].links):
+                bw = nt.nodes.new('ShaderNodeRGBToBW')
+                ramp = nt.nodes.new('ShaderNodeValToRGB')
+                e = ramp.color_ramp.elements
+                e[0].position = 0.0; e[0].color = (*dark, 1)
+                e[1].position = 0.45; e[1].color = (*light, 1)
+                nt.links.new(t.outputs['Color'], bw.inputs['Color']); nt.links.new(bw.outputs['Val'], ramp.inputs['Fac'])
+                nt.links.new(ramp.outputs['Color'], link.to_socket)
         o.data.materials[i] = m2
     o['size'] = tuple(mesh_size(src))
     return o
@@ -1474,6 +1621,24 @@ def build_vegetation():
     firs = lib('fir_tree_01', ['fir_tree_01_a_LOD2', 'fir_tree_01_b_LOD2', 'fir_tree_01_c_LOD2'])
     saplings = lib('fir_sapling', ['fir_sapling_a', 'fir_sapling_b', 'fir_sapling_c'])
     pines = lib('pine_sapling_small', ['pine_sapling_small_a', 'pine_sapling_small_b', 'pine_sapling_small_c'])
+    # Lively autumn: most conifers turn (golden larch, amber, orange, rust);
+    # about a third stay deep green so the colours have something to sing against.
+    # Hue offsets are relative to the scans' measured foliage hue (~0.10):
+    # Blender's Hue input is 0.5 + shift.
+    # (dark, light) linear colours for each autumn look.
+    AUTUMN = [((0.12, 0.06, 0.005), (1.0, 0.62, 0.08), 'larch'), ((0.12, 0.035, 0.004), (1.0, 0.4, 0.04), 'amber'),
+              ((0.1, 0.018, 0.004), (0.95, 0.22, 0.03), 'orange'), ((0.07, 0.012, 0.004), (0.7, 0.1, 0.03), 'rust'),
+              ((0.07, 0.008, 0.03), (0.75, 0.08, 0.32), 'magenta')]
+    WEIGHTS = [0.27, 0.25, 0.22, 0.16, 0.1]  # magenta stays a minority
+    _var = {}
+    def autumnal(src):
+        if random.random() < 0.25:
+            return src
+        t = random.choices(AUTUMN, WEIGHTS)[0]
+        key = (src.name, t[2])
+        if key not in _var:
+            _var[key] = recolored(src, *t)
+        return _var[key]
     # Groves all the way round, with clearings between them; smaller trees
     # up on the mountain's ledges; a few lone trees in the meadows.
     def grove(x, y):
@@ -1500,7 +1665,7 @@ def build_vegetation():
         if ground_at(x, y) + h > math.sqrt(max(0, INNER * INNER * 0.86 - x * x - y * y)):
             continue
         r = random.random()
-        src = random.choice(saplings) if on_mtn else (random.choice(firs) if r < 0.45 else random.choice(saplings if r < 0.72 else pines))
+        src = autumnal(random.choice(saplings) if on_mtn else (random.choice(firs) if r < 0.45 else random.choice(saplings if r < 0.72 else pines)))
         place(src, x, y, height=h, sink=0.04, tilt=0.05, tag='tree')
         pts.append((x, y)); n += 1
     bushes = lib('shrub_02', ['shrub_02_a_LOD2', 'shrub_02_b_LOD2', 'shrub_02_c_LOD2'])
