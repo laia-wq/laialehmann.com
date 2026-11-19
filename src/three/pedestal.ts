@@ -235,35 +235,39 @@ export function buildPedestal(name: string, role: string): Pedestal {
 
   // Squat turned base: foot, cove, a carved band (flutes between bead rows),
   // a shoulder, and a shallow cup the sphere sits in.
-  const CUP_TOP = 0.45, CUP_R = 0.5;
-  const profile: [number, number][] = [
+  // The base rises to the level of the terrain inside, so its wooden rim
+  // hides the soil and the glass meets the world at ground level.
+  const KX = 1.74, KY = 1.2;
+  const CUP_TOP = 0.45 * KY, CUP_R = 0.5 * KX;
+  const raw: [number, number][] = [
     [0, 0], [0.8, 0], [0.82, 0.012], [0.825, 0.055], [0.81, 0.075], [0.79, 0.085],
     [0.79, 0.1], [0.775, 0.115], [0.745, 0.13], [0.72, 0.15], [0.69, 0.175],
     [0.675, 0.19], [0.68, 0.205], [0.67, 0.215], [0.655, 0.22],
     [0.655, 0.345], // carved band
     [0.67, 0.35], [0.68, 0.365], [0.67, 0.38], [0.645, 0.39], [0.6, 0.405],
-    [0.57, 0.42], [0.56, 0.435], [0.54, 0.448], [CUP_R, CUP_TOP], [0, CUP_TOP],
+    [0.57, 0.42], [0.56, 0.435], [0.54, 0.448], [0.5, 0.45], [0, 0.45],
   ];
+  const profile = raw.map(([r, y]) => [r * KX, y * KY] as [number, number]);
   const base = new THREE.Mesh(
     revolve(profile, 320, [
-      { y0: 0.015, y1: 0.07, lobes: 96, amp: 0.012, shape: 'bead' },
-      { y0: 0.19, y1: 0.215, lobes: 120, amp: 0.018, shape: 'bead' },
-      { y0: 0.222, y1: 0.343, lobes: 44, amp: 0.05, shape: 'flute' },
-      { y0: 0.348, y1: 0.38, lobes: 120, amp: 0.018, shape: 'bead' },
-      { y0: 0.4, y1: 0.445, lobes: 60, amp: 0.025, shape: 'flute' },
-    ], 7),
+      { y0: 0.015, y1: 0.07, lobes: 150, amp: 0.012, shape: 'bead' },
+      { y0: 0.19, y1: 0.215, lobes: 190, amp: 0.018, shape: 'bead' },
+      { y0: 0.222, y1: 0.343, lobes: 70, amp: 0.05, shape: 'flute' },
+      { y0: 0.348, y1: 0.38, lobes: 190, amp: 0.018, shape: 'bead' },
+      { y0: 0.4, y1: 0.445, lobes: 96, amp: 0.025, shape: 'flute' },
+    ].map((b) => ({ ...b, y0: b.y0 * KY, y1: b.y1 * KY })) as Band[], 7),
     wood,
   );
   base.castShadow = base.receiveShadow = true;
   group.add(base);
 
   // Brass plaque set into the front of the carved band, following its curve.
-  const arc = 0.62, ph = 0.1, pr = 0.675;
+  const arc = 0.5, ph = 0.1 * KY, pr = 0.675 * KX;
   const plaque = new THREE.Mesh(
     new THREE.CylinderGeometry(pr, pr, ph, 48, 1, true, -arc / 2, arc),
     new THREE.MeshPhysicalMaterial({ color: '#c9a061', metalness: 1, roughness: 0.4 }),
   );
-  plaque.position.y = 0.283;
+  plaque.position.y = 0.283 * KY;
   plaque.castShadow = true;
   plaque.visible = false;
   plaque.userData.loaded = false;
@@ -281,7 +285,7 @@ export function buildPedestal(name: string, role: string): Pedestal {
     meshes: [base, plaque],
     cupTop: CUP_TOP,
     cupRadius: CUP_R,
-    baseTop: 0.39,
-    baseRadius: 0.68,
+    baseTop: 0.39 * KY,
+    baseRadius: 0.68 * KX,
   };
 }

@@ -254,23 +254,33 @@ for o in stat:
     o.hide_render = True  # avoid double-occluding the terrain bake? keep visible instead
     o.hide_render = False
 
-# Terrain bake on its planar UV.
+# Terrain: gentle ground keeps a top-down planar UV; steep rock (the
+# mountain's faces) is split off and smart-projected so cliffs aren't smeared.
 T = make_real([terrain], 'terrain_bake')
-for uv in T.data.uv_layers:
-    pass
-if 'UVMap' not in T.data.uv_layers:
-    T.data.uv_layers.new(name='UVMap')
-# soil has no planar UV: give everything a fresh smart-projected atlas for the soil part only would be complex;
-# instead re-project planar UVs for all vertices of the joined mesh.
 EDGE = max(abs(v.co.x) for v in T.data.vertices)
+bpy.ops.object.select_all(action='DESELECT'); T.select_set(True); bpy.context.view_layer.objects.active = T
+bpy.ops.object.mode_set(mode='EDIT')
+bm = bmesh.from_edit_mesh(T.data)
+for f in bm.faces:
+    f.select = f.normal.z < 0.8
+bmesh.update_edit_mesh(T.data)
+bpy.ops.mesh.separate(type='SELECTED')
+bpy.ops.object.mode_set(mode='OBJECT')
+C = [o for o in bpy.context.selected_objects if o is not T][0]; C.name = 'cliffs_bake'
 uvl = T.data.uv_layers['UVMap']
 for poly in T.data.polygons:
     for li in poly.loop_indices:
         co = T.data.vertices[T.data.loops[li].vertex_index].co
         uvl.data[li].uv = (co.x / (2 * EDGE) + 0.5, co.y / (2 * EDGE) + 0.5)
+bpy.ops.object.select_all(action='DESELECT'); C.select_set(True); bpy.context.view_layer.objects.active = C
+bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
+bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.002)
+bpy.ops.object.mode_set(mode='OBJECT')
 terrain.hide_render = True
 TM = 1024 if FAST else 2048
 bake(T, TM, 'UVMap', os.path.join(OUT, 'terrain_bake.png'), 4 if FAST else 16)
+bake(C, TM, C.data.uv_layers.active.name, os.path.join(OUT, 'cliffs_bake.png'), 4 if FAST else 16)
+single_material(C, os.path.join(OUT, 'cliffs_bake.png'), 'cliffs_baked')
 
 single_material(S, os.path.join(OUT, 'static_bake.png'), 'static_baked')
 single_material(T, os.path.join(OUT, 'terrain_bake.png'), 'terrain_baked')
@@ -283,7 +293,7 @@ def export(objs, path):
                               export_texcoords=True, export_normals=True, export_materials='EXPORT',
                               export_image_format='AUTO', export_yup=True)
 
-export([S, T], os.path.join(OUT, 'static.glb'))
+export([S, T, C], os.path.join(OUT, 'static.glb'))
 water = [o for o in scene.objects if o.type == 'MESH' and o.name.startswith(WATER_PREFIX)]
 for o in water:
     o.data.materials.clear()

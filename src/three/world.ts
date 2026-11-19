@@ -109,8 +109,9 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
   const gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 
   const waterMat = new THREE.MeshPhysicalMaterial({
-    color: '#1c2f2c', roughness: 0.04, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03,
-    envMapIntensity: 1.6, transparent: true, opacity: 0.9, depthWrite: false,
+    // Still water at sunset: teal depth with a warm rosy sheen from the sky.
+    color: '#3d6c68', emissive: '#4a2c2a', emissiveIntensity: 0.35, roughness: 0.08, metalness: 0,
+    clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.6, transparent: true, opacity: 0.86, depthWrite: false,
   });
   const fallMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uTime },

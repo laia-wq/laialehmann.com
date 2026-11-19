@@ -23,8 +23,8 @@ export interface ExperienceEvents {
 
 // Scene dimensions (world units, floor at y = 0).
 const R = 1;
-const CUP_TOP = 0.45; // rim of the wooden cup the sphere rests in
-const CUP_R = 0.5;
+const CUP_TOP = 0.45 * 1.2; // rim of the wooden base, level with the terrain inside
+const CUP_R = 0.5 * 1.74;
 const CUT_Y = -Math.sqrt(1 - CUP_R * CUP_R); // relative to the centre: the cup hides the glass below this
 const GLOBE_Y = CUP_TOP - CUT_Y;
 
@@ -104,6 +104,8 @@ export class Experience {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Full-resolution transmission so the world seen through the glass is crisp, not hazy.
+    (this.renderer as THREE.WebGLRenderer & { transmissionResolutionScale?: number }).transmissionResolutionScale = 1;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
@@ -234,7 +236,7 @@ export class Experience {
   private globeView() {
     const aspect = this.camera.aspect || 1;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const hh = 1.6; // half the height to frame (stand + sphere + room for the label)
+    const hh = 1.82; // half the height to frame (stand + sphere + room for the label)
     const hw = aspect < 0.8 ? 1.18 : 1.4;
     const dist = Math.max(hh / t, hw / (t * aspect));
     // Look a little below the middle so the label has room under the stand.

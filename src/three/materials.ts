@@ -34,8 +34,8 @@ export function glass(): THREE.MeshPhysicalMaterial {
   const broad = fbmField(S, 5, 4, 71);
   const fine = fbmField(S, 40, 3, 72);
   const rough = fieldToTexture(new Float32Array(S * S).map((_, i) => {
-    const smudge = Math.max(0, broad[i] - 0.6) * 0.12;
-    return 0.004 + smudge + fine[i] * 0.004;
+    const smudge = Math.max(0, broad[i] - 0.72) * 0.05;
+    return 0.0 + smudge + fine[i] * 0.001;
   }), S, S, (v) => { const g = Math.min(255, v * 255); return [g, g, g]; });
   const m = new THREE.MeshPhysicalMaterial({
     color: '#ffffff',
@@ -43,9 +43,9 @@ export function glass(): THREE.MeshPhysicalMaterial {
     roughness: 1,
     roughnessMap: rough,
     transmission: 1,
-    thickness: 0.05,
-    ior: 1.5,
-    dispersion: 0.2,
+    thickness: 0.22,   // thick-walled, water-filled globe: lenses the world at the edges
+    ior: 1.45,
+    dispersion: 0.08,
     envMapIntensity: 3.6,
     specularIntensity: 1,
     side: THREE.FrontSide,
