@@ -151,8 +151,9 @@ export class Experience {
   private buildLights() {
     // Daylight in a quiet room: soft fill, a warm key, a cool rim.
     this.scene.add(new THREE.HemisphereLight('#f3f1ec', '#6e604f', 0.6));
-    const key = new THREE.DirectionalLight('#fff1dd', 2.8);
-    key.position.set(-3.6, 6.2, 4.4);
+    // Golden-hour key, low from the back-left: rims the trees and throws long shadows.
+    const key = new THREE.DirectionalLight('#ffd49a', 3.4);
+    key.position.set(-4.4, 4.6, -1.2);
     key.target.position.set(0, 0.9, 0);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -162,8 +163,11 @@ export class Experience {
     key.shadow.bias = -0.0003;
     key.shadow.normalBias = 0.015;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#dce8f5', 1.3);
+    const rim = new THREE.DirectionalLight('#dce8f5', 1.0);
     rim.position.set(4, 3.5, -4.5);
+    const front = new THREE.DirectionalLight('#fff4e6', 1.2);
+    front.position.set(-1.5, 3, 5);
+    this.scene.add(front);
     this.scene.add(rim);
     const fill = new THREE.DirectionalLight('#e8eef5', 0.5);
     fill.position.set(4, 1.5, 4);
