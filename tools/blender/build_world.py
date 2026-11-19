@@ -78,7 +78,7 @@ def fall_x(y):
 
 # Three falls, one from each peak: (name, x(y) along its line, top y, width scale, tier step)
 FALLS = [
-    ('main', fall_x, 0.0, 1.0, 0.1),
+    ('main', fall_x, 0.0, 1.35, 0.1),
     ('west', lambda y: -0.19 + (0.03 - y) * 0.26 + 0.007 * math.sin(y * 31), 0.03, 0.6, 0.07),
     ('east', lambda y: 0.2 - (0.05 - y) * 0.19 + 0.006 * math.sin(y * 29 + 2), 0.05, 0.5, 0.07),
 ]
@@ -98,9 +98,9 @@ POND = (0.6, -0.03, 0.085, 0.07)
 STREAM = catmull([(0.17, -0.45), (0.29, -0.52), (0.43, -0.52), (0.56, -0.43), (0.62, -0.28), (0.62, -0.14), (0.6, -0.08)], 10)
 PATHS = [
     catmull([(-0.6, -0.55), (-0.42, -0.5), (-0.3, -0.53), (-0.2, -0.5), (-0.1, -0.56), (0.05, -0.6), (0.2, -0.6), (0.3, -0.56), (0.32, -0.45)], 6),  # front, past the lake, over the stepping stones
-    catmull([(0.32, -0.45), (0.36, -0.32), (0.48, -0.24), (0.62, -0.21), (0.74, -0.12), (0.74, 0.04)], 6),   # over the bridge
+    catmull([(0.32, -0.45), (0.37, -0.3), (0.45, -0.23), (0.52, -0.21), (0.57, -0.21), (0.62, -0.21), (0.67, -0.21), (0.72, -0.21), (0.77, -0.13), (0.74, 0.04)], 6),   # over the bridge
     catmull([(-0.42, -0.5), (-0.6, -0.2), (-0.58, 0.18), (-0.36, 0.5), (0.0, 0.64), (0.36, 0.52), (0.62, 0.24), (0.74, 0.04)], 6),  # around the back
-    catmull([(-0.6, -0.12), (-0.5, -0.06), (-0.4, -0.04), (-0.2 + math.cos(math.radians(215)) * 0.3, 0.12 + math.sin(math.radians(215)) * 0.3)], 5),  # spur to the cave
+    catmull([(-0.6, -0.12), (-0.5, -0.06), (-0.4, -0.04), (-0.2 + math.cos(math.radians(215)) * 0.25, 0.12 + math.sin(math.radians(215)) * 0.25)], 5),  # spur to the cave
     catmull([(-0.56, 0.26), (-0.48, 0.28)], 3),  # garden gate
 ]
 BRIDGE = (0.62, -0.21)
@@ -115,6 +115,7 @@ CLEFTS = [_cleft((0.0, 0.06), (0.21, 0.15)), _cleft((0.0, 0.06), (-0.2, 0.12))]
 CAVE_DIR = (math.cos(math.radians(215)), math.sin(math.radians(215)))
 CAVE = (-0.2 + CAVE_DIR[0] * 0.2, 0.12 + CAVE_DIR[1] * 0.2)
 TOWER = (0.47, 0.34)
+WELL = (-0.41, -0.29)
 GARDEN = (-0.4, 0.3, 0.5)     # x, y, facing
 # Everything built: (x, y, keep-clear radius) for plants and moss.
 STRUCTS = []
@@ -213,13 +214,14 @@ _cf = None
 def _init_cave_floor():
     global CAVE_FLOOR, CAVE
     # Walk out from the west peak until we reach its foot, then stand just in front.
-    r = 0.1
-    while r < 0.35 and massif_h(-0.2 + CAVE_DIR[0] * r, 0.12 + CAVE_DIR[1] * r) > 0.03:
-        r += 0.005
+    # The mouth sits on the peak's flank where the rock is ~0.09 tall.
+    r = 0.06
+    while r < 0.35 and massif_h(-0.2 + CAVE_DIR[0] * r, 0.12 + CAVE_DIR[1] * r) > 0.09:
+        r += 0.003
     CAVE = (-0.2 + CAVE_DIR[0] * r, 0.12 + CAVE_DIR[1] * r)
     # Cave floor at the level of the ground just outside the mouth.
     CAVE_FLOOR = 0.0
-    CAVE_FLOOR = (ground_at(CAVE[0] + CAVE_DIR[0] * 0.07, CAVE[1] + CAVE_DIR[1] * 0.07) - GROUND)
+    CAVE_FLOOR = (ground_at(CAVE[0] + CAVE_DIR[0] * 0.012, CAVE[1] + CAVE_DIR[1] * 0.012) - GROUND)
 _init_cave_floor()
 
 def slope_at(x, y, e=0.01):
@@ -403,45 +405,47 @@ def water_material():
     return wm
 
 def curtain_material():
-    """Falling water: long vertical streaks, mostly opaque white at the lip
-    and breaking up into ribbons lower down."""
+    """Falling water as one continuous sheet: brighter, whiter streaks on the
+    drops; paler flowing water on the treads. Streaks change brightness, not
+    opacity, so there are no see-through gaps between them."""
     fm = bpy.data.materials.new('waterfall'); fm.use_nodes = True
     nt = fm.node_tree; N = nt.nodes; L = nt.links; b = N['Principled BSDF']
     tc = N.new('ShaderNodeTexCoord'); sep = N.new('ShaderNodeSeparateXYZ'); L.new(tc.outputs['UV'], sep.inputs['Vector'])
-    mp = N.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (34, 1.2, 1)
+    mp = N.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (30, 1.4, 1)
     L.new(tc.outputs['UV'], mp.inputs['Vector'])
-    nz = N.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 4; nz.inputs['Detail'].default_value = 8; nz.inputs['Roughness'].default_value = 0.65
+    nz = N.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 4; nz.inputs['Detail'].default_value = 8; nz.inputs['Roughness'].default_value = 0.6
     L.new(mp.outputs['Vector'], nz.inputs['Vector'])
-    # Break-up increases with fall distance (V).
-    thr = N.new('ShaderNodeMapRange'); thr.inputs['From Min'].default_value = 0; thr.inputs['From Max'].default_value = 1
-    thr.inputs['To Min'].default_value = 0.36; thr.inputs['To Max'].default_value = 0.56
-    L.new(sep.outputs['Y'], thr.inputs['Value'])
-    sub = N.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; L.new(nz.outputs['Fac'], sub.inputs[0]); L.new(thr.outputs['Result'], sub.inputs[1])
-    sh = N.new('ShaderNodeMath'); sh.operation = 'MULTIPLY'; sh.inputs[1].default_value = 3.0; sh.use_clamp = True
-    L.new(sub.outputs[0], sh.inputs[0])
-    # Soft side edges.
+    streak = N.new('ShaderNodeMapRange'); streak.inputs['From Min'].default_value = 0.35; streak.inputs['From Max'].default_value = 0.65
+    L.new(nz.outputs['Fac'], streak.inputs['Value'])
     edge = N.new('ShaderNodeMath'); edge.operation = 'PINGPONG'; edge.inputs[1].default_value = 0.5
     L.new(sep.outputs['X'], edge.inputs[0])
-    edge2 = N.new('ShaderNodeMath'); edge2.operation = 'MULTIPLY'; edge2.inputs[1].default_value = 2.6; edge2.use_clamp = True
+    edge2 = N.new('ShaderNodeMath'); edge2.operation = 'MULTIPLY'; edge2.inputs[1].default_value = 4.0; edge2.use_clamp = True
     L.new(edge.outputs[0], edge2.inputs[0])
-    a = N.new('ShaderNodeMath'); a.operation = 'MULTIPLY'; L.new(sh.outputs[0], a.inputs[0]); L.new(edge2.outputs[0], a.inputs[1])
-    # 'drop' = 1 where the water falls (white, streaky), 0 on the pool treads
-    # (dark, glassy, mostly transparent).
     dr = N.new('ShaderNodeAttribute'); dr.attribute_name = 'drop'
-    pool_a = N.new('ShaderNodeMath'); pool_a.operation = 'MULTIPLY'; pool_a.inputs[1].default_value = 0.35
-    L.new(edge2.outputs[0], pool_a.inputs[0])
-    am = N.new('ShaderNodeMix'); am.data_type = 'FLOAT'
-    L.new(dr.outputs['Fac'], am.inputs['Factor']); L.new(pool_a.outputs[0], am.inputs[2]); L.new(a.outputs[0], am.inputs[3])
-    L.new(am.outputs[0], b.inputs['Alpha'])
-    cmix = N.new('ShaderNodeMix'); cmix.data_type = 'RGBA'
-    cmix.inputs[6].default_value = (0.05, 0.09, 0.085, 1); cmix.inputs[7].default_value = (0.78, 0.86, 0.88, 1)
-    L.new(dr.outputs['Fac'], cmix.inputs['Factor']); L.new(cmix.outputs[2], b.inputs['Base Color'])
-    em = N.new('ShaderNodeMath'); em.operation = 'MULTIPLY'; em.inputs[1].default_value = 0.12
-    L.new(dr.outputs['Fac'], em.inputs[0]); L.new(em.outputs[0], b.inputs['Emission Strength'])
-    rgh = N.new('ShaderNodeMapRange'); rgh.inputs['To Min'].default_value = 0.02; rgh.inputs['To Max'].default_value = 0.25
+    # Opacity: 0.8 on treads, 0.85-1 on drops (never gappy), soft at the sides.
+    dop = N.new('ShaderNodeMapRange'); dop.inputs['To Min'].default_value = 0.85; dop.inputs['To Max'].default_value = 1.0
+    L.new(streak.outputs['Result'], dop.inputs['Value'])
+    am = N.new('ShaderNodeMix'); am.data_type = 'FLOAT'; am.inputs[2].default_value = 0.8
+    L.new(dr.outputs['Fac'], am.inputs['Factor']); L.new(dop.outputs['Result'], am.inputs[3])
+    a = N.new('ShaderNodeMath'); a.operation = 'MULTIPLY'; L.new(am.outputs[0], a.inputs[0]); L.new(edge2.outputs[0], a.inputs[1])
+    L.new(a.outputs[0], b.inputs['Alpha'])
+    # Colour.
+    dropc = N.new('ShaderNodeMix'); dropc.data_type = 'RGBA'
+    dropc.inputs[6].default_value = (0.62, 0.72, 0.75, 1); dropc.inputs[7].default_value = (0.97, 0.99, 1.0, 1)
+    L.new(streak.outputs['Result'], dropc.inputs['Factor'])
+    treadc = N.new('ShaderNodeMix'); treadc.data_type = 'RGBA'
+    treadc.inputs[6].default_value = (0.22, 0.32, 0.33, 1); treadc.inputs[7].default_value = (0.55, 0.66, 0.68, 1)
+    L.new(streak.outputs['Result'], treadc.inputs['Factor'])
+    cm = N.new('ShaderNodeMix'); cm.data_type = 'RGBA'
+    L.new(dr.outputs['Fac'], cm.inputs['Factor']); L.new(treadc.outputs[2], cm.inputs[6]); L.new(dropc.outputs[2], cm.inputs[7])
+    L.new(cm.outputs[2], b.inputs['Base Color'])
+    em = N.new('ShaderNodeMath'); em.operation = 'MULTIPLY'; em.inputs[1].default_value = 0.35
+    L.new(dr.outputs['Fac'], em.inputs[0])
+    em2 = N.new('ShaderNodeMath'); em2.operation = 'MULTIPLY'; L.new(em.outputs[0], em2.inputs[0]); L.new(streak.outputs['Result'], em2.inputs[1])
+    L.new(em2.outputs[0], b.inputs['Emission Strength'])
+    b.inputs['Emission Color'].default_value = (0.9, 0.95, 1.0, 1)
+    rgh = N.new('ShaderNodeMapRange'); rgh.inputs['To Min'].default_value = 0.04; rgh.inputs['To Max'].default_value = 0.3
     L.new(dr.outputs['Fac'], rgh.inputs['Value']); L.new(rgh.outputs['Result'], b.inputs['Roughness'])
-    b.inputs['Emission Color'].default_value = (0.85, 0.92, 0.96, 1)
-    b.inputs['Subsurface Weight'].default_value = 0.3
     return fm
 
 def curtain(name, lip, drop_to_z, width0, width1, outward, mat, segs=36, cols=6):
@@ -472,19 +476,26 @@ def curtain(name, lip, drop_to_z, width0, width1, outward, mat, segs=36, cols=6)
     return o
 
 def foam(name, x, y, z, rx, ry):
+    """Churned white water: a noise-broken patch with no clean outline."""
     m = bpy.data.materials.new(name); m.use_nodes = True
     nt = m.node_tree; N = nt.nodes; L = nt.links; b = N['Principled BSDF']
-    tc = N.new('ShaderNodeTexCoord'); nz = N.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 90; nz.inputs['Detail'].default_value = 6
-    L.new(tc.outputs['Object'], nz.inputs['Vector'])
+    tc = N.new('ShaderNodeTexCoord')
+    warp = N.new('ShaderNodeTexNoise'); warp.inputs['Scale'].default_value = 3; warp.inputs['Detail'].default_value = 3
+    L.new(tc.outputs['Generated'], warp.inputs['Vector'])
+    mixv = N.new('ShaderNodeMix'); mixv.data_type = 'VECTOR'; mixv.inputs['Factor'].default_value = 0.35
+    L.new(tc.outputs['Generated'], mixv.inputs[4]); L.new(warp.outputs['Color'], mixv.inputs[5])
+    mp = N.new('ShaderNodeMapping'); mp.inputs['Location'].default_value = (-1.0, -1.0, 0.0); mp.inputs['Scale'].default_value = (2, 2, 0)
+    L.new(mixv.outputs[1], mp.inputs['Vector'])
     grad = N.new('ShaderNodeTexGradient'); grad.gradient_type = 'SPHERICAL'
-    mp = N.new('ShaderNodeMapping'); L.new(tc.outputs['Generated'], mp.inputs['Vector'])
-    mp.inputs['Location'].default_value = (-0.5, -0.5, -0.5); mp.inputs['Scale'].default_value = (2, 2, 2)
     L.new(mp.outputs['Vector'], grad.inputs['Vector'])
+    nz = N.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 160; nz.inputs['Detail'].default_value = 10; nz.inputs['Roughness'].default_value = 0.7
+    L.new(tc.outputs['Object'], nz.inputs['Vector'])
     mul = N.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; L.new(nz.outputs['Fac'], mul.inputs[0]); L.new(grad.outputs['Fac'], mul.inputs[1])
-    ramp = N.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].position = 0.2; ramp.color_ramp.elements[1].position = 0.42
+    ramp = N.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].position = 0.42; ramp.color_ramp.elements[1].position = 0.62
+    ramp.color_ramp.elements[1].color = (0.75, 0.75, 0.75, 1)
     L.new(mul.outputs[0], ramp.inputs['Fac']); L.new(ramp.outputs['Color'], b.inputs['Alpha'])
     b.inputs['Base Color'].default_value = (0.95, 0.97, 0.98, 1); b.inputs['Roughness'].default_value = 0.5
-    bpy.ops.mesh.primitive_circle_add(vertices=48, radius=1, fill_type='NGON', location=(x, y, z))
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=8, y_subdivisions=8, size=2, location=(x, y, z))
     o = bpy.context.object; o.name = name; o.scale = (rx, ry, 1); o.data.materials.append(m)
     return o
 
@@ -527,7 +538,7 @@ def build_fall(name, fx, y_top, sc, cm):
     for i, (py, pz) in enumerate(prof):
         t = i / max(1, total - 1)
         d = smoothstep(0.4, 1.4, steep[i])
-        w = (0.016 + 0.026 * t) * sc * (1.0 + 0.45 * (1 - d)) * (1 + 0.12 * math.sin(i * 0.7) + 0.06 * math.sin(i * 2.3))
+        w = (0.016 + 0.026 * t) * sc * (1.0 + 0.3 * (1 - d)) * (1 + 0.06 * math.sin(i * 0.7) + 0.03 * math.sin(i * 2.3))
         x0 = fx(py)
         for j in range(cols + 1):
             u = j / cols - 0.5
@@ -551,8 +562,9 @@ def build_fall(name, fx, y_top, sc, cm):
     for i in range(3, total - 3):
         if prof[i - 3][1] - prof[i][1] > 0.025 and abs(prof[i][1] - prof[i + 3][1]) < 0.004:
             foam(f'foam_{name}{i}', fx(prof[i][0]), prof[i][0] - 0.006, prof[i][1] + 0.01, 0.024 * sc, 0.01 * sc)
-    foam(f'foam_{name}_lake', fx(base_y), base_y - 0.02, LAKE_Z + 0.002, 0.07 * sc, 0.04 * sc)
-    mist(f'mist_{name}', fx(base_y), base_y - 0.012, LAKE_Z + 0.02, (0.06 * sc, 0.04 * sc, 0.035 * sc), 16)
+    # Where the water hits the pool: churned foam and a contained plume of spray.
+    foam(f'foam_{name}_lake', fx(base_y), base_y - 0.018, LAKE_Z + 0.002, 0.05 * sc, 0.035 * sc)
+    mist(f'mist_{name}', fx(base_y), base_y - 0.01, LAKE_Z + 0.028, (0.045 * sc, 0.035 * sc, 0.05 * sc), 45)
 
 def build_water():
     wm = water_material()
@@ -571,7 +583,7 @@ def build_water():
     cm = curtain_material()
     for name, fx, top, sc, _ in FALLS:
         build_fall(name, fx, top, sc, cm)
-    mist('mist_lake', LAKE[0], LAKE[1] + 0.02, LAKE_Z + 0.02, (0.2, 0.1, 0.018), 2)
+    mist('mist_lake', LAKE[0], LAKE[1] + 0.03, LAKE_Z + 0.018, (0.18, 0.08, 0.016), 1.5)
     return None
 
 # ------------------------------------------------------------------ structures
@@ -681,12 +693,14 @@ def build_bridge():
     dark = wood_mat('bridge_beam', (0.13, 0.08, 0.045))
     bx, by = BRIDGE
     STRUCTS.append((bx, by, 0.1))
-    i = min(range(len(STREAM) - 1), key=lambda k: math.hypot(STREAM[k][0] - bx, STREAM[k][1] - by))
-    tx, ty = STREAM[i + 1][0] - STREAM[i][0], STREAM[i + 1][1] - STREAM[i][1]
-    ang = math.atan2(ty, tx) + math.pi / 2          # across the stream
+    # Align with the path, so it leads straight onto and off both ends.
+    pth = PATHS[1]
+    i = min(range(len(pth) - 1), key=lambda k: math.hypot(pth[k][0] - bx, pth[k][1] - by))
+    tx, ty = pth[i + 1][0] - pth[i][0], pth[i + 1][1] - pth[i][1]
+    ang = math.atan2(ty, tx)
     ca, sa = math.cos(ang), math.sin(ang)
     nx, ny = -sa, ca                                # bridge's sideways axis
-    L, W, N, ARCH = 0.19, 0.05, 17, 0.032
+    L, W, N, ARCH = 0.15, 0.048, 15, 0.026
     ends = [ground_at(bx + ca * L / 2 * k, by + sa * L / 2 * k) for k in (-1, 1)]
     base = max(ends) + 0.004
     zf = lambda t: base + ARCH * (1 - (2 * t) ** 2)
@@ -729,16 +743,20 @@ def build_rope_bridges():
     plank = wood_mat('rope_plank', (0.2, 0.13, 0.075))
     rope = wood_mat('rope', (0.32, 0.26, 0.17)); rope.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.95
     for (mx, my), (dx, dy) in CLEFTS:
-        # Anchor on each lip of the cleft.
+        # Anchor both ends at the same height: the lower of the two lips.
+        reach = lambda sgn, k: ground_at(mx + dx * k * sgn, my + dy * k * sgn)
+        lip = {sgn: max(reach(sgn, k / 200) for k in range(4, 20)) for sgn in (-1, 1)}
+        target = min(lip.values()) - 0.004
         ends = []
         for sgn in (-1, 1):
-            k = 0.02
-            while k < 0.12 and ground_at(mx + dx * k * sgn, my + dy * k * sgn) < ground_at(mx + dx * (k + 0.01) * sgn, my + dy * (k + 0.01) * sgn) - 0.002:
-                k += 0.005
-            k += 0.01
-            ends.append((mx + dx * k * sgn, my + dy * k * sgn))
+            k = 0.015
+            while k < 0.1 and reach(sgn, k) < target:
+                k += 0.002
+            ends.append((mx + dx * (k + 0.008) * sgn, my + dy * (k + 0.008) * sgn))
         (ax, ay), (bx, by) = ends
-        za, zb = ground_at(ax, ay) + 0.003, ground_at(bx, by) + 0.003
+        za = zb = target + 0.003
+        for (ex, ey) in ends:  # small timber landing on each lip
+            box('rope_landing', (ex, ey, target + 0.001), (0.026, 0.03, 0.004), math.atan2(dy, dx), plank, bevel=0.0005)
         L = math.hypot(bx - ax, by - ay); ang = math.atan2(by - ay, bx - ax)
         nx, ny = -math.sin(ang), math.cos(ang)
         W, N, SAG = 0.022, max(9, int(L / 0.009)), 0.012 + L * 0.06
@@ -747,10 +765,10 @@ def build_rope_bridges():
             t = (k + 0.5) / N
             px, py = ax + (bx - ax) * t, ay + (by - ay) * t
             slope = (zf(min(1, t + 0.01)) - zf(max(0, t - 0.01))) / (0.02 * L)
-            box('rope_plank', (px, py, zf(t)), (L / N * 0.7, W * random.uniform(0.92, 1.05), 0.003), ang, plank, pitch=-math.atan(slope))
+            box('rope_plank', (px, py, zf(t)), (L / N * 0.72, W, 0.003), ang, plank, pitch=-math.atan(slope))
         for side in (-1, 1):
             ox, oy = nx * W / 2 * side, ny * W / 2 * side
-            hand = [(ax + (bx - ax) * t + ox, ay + (by - ay) * t + oy, zf(t) + 0.02 - 0.004 * 4 * t * (1 - t)) for t in [i / 24 for i in range(25)]]
+            hand = [(ax + (bx - ax) * t + ox, ay + (by - ay) * t + oy, zf(t) + 0.02) for t in [i / 24 for i in range(25)]]
             foot = [(ax + (bx - ax) * t + ox, ay + (by - ay) * t + oy, zf(t) - 0.001) for t in [i / 24 for i in range(25)]]
             tube('rope_hand', hand, 0.0012, rope); tube('rope_foot', foot, 0.001, rope)
             for k in range(1, 8):
@@ -759,64 +777,197 @@ def build_rope_bridges():
             for (ex, ey, ez) in ((ax + ox, ay + oy, za), (bx + ox, by + oy, zb)):
                 box('rope_post', (ex, ey, ez + 0.012), (0.004, 0.004, 0.028), ang, plank, bevel=0.0006)
 
-def build_cave():
-    """A sculpted rock outcrop at the foot of the west peak with an arched
-    tunnel cut through it (boolean), dark inside, lit by a faint warm glow."""
+def cave_chamber():
+    """Ellipsoid chamber behind the mouth: centre, radii (along, across, up), floor z."""
     cx, cy = CAVE
     dx, dy = CAVE_DIR
-    yaw = math.atan2(dy, dx)
-    STRUCTS.append((cx + dx * 0.02, cy + dy * 0.02, 0.075))
     floor = GROUND + CAVE_FLOOR
-    # Outcrop: a displaced, flattened icosphere leaning into the mountain.
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=6, radius=1, location=(cx - dx * 0.005, cy - dy * 0.005, floor + 0.012))
-    o = bpy.context.object; o.name = 'cave_outcrop'; o['tag'] = 'structure'
-    seed = Vector((3.1, 7.7, 1.3))
+    C = Vector((cx - dx * 0.05, cy - dy * 0.05, floor + 0.012))
+    return C, (0.066, 0.05, 0.05), floor
+
+def in_chamber(p, pad=0.0):
+    C, (ra, rc, ru), floor = cave_chamber()
+    dx, dy = CAVE_DIR
+    v = p - C
+    a = v.x * dx + v.y * dy; c = -v.x * dy + v.y * dx
+    return (a / (ra + pad)) ** 2 + (c / (rc + pad)) ** 2 + (v.z / (ru + pad)) ** 2 < 1 and p.z > floor + 0.001
+
+def carve_cave(terrain):
+    """Open the mountain face: remove terrain inside the chamber, then build the
+    chamber's rock walls only where they're inside the mountain."""
+    me = terrain.data
+    bm = bmesh.new(); bm.from_mesh(me)
+    kill = [f for f in bm.faces if any(in_chamber(v.co, 0.002) for v in f.verts)]
+    bmesh.ops.delete(bm, geom=kill, context='FACES')
+    # Rough rock lip around the opening hides the cut edge.
+    edges = [e for e in bm.edges if e.is_boundary and (e.verts[0].co.xy - Vector(CAVE)).length < 0.12]
+    loop = []
+    if edges:
+        adj = {}
+        for e in edges:
+            a_, b_ = e.verts
+            adj.setdefault(a_, []).append(b_); adj.setdefault(b_, []).append(a_)
+        start = edges[0].verts[0]; prev, cur = None, start
+        while True:
+            loop.append(cur.co.copy())
+            nxt = [v for v in adj.get(cur, []) if v is not prev]
+            if not nxt or nxt[0] is start or len(loop) > 2000:
+                break
+            prev, cur = cur, nxt[0]
+    bm.to_mesh(me); bm.free()
+    if len(loop) > 6:
+        # Irregular lip: overlapping lumpy rocks of varied size along the cut edge,
+        # bigger along the top (the brow) and at the sides.
+        lipm = stone_mat('cave_lip')
+        lipm.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (2.2, 2.2, 2.2)  # match the mountain's rock scale
+        [n for n in lipm.node_tree.nodes if n.type == 'HUE_SAT'][0].inputs['Saturation'].default_value = 0.9
+        [n for n in lipm.node_tree.nodes if n.type == 'HUE_SAT'][0].inputs['Value'].default_value = 0.85
+        zs = [v.z for v in loop]; zmin, zmax = min(zs), max(zs)
+        step = max(1, len(loop) // 48)
+        for i in range(0, len(loop), step):
+            v = loop[i]
+            t = (v.z - zmin) / max(1e-4, zmax - zmin)
+            r = random.uniform(0.0035, 0.006) * (1 + 0.6 * t)
+            inset = 0.004
+            bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=1, location=(v.x - CAVE_DIR[0] * inset, v.y - CAVE_DIR[1] * inset, v.z))
+            o = bpy.context.object; o['tag'] = 'structure'
+            seed = random.uniform(0, 50)
+            for vv in o.data.vertices:
+                n = vv.co.normalized()
+                vv.co = n * (1 + 0.35 * fbm(n.x * 2 + seed, n.y * 2, n.z * 2, 3))
+            o.scale = (r * random.uniform(0.9, 1.5), r * random.uniform(0.9, 1.4), r * random.uniform(0.6, 1.0))
+            o.rotation_euler = (random.uniform(0, 3), random.uniform(0, 3), random.uniform(0, 3))
+            bpy.ops.object.transform_apply(scale=True, rotation=True)
+            o.data.shade_smooth() if hasattr(o.data, 'shade_smooth') else None
+            o.data.materials.append(lipm)
+    C, (ra, rc, ru), floor = cave_chamber()
+    dx, dy = CAVE_DIR
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=40, radius=1, location=(0, 0, 0))
+    o = bpy.context.object; o.name = 'cave_chamber'; o['tag'] = 'structure'
     for v in o.data.vertices:
         n = v.co.normalized()
-        k = 1 + 0.28 * fbm(n.x * 2.2 + seed.x, n.y * 2.2 + seed.y, n.z * 2.2, 4) + 0.06 * fbm(n.x * 9, n.y * 9, n.z * 9, 3)
-        k += 0.03 * round(n.z * 6) / 6  # strata ledges, like the mountain
-        v.co = n * k
-    o.scale = (0.08, 0.065, 0.085)
-    o.rotation_euler = (0, 0, yaw)
-    bpy.ops.object.transform_apply(scale=True, rotation=True)
-    o.data.shade_smooth() if hasattr(o.data, 'shade_smooth') else None
-    rockm = stone_mat('outcrop_rock')
-    rockm.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (9, 9, 9)
-    hsv = [n for n in rockm.node_tree.nodes if n.type == 'HUE_SAT'][0]
-    hsv.inputs['Saturation'].default_value = 0.8; hsv.inputs['Value'].default_value = 0.8
-    o.data.materials.append(rockm)
-    # Tunnel cutter: a half-cylinder vault on a box, running into the outcrop.
-    dark = bpy.data.materials.new('cave_dark'); dark.use_nodes = True
-    bb = dark.node_tree.nodes['Principled BSDF']; bb.inputs['Base Color'].default_value = (0.012, 0.01, 0.008, 1); bb.inputs['Roughness'].default_value = 1
-    W, Hw = 0.022, 0.016
-    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=W, depth=0.2, location=(cx + dx * 0.02, cy + dy * 0.02, floor + Hw))
-    vault = bpy.context.object; vault.rotation_euler = (math.pi / 2, 0, yaw + math.pi / 2)
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(cx + dx * 0.02, cy + dy * 0.02, floor + Hw / 2 - 0.004))
-    walls = bpy.context.object; walls.scale = (0.2, W * 2, Hw + 0.008); walls.rotation_euler.z = yaw
-    for cutter in (vault, walls):
-        cutter.data.materials.append(dark)
-        bpy.context.view_layer.objects.active = cutter
-        bpy.ops.object.transform_apply(scale=True, rotation=True)
-        # Taper the far end so the tunnel narrows into darkness.
-        for v in cutter.data.vertices:
-            t = ((v.co.x - cx) * dx + (v.co.y - cy) * dy)  # + toward mouth
-            if t < 0:
-                f = max(0.55, 1 + t * 6)
-                lx, ly = -dy, dx
-                off = (v.co.x - (cx + dx * 0.02)) * lx + (v.co.y - (cy + dy * 0.02)) * ly
-                v.co.x -= lx * off * (1 - f); v.co.y -= ly * off * (1 - f)
-                v.co.z = floor + (v.co.z - floor) * f
-        m = o.modifiers.new('cut', 'BOOLEAN'); m.operation = 'DIFFERENCE'; m.object = cutter; m.solver = 'EXACT'
-        m.material_mode = 'TRANSFER'
-        cutter.hide_render = True; cutter.hide_viewport = True
-    bpy.context.view_layer.objects.active = o
-    for m in list(o.modifiers):
-        bpy.ops.object.modifier_apply(modifier=m.name)
-    # A dark back wall so the tunnel reads as going deep.
-    box('cave_back', (cx - dx * 0.035, cy - dy * 0.035, floor + 0.02), (0.004, 0.05, 0.05), yaw, dark)
-    # Moss on top of the outcrop, rubble at the mouth.
-    lp = bpy.data.lights.new('cave_glow', 'POINT'); lp.energy = 0.12; lp.color = (1.0, 0.62, 0.3); lp.shadow_soft_size = 0.004
-    lo = bpy.data.objects.new('cave_glow', lp); lo.location = (cx - dx * 0.015, cy - dy * 0.015, floor + 0.015); scene.collection.objects.link(lo)
+        k = 1 + 0.12 * fbm(n.x * 3 + 5, n.y * 3, n.z * 3, 4)
+        a, c, u = n.x * ra * k, n.y * rc * k, n.z * ru * k
+        wx, wy = C.x + a * dx - c * dy, C.y + a * dy + c * dx
+        wz = max(C.z + u, floor)  # flat floor
+        v.co = (wx, wy, wz)
+    bm = bmesh.new(); bm.from_mesh(o.data)
+    def outside(f):
+        p = f.calc_center_median()
+        return p.z > ground_at(p.x, p.y) + 0.001  # in open air: that's the mouth
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if outside(f)], context='FACES')
+    bmesh.ops.reverse_faces(bm, faces=bm.faces)  # face inward
+    bm.to_mesh(o.data); bm.free()
+    o.data.shade_smooth()
+    m = stone_mat('cave_rock')
+    hsv = [n for n in m.node_tree.nodes if n.type == 'HUE_SAT'][0]; hsv.inputs['Value'].default_value = 0.4
+    o.data.materials.append(m)
+    STRUCTS.append((CAVE[0], CAVE[1], 0.06))
+
+def build_cave():
+    """Inside the cave: candles on the floor and a ledge, a lantern at the mouth,
+    stalagmites, a little chest."""
+    C, (ra, rc, ru), floor = cave_chamber()
+    dx, dy = CAVE_DIR
+    ax_, ay_ = -dy, dx
+    P = lambda along, across, z: (C.x + dx * along + ax_ * across, C.y + dy * along + ay_ * across, floor + z)
+    wax = wood_mat('wax', (0.82, 0.76, 0.62)); wax.node_tree.nodes['Principled BSDF'].inputs['Subsurface Weight'].default_value = 0.6
+    flame = bpy.data.materials.new('flame'); flame.use_nodes = True
+    fb = flame.node_tree.nodes['Principled BSDF']
+    fb.inputs['Base Color'].default_value = (1, 0.7, 0.3, 1); fb.inputs['Emission Color'].default_value = (1, 0.6, 0.22, 1); fb.inputs['Emission Strength'].default_value = 40
+    def candle(along, across, z0, hgt):
+        x, y, z = P(along, across, z0)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.0019, depth=hgt, location=(x, y, z + hgt / 2))
+        c = bpy.context.object; c.data.materials.append(wax); c['tag'] = 'structure'
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.0011, location=(x, y, z + hgt + 0.0016))
+        f = bpy.context.object; f.scale.z = 1.8; f.data.materials.append(flame)
+        lp = bpy.data.lights.new('candle', 'POINT'); lp.energy = 0.025; lp.color = (1, 0.62, 0.3); lp.shadow_soft_size = 0.001
+        lo = bpy.data.objects.new('candle_light', lp); lo.location = (x, y, z + hgt + 0.004); scene.collection.objects.link(lo)
+    for along, across, hgt in [(-0.03, 0.02, 0.012), (-0.034, 0.012, 0.008), (-0.028, 0.026, 0.006), (-0.012, -0.03, 0.01), (-0.006, -0.034, 0.006), (0.012, -0.03, 0.007)]:
+        candle(along, across, 0.0, hgt)
+    # A rock ledge at the back with three more candles.
+    stone = stone_mat('ledge')
+    lx, ly, lz = P(-0.045, -0.004, 0.012)
+    box('cave_ledge', (lx, ly, lz), (0.016, 0.05, 0.024), math.atan2(dy, dx), stone, bevel=0.003)
+    for k, across in enumerate((-0.016, 0.0, 0.015)):
+        candle(-0.045, across, 0.024, (0.007, 0.011, 0.006)[k])
+    # Stalagmites.
+    for along, across, hgt in [(-0.02, -0.04, 0.02), (-0.04, 0.035, 0.026), (0.0, 0.04, 0.014)]:
+        x, y, z = P(along, across, 0)
+        bpy.ops.mesh.primitive_cone_add(vertices=10, radius1=0.006, radius2=0.0005, depth=hgt, location=(x, y, z + hgt / 2))
+        g = bpy.context.object; g.data.materials.append(stone); g['tag'] = 'structure'
+    # A small wooden chest.
+    wood = wood_mat('chest', (0.2, 0.11, 0.05))
+    cx2, cy2, cz2 = P(-0.02, -0.018, 0.005)
+    box('chest', (cx2, cy2, cz2), (0.014, 0.01, 0.009), math.atan2(dy, dx) + 0.3, wood, bevel=0.0008)
+    # Rough stone steps from the path up to the mouth.
+    mx, my = CAVE
+    yaw = math.atan2(dy, dx)
+    for k in range(4):
+        d = 0.012 + k * 0.011
+        sx, sy = mx + dx * d, my + dy * d
+        top = floor - k * max(0.0, (floor - ground_at(mx + dx * 0.06, my + dy * 0.06)) / 4)
+        if top < ground_at(sx, sy) + 0.001:
+            break
+        box('cave_step', (sx, sy, (top + ground_at(sx, sy)) / 2 - 0.002), (0.012, 0.03 - k * 0.002, top - ground_at(sx, sy) + 0.004), yaw + random.uniform(-0.1, 0.1), stone, bevel=0.0015)
+    # A lantern hanging just inside the mouth.
+    lx, ly, lz = P(0.04, 0.0, 0.036)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.003, depth=0.006, location=(lx, ly, lz))
+    ln = bpy.context.object; ln.data.materials.append(flame)
+    lp = bpy.data.lights.new('lantern', 'POINT'); lp.energy = 0.05; lp.color = (1, 0.65, 0.32)
+    lo = bpy.data.objects.new('lantern', lp); lo.location = (lx, ly, lz); scene.collection.objects.link(lo)
+
+def build_well():
+    """A stone well: coursed stone ring, dark water deep inside, two timber
+    posts with a small tiled gable roof, a windlass with a crank, and a rope
+    down to a bucket that could be lowered."""
+    wx, wy = WELL
+    STRUCTS.append((wx, wy, 0.05))
+    g = min(ground_at(wx + dx, wy + dy) for dx in (-0.02, 0, 0.02) for dy in (-0.02, 0, 0.02)) - 0.002
+    stone = stone_mat('well_stone'); stone.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (30, 30, 30)
+    wood = wood_mat('well_wood', (0.17, 0.1, 0.055))
+    R, BH = 0.018, 0.0055
+    for course in range(4):
+        n = 14
+        for k in range(n):
+            a = (k + 0.5 * (course % 2)) / n * math.tau
+            box('well_block', (wx + math.cos(a) * R, wy + math.sin(a) * R, g + BH * (course + 0.5)),
+                (0.006, R * math.tau / n * 0.92, BH * 0.92), a, stone, bevel=0.0007)
+    # Capstones.
+    for k in range(10):
+        a = k / 10 * math.tau
+        box('well_cap', (wx + math.cos(a) * R, wy + math.sin(a) * R, g + BH * 4 + 0.0015), (0.008, R * math.tau / 10 * 0.95, 0.003), a, stone, bevel=0.0008)
+    # Dark water far down.
+    wm = bpy.data.materials.new('well_water'); wm.use_nodes = True
+    wb = wm.node_tree.nodes['Principled BSDF']; wb.inputs['Base Color'].default_value = (0.005, 0.01, 0.012, 1); wb.inputs['Roughness'].default_value = 0.02
+    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=R - 0.003, depth=0.02, location=(wx, wy, g + 0.004))
+    w = bpy.context.object; w.data.materials.append(wm); w['tag'] = 'structure'
+    # Posts and roof.
+    top = g + 0.062
+    for sgn in (-1, 1):
+        box('well_post', (wx + sgn * (R + 0.003), wy, g + 0.031), (0.003, 0.003, 0.062), 0, wood, bevel=0.0004)
+    roofm = wood_mat('well_roof', (0.24, 0.09, 0.045))
+    for sgn in (-1, 1):
+        box('well_roof', (wx, wy + sgn * 0.009, top + 0.006), (0.05, 0.022, 0.0016), 0, roofm, pitch=0)
+        r = bpy.context.object; r.rotation_euler = (0.6 * sgn, 0, 0)
+    box('well_ridge', (wx, wy, top + 0.0128), (0.052, 0.0025, 0.0025), 0, wood)
+    # Windlass with rope wound on it, and a crank.
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.0022, depth=2 * R + 0.008, location=(wx, wy, g + 0.04))
+    ax = bpy.context.object; ax.rotation_euler = (0, math.pi / 2, 0); ax.data.materials.append(wood); ax['tag'] = 'structure'
+    rope = wood_mat('well_rope', (0.34, 0.28, 0.18))
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.0032, depth=0.014, location=(wx, wy, g + 0.04))
+    coil = bpy.context.object; coil.rotation_euler = (0, math.pi / 2, 0); coil.data.materials.append(rope)
+    box('crank_arm', (wx + R + 0.007, wy, g + 0.036), (0.0015, 0.0015, 0.01), 0, wood)
+    box('crank_handle', (wx + R + 0.009, wy, g + 0.031), (0.005, 0.0015, 0.0015), 0, wood)
+    # Rope down to the bucket, hanging just above the opening.
+    tube('well_rope_line', [(wx, wy - 0.003, g + 0.037), (wx, wy - 0.003, g + 0.03)], 0.0006, rope)
+    bpy.ops.mesh.primitive_cone_add(vertices=16, radius1=0.0038, radius2=0.0048, depth=0.0075, location=(wx, wy - 0.003, g + 0.026))
+    bk = bpy.context.object; bk.data.materials.append(wood); bk['tag'] = 'structure'
+    iron = wood_mat('iron', (0.05, 0.05, 0.05)); iron.node_tree.nodes['Principled BSDF'].inputs['Metallic'].default_value = 0.8
+    for zz in (0.024, 0.028):
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.0044 if zz > 0.025 else 0.0041, minor_radius=0.0004, location=(wx, wy - 0.003, g + zz))
+        bpy.context.object.data.materials.append(iron)
+    tube('bucket_bail', [(wx - 0.0045, wy - 0.003, g + 0.0298), (wx, wy - 0.003, g + 0.0335), (wx + 0.0045, wy - 0.003, g + 0.0298)], 0.0004, iron)
 
 def build_tower():
     """An old ruined stone watchtower."""
@@ -1258,6 +1409,7 @@ def setup_render():
 if __name__ == '__main__':
     build_soil()
     terrain = build_terrain()
+    carve_cave(terrain)
     global SHELF
     SHELF = build_water()
     build_pavilions()
@@ -1266,6 +1418,7 @@ if __name__ == '__main__':
     build_cave()
     build_tower()
     build_garden()
+    build_well()
     build_rocks()
     build_vegetation()
     if MODE == 'render':
