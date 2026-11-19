@@ -581,8 +581,9 @@ def build_fall(name, fx, y_top, sc, cm):
     # Where the water hits the pool: churned foam and a contained plume of spray.
     foam(f'foam_{name}_lake', fx(base_y), base_y - 0.014, LAKE_Z + 0.002, 0.05 * sc, 0.035 * sc)
     # Thick spray: a dense plume at the plunge and a softer cloud rising up the drop.
-    mist(f'mist_{name}', fx(base_y), base_y - 0.006, LAKE_Z + 0.03, (0.075 * sc, 0.06 * sc, 0.07 * sc), 90)
-    mist(f'mist_{name}_rise', fx(base_y + 0.03), base_y + 0.02, LAKE_Z + 0.08, (0.06 * sc, 0.05 * sc, 0.09 * sc), 25)
+    # Same-sized plume for every fall, so all three read clearly.
+    mist(f'mist_{name}', fx(base_y), base_y - 0.006, LAKE_Z + 0.025, (0.055, 0.045, 0.05), 80)
+    mist(f'mist_{name}_rise', fx(base_y + 0.025), base_y + 0.018, LAKE_Z + 0.06, (0.04, 0.035, 0.06), 30)
     # The source: a dark wet cleft in the rock that the water spills out of.
     ty, tz = prof[0]
     spring(f'spring_{name}', fx(ty), ty, tz, sc)
@@ -1253,6 +1254,26 @@ def build_maples():
         k += 1
 
 
+def build_glow_lights():
+    """Soft yellow glows hanging in the groves: tiny warm bulbs with light,
+    clustered where the trees are dense, so the woods aren't dark."""
+    glow = bpy.data.materials.new('fairy'); glow.use_nodes = True
+    gb = glow.node_tree.nodes['Principled BSDF']; gb.inputs['Base Color'].default_value = (1, 0.85, 0.55, 1)
+    gb.inputs['Emission Color'].default_value = (1, 0.72, 0.38, 1); gb.inputs['Emission Strength'].default_value = 25
+    trees = [o for o in PLACED if o.get('tag') in ('tree', 'maple_root')]
+    n = 0
+    for o in random.sample(trees, min(len(trees), 70)):
+        x, y = o.location.x, o.location.y
+        for _ in range(random.randint(2, 4)):
+            px, py = x + random.uniform(-0.035, 0.035), y + random.uniform(-0.035, 0.035)
+            pz = ground_at(px, py) + random.uniform(0.03, 0.09)
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=5, radius=0.0012, location=(px, py, pz))
+            b = bpy.context.object; b.data.materials.append(glow); b['tag'] = 'fairy'
+            if n % 2 == 0:
+                lp = bpy.data.lights.new('fairy', 'POINT'); lp.energy = 0.035; lp.color = (1, 0.74, 0.42); lp.shadow_soft_size = 0.006
+                lo = bpy.data.objects.new('fairy_light', lp); lo.location = (px, py, pz); scene.collection.objects.link(lo)
+            n += 1
+
 def build_lamps():
     """Stone lanterns along the paths, each with a warm light."""
     stone = stone_mat('lamp_stone'); stone.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (40, 40, 40)
@@ -1287,11 +1308,12 @@ def build_lamps():
 def build_tower():
     """An old ruined stone watchtower."""
     tx, ty = TOWER
-    STRUCTS.append((tx, ty, 0.055))
-    g = min(ground_at(tx + dx, ty + dy) for dx in (-0.03, 0, 0.03) for dy in (-0.03, 0, 0.03)) - 0.004
+    STRUCTS.append((tx, ty, 0.085))
+    g = min(ground_at(tx + dx, ty + dy) for dx in (-0.05, 0, 0.05) for dy in (-0.05, 0, 0.05)) - 0.004
     stone = stone_mat('tower_stone')
     stone.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (22, 22, 22)
-    H, R = 0.13, 0.024
+    H, R = 0.28, 0.042
+    K = R / 0.024  # detail scale vs. the original small tower
     bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=R, depth=H, location=(tx, ty, g + H / 2))
     t = bpy.context.object; t.name = 'tower'; t['tag'] = 'structure'; t.data.materials.append(stone)
     # Slight batter (wider at the base) and hand-laid irregularity.
@@ -1300,29 +1322,33 @@ def build_tower():
         v.co.x *= k; v.co.y *= k
     sub = t.modifiers.new('sub', 'SUBSURF'); sub.levels = 1; sub.subdivision_type = 'SIMPLE'
     tex = bpy.data.textures.new('tower_noise', 'CLOUDS'); tex.noise_scale = 0.006
-    dm = t.modifiers.new('rough', 'DISPLACE'); dm.texture = tex; dm.strength = 0.0018
+    dm = t.modifiers.new('rough', 'DISPLACE'); dm.texture = tex; dm.strength = 0.0028
     # Corbelled ring and crenellations, with a broken section.
-    bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=R * 1.12, depth=0.008, location=(tx, ty, g + H - 0.004))
+    bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=R * 1.12, depth=0.008 * K, location=(tx, ty, g + H - 0.004 * K))
     ring = bpy.context.object; ring.data.materials.append(stone); ring['tag'] = 'structure'
     for k in range(12):
         a = k / 12 * math.tau
         if 7 <= k <= 9:
             continue  # collapsed
-        hh = 0.012 if k not in (6, 10) else 0.006
-        box('merlon', (tx + math.cos(a) * R * 1.05, ty + math.sin(a) * R * 1.05, g + H + hh / 2), (0.008, 0.006, hh), a + math.pi / 2, stone, bevel=0.0008)
+        hh = (0.012 if k not in (6, 10) else 0.006) * K
+        box('merlon', (tx + math.cos(a) * R * 1.05, ty + math.sin(a) * R * 1.05, g + H + hh / 2), (0.008 * K, 0.006 * K, hh), a + math.pi / 2, stone, bevel=0.0008 * K)
     # Rubble from the collapse.
     for k in range(4):
         a = 8 / 12 * math.tau + random.uniform(-0.3, 0.3); rr = R * random.uniform(1.4, 2.4)
         box('rubble', (tx + math.cos(a) * rr, ty + math.sin(a) * rr, ground_at(tx + math.cos(a) * rr, ty + math.sin(a) * rr) + 0.002),
-            (random.uniform(0.004, 0.008),) * 3, random.uniform(0, 3), stone, bevel=0.001)
+            (random.uniform(0.004, 0.008) * K,) * 3, random.uniform(0, 3), stone, bevel=0.001)
     # Windows (dark, arched slits) and a wooden door, facing the paths.
     dark = bpy.data.materials.new('window_dark'); dark.use_nodes = True
     dark.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.01, 0.009, 0.008, 1)
     door = wood_mat('tower_door', (0.12, 0.07, 0.04))
-    for a, z, w_, h_ in ((-2.4, 0.07, 0.005, 0.012), (-0.9, 0.1, 0.005, 0.012), (1.0, 0.05, 0.005, 0.01)):
-        box('window', (tx + math.cos(a) * R * 0.99, ty + math.sin(a) * R * 0.99, g + z), (0.003, w_, h_), a, dark)
+    for a, z, w_, h_ in ((-2.4, 0.15, 0.006, 0.016), (-0.9, 0.21, 0.006, 0.016), (1.0, 0.1, 0.006, 0.014), (-1.6, 0.25, 0.006, 0.014), (2.2, 0.19, 0.006, 0.016)):
+        box('window', (tx + math.cos(a) * R * 0.99, ty + math.sin(a) * R * 0.99, g + z), (0.004, w_, h_), a, dark)
+        # warm light in a couple of windows
+        if a in (-0.9, 1.0):
+            lp = bpy.data.lights.new('tower_window', 'POINT'); lp.energy = 0.04; lp.color = (1, 0.66, 0.34)
+            lo = bpy.data.objects.new('tower_window', lp); lo.location = (tx + math.cos(a) * R * 0.7, ty + math.sin(a) * R * 0.7, g + z); scene.collection.objects.link(lo)
     a = math.atan2(-0.1 - ty, 0.36 - tx)  # door toward the path
-    box('door', (tx + math.cos(a) * R * 1.04, ty + math.sin(a) * R * 1.04, g + 0.012), (0.003, 0.011, 0.02), a, door, bevel=0.0006)
+    box('door', (tx + math.cos(a) * R * 1.04, ty + math.sin(a) * R * 1.04, g + 0.016), (0.004, 0.016, 0.03), a, door, bevel=0.0008)
 
 def build_garden():
     """A small fenced garden: raised beds, rows of plants, a birdhouse."""
@@ -1617,6 +1643,45 @@ def build_rocks():
             put(x, y, random.uniform(0.03, 0.07), 0.7)
 
 # ------------------------------------------------------------------ layer 5-8: vegetation
+def lily_plant(name, color):
+    """One lily plant (source object, kept out of the scene): a stem with
+    strap leaves and two six-petalled trumpets, unit height."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    def quad(a, b, c, d):
+        vs = [bm.verts.new(p) for p in (a, b, c, d)]; bm.faces.new(vs)
+    # Stem.
+    for k in range(8):
+        z0, z1 = k / 8 * 0.85, (k + 1) / 8 * 0.85
+        quad((-0.012, 0, z0), (0.012, 0, z0), (0.012, 0, z1), (-0.012, 0, z1))
+        quad((0, -0.012, z0), (0, 0.012, z0), (0, 0.012, z1), (0, -0.012, z1))
+    # Strap leaves.
+    for k in range(6):
+        a = k / 6 * math.tau + 0.3; z = 0.1 + k * 0.1
+        dx, dy = math.cos(a), math.sin(a)
+        quad((0, 0, z), (dx * 0.04, dy * 0.04, z + 0.02), (dx * 0.22, dy * 0.22, z + 0.06), (dx * 0.2, dy * 0.2, z + 0.03))
+    # Two trumpets: six petals each, flaring and curling back.
+    for (hx, hy, hz, tilt) in ((0.03, 0.0, 0.9, 0.5), (-0.05, 0.03, 0.8, 0.8)):
+        for k in range(6):
+            a = k / 6 * math.tau
+            dx, dy = math.cos(a), math.sin(a)
+            base = Vector((hx, hy, hz))
+            out = Vector((dx, dy, 0)).normalized()
+            up = Vector((0, 0, 1))
+            pts = [base + (out * 0.03 + up * 0.0), base + (out * 0.1 + up * 0.08), base + (out * 0.17 + up * 0.1)]
+            side = Vector((-dy, dx, 0)) * 0.035
+            quad(pts[0] - side * 0.4, pts[0] + side * 0.4, pts[1] + side, pts[1] - side)
+            quad(pts[1] - side, pts[1] + side, pts[2] + side * 0.3, pts[2] - side * 0.3)
+    bm.to_mesh(me); bm.free()
+    stem = bpy.data.materials.get('lily_stem') or wood_mat('lily_stem', (0.12, 0.3, 0.06))
+    petal = wood_mat(name + '_petal', color); petal.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.45
+    me.materials.append(stem); me.materials.append(petal)
+    for poly in me.polygons:
+        poly.material_index = 1 if poly.index >= 16 + 6 else 0
+    o = bpy.data.objects.new(name, me)
+    o['size'] = (0.4, 0.4, 1.0)
+    return o
+
 def build_vegetation():
     firs = lib('fir_tree_01', ['fir_tree_01_a_LOD2', 'fir_tree_01_b_LOD2', 'fir_tree_01_c_LOD2'])
     saplings = lib('fir_sapling', ['fir_sapling_a', 'fir_sapling_b', 'fir_sapling_c'])
@@ -1672,17 +1737,17 @@ def build_vegetation():
     build_maples()
 
     # Shrubs and bushes at forest edges and around boulders.
-    scatter(bushes, 40, lambda: random.uniform(0.05, 0.1) * VEG / 0.72, lambda x, y: ok(x, y, max_slope=0.6) and y > -0.4, 'shrub', cluster=(4, 2, -0.05), min_d=0.04)
+    # (Dark shrubs removed: the open ground goes to flower fields instead.)
     tall = lib('shrub_03', ['shrub_03_a_LOD2', 'shrub_03_b_LOD2', 'shrub_03_c_LOD1'])
-    scatter(tall, 70, lambda: random.uniform(0.04, 0.07), lambda x, y: ok(x, y), 'weed', mode='height', cluster=(5, 4, 0.0))
+    scatter(tall, 25, lambda: random.uniform(0.04, 0.07), lambda x, y: ok(x, y), 'weed', mode='height', cluster=(5, 4, 0.0))
     # Ferns along the water.
     ferns = lib('fern_02', ['fern_02*'])
     scatter(ferns, 60, lambda: random.uniform(0.05, 0.085), lambda x, y: ok(x, y, water=0.005) and in_water(x, y, 0.08), 'fern')
     # Nettles, weeds and grass clumps fill the gaps.
     nettle = lib('nettle_plant', ['nettle_plant_medium_a_LOD3', 'nettle_plant_medium_b_LOD3'])
-    scatter(nettle, 120, lambda: random.uniform(0.025, 0.045), lambda x, y: ok(x, y), 'weed', mode='height', cluster=(6, 8, 0.05))
+    scatter(nettle, 40, lambda: random.uniform(0.025, 0.045), lambda x, y: ok(x, y), 'weed', mode='height', cluster=(6, 8, 0.05))
     weeds = lib('weed_plant_02', ['weed_plant_02_a_LOD3', 'weed_plant_02_b_LOD3'])
-    scatter(weeds, 140, lambda: random.uniform(0.03, 0.05), lambda x, y: ok(x, y), 'weed', cluster=(5, 11, -0.1))
+    scatter(weeds, 50, lambda: random.uniform(0.03, 0.05), lambda x, y: ok(x, y), 'weed', cluster=(5, 11, -0.1))
     grass = lib('grass_medium_01', ['grass_medium_01_geonodes_large_a_LOD2', 'grass_medium_01_geonodes_large_b_LOD2'])
     scatter(grass, 500, lambda: random.uniform(0.04, 0.07), lambda x, y: ok(x, y, max_slope=0.5), 'grass', cluster=(3, 5, -0.15))
     sorrel = lib('shrub_sorrel_01', ['shrub_sorrel_01*'])
@@ -1695,20 +1760,26 @@ def build_vegetation():
         'purple': lib('periwinkle_plant', ['periwinkle_plant_01_LOD6', 'periwinkle_plant_02_LOD6']),
         'gold': lib('flower_empodium', ['flower_empodium_a_LOD2', 'flower_empodium_c_LOD2', 'flower_empodium_e_LOD2']),
     }
-    drifts = 34
+    # Lilies: tall stems with six-petalled trumpets, in white, pink and orange.
+    for nm, col in (('lily_white', (0.95, 0.92, 0.86)), ('lily_pink', (0.95, 0.45, 0.6)), ('lily_orange', (1.0, 0.42, 0.08))):
+        flowers[nm] = [lily_plant(nm, col)]
+    drifts = 60
     for d in range(drifts):
         for _ in range(200):
             cx, cy = rand_disc(0.85)
             if ok(cx, cy, max_slope=0.4) and massif_h(cx, cy) < 0.05:
                 break
-        kind = random.choice(['yellow', 'purple', 'purple', 'orange', 'gold', 'yellow'])
-        rad = random.uniform(0.06, 0.13)
-        for _ in range(random.randint(25, 55)):
+        kind = random.choice(['yellow', 'purple', 'purple', 'orange', 'gold', 'yellow', 'lily_white', 'lily_pink', 'lily_orange', 'lily_pink'])
+        rad = random.uniform(0.07, 0.15)
+        for _ in range(random.randint(45, 90)):
             a = random.uniform(0, math.tau); r = rad * math.sqrt(random.random())
             x, y = cx + math.cos(a) * r, cy + math.sin(a) * r
             if not ok(x, y, max_slope=0.5):
                 continue
-            place(random.choice(flowers[kind]), x, y, width=random.uniform(0.03, 0.05), sink=0.0, tilt=0.15, tag='flower')
+            if kind.startswith('lily'):
+                place(flowers[kind][0], x, y, height=random.uniform(0.022, 0.034), sink=0.0, tilt=0.12, tag='flower')
+            else:
+                place(random.choice(flowers[kind]), x, y, width=random.uniform(0.03, 0.05), sink=0.0, tilt=0.15, tag='flower')
 
 # ------------------------------------------------------------------ layer 9: moss (render only)
 def build_moss(terrain):
@@ -1752,16 +1823,23 @@ def setup_render():
     w = bpy.data.worlds.new('w'); scene.world = w; w.use_nodes = True
     nt = w.node_tree
     env = nt.nodes.new('ShaderNodeTexEnvironment'); env.image = bpy.data.images.load(os.path.join(ASSETS, 'hdri', 'sunset_forest_2k.hdr'))
-    bg = nt.nodes['Background']; bg.inputs['Strength'].default_value = 0.75
-    nt.links.new(env.outputs['Color'], bg.inputs['Color'])
+    bg = nt.nodes['Background']; bg.inputs['Strength'].default_value = 0.35
+    tint = nt.nodes.new('ShaderNodeMix'); tint.data_type = 'RGBA'; tint.blend_type = 'MULTIPLY'; tint.inputs['Factor'].default_value = 1
+    tint.inputs[7].default_value = (1.0, 0.7, 0.62, 1)  # rosy sunset sky
+    nt.links.new(env.outputs['Color'], tint.inputs[6]); nt.links.new(tint.outputs[2], bg.inputs['Color'])
     lp = nt.nodes.new('ShaderNodeLightPath')
-    paper = nt.nodes.new('ShaderNodeBackground'); paper.inputs['Color'].default_value = (0.86, 0.82, 0.75, 1)
+    paper = nt.nodes.new('ShaderNodeBackground'); paper.inputs['Color'].default_value = (0.92, 0.7, 0.6, 1)
     mixs = nt.nodes.new('ShaderNodeMixShader')
     nt.links.new(lp.outputs['Is Camera Ray'], mixs.inputs['Fac']); nt.links.new(bg.outputs['Background'], mixs.inputs[1]); nt.links.new(paper.outputs['Background'], mixs.inputs[2])
     nt.links.new(mixs.outputs['Shader'], nt.nodes['World Output'].inputs['Surface'])
-    sun = bpy.data.lights.new('sun', 'SUN'); sun.energy = 6.0; sun.color = (1.0, 0.78, 0.5); sun.angle = math.radians(2)
+    # Sunset: a low, deep-orange sun from the back-left; a soft pink sky fill
+    # from the front-right; a lilac bounce from below the horizon.
+    sun = bpy.data.lights.new('sun', 'SUN'); sun.energy = 10.0; sun.color = (1.0, 0.5, 0.2); sun.angle = math.radians(3)
     so = bpy.data.objects.new('sun', sun); scene.collection.objects.link(so)
-    so.rotation_euler = (math.radians(68), 0, math.radians(-140))
+    so.rotation_euler = (math.radians(77), 0, math.radians(-145))
+    sky = bpy.data.lights.new('sky_fill', 'SUN'); sky.energy = 1.6; sky.color = (1.0, 0.55, 0.62); sky.angle = math.radians(25)
+    ko = bpy.data.objects.new('sky_fill', sky); scene.collection.objects.link(ko)
+    ko.rotation_euler = (math.radians(55), 0, math.radians(35))
     cam = bpy.data.cameras.new('cam'); cam.lens = 50
     co = bpy.data.objects.new('cam', cam); scene.collection.objects.link(co)
     co.location = (0.0, -2.8, 0.85)
@@ -1772,7 +1850,7 @@ def setup_render():
     scene.cycles.samples = int(os.environ.get('SAMPLES', 48)); scene.cycles.use_denoising = True; scene.cycles.max_bounces = 6
     res = int(os.environ.get('RES', 1100))
     scene.render.resolution_x, scene.render.resolution_y = res, int(res * 0.8)
-    scene.view_settings.view_transform = 'AgX'; scene.view_settings.look = 'AgX - Medium High Contrast'; scene.view_settings.exposure = 0.35
+    scene.view_settings.view_transform = 'AgX'; scene.view_settings.look = 'AgX - Medium High Contrast'; scene.view_settings.exposure = 0.8
     scene.render.threads_mode = 'FIXED'; scene.render.threads = 4
 
 if __name__ == '__main__':
@@ -1793,6 +1871,7 @@ if __name__ == '__main__':
     build_lilies()
     build_rocks()
     build_vegetation()
+    build_glow_lights()
     if MODE == 'render':
         build_moss(terrain)
     setup_render()
