@@ -1106,7 +1106,7 @@ def build_maples():
     """Canadian maples in autumn: a trunk with a few scanned leafy crowns,
     tinted scarlet, orange and gold, standing in clearings and meadows."""
     bushes = lib('shrub_02', ['shrub_02_a_LOD2', 'shrub_02_b_LOD2', 'shrub_02_c_LOD2'])
-    tints = [(0.17, 1.6, 0.95, 'scarlet'), (0.22, 1.6, 1.0, 'crimson'), (0.27, 1.5, 1.05, 'orange'), (0.31, 1.4, 1.1, 'gold')]
+    tints = [(0.235, 1.7, 1.0, 'scarlet'), (0.255, 1.7, 1.05, 'red-orange'), (0.29, 1.6, 1.1, 'orange'), (0.33, 1.5, 1.15, 'gold')]
     crowns = {t[3]: [tinted(o, *t) for o in bushes] for t in tints}
     bark = wood_mat('maple_bark', (0.09, 0.065, 0.05))
     k = 0
@@ -1125,10 +1125,10 @@ def build_maples():
         tube('maple_trunk', [tuple(base), tuple(base + lean * 0.5 + Vector((0.003, 0, 0))), tuple(base + lean)], 0.0028, bark)
         # Two or three crowns, one hue per tree with a neighbouring hue mixed in.
         hue = random.choice(list(crowns))
-        for c in range(random.randint(2, 3)):
+        for c in range(random.randint(4, 5)):
             src = random.choice(crowns[hue if c < 2 else random.choice(list(crowns))])
-            top = base + lean + Vector((random.uniform(-0.012, 0.012), random.uniform(-0.012, 0.012), random.uniform(-0.008, 0.01)))
-            o = place(src, top.x, top.y, height=H * random.uniform(0.5, 0.7), sink=0, tilt=0.15, tag='maple')
+            top = base + lean + Vector((random.uniform(-0.016, 0.016), random.uniform(-0.016, 0.016), random.uniform(-0.012, 0.012)))
+            o = place(src, top.x, top.y, height=H * random.uniform(0.45, 0.65), sink=0, tilt=0.25, tag='maple')
             o.location.z = top.z - H * 0.15
         k += 1
 
