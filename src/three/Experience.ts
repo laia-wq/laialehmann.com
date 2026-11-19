@@ -5,7 +5,8 @@ import { Snow } from './snow';
 import { crackMaterial, fractureSphere, type Fracture } from './fracture';
 import { ShatterSim } from './shatter';
 import { buildPedestal, type Pedestal } from './pedestal';
-import { buildInterior, type Interior } from './interior';
+import type { Interior } from './interior';
+import { buildBlenderWorld } from './world';
 import { contactBlob, paperBackdrop, shadowCatcher } from './setting';
 import { Post } from './post';
 import type { Project } from '../content/projects';
@@ -123,7 +124,7 @@ export class Experience {
     this.pedestal = buildPedestal('Laia Lehmann', 'Systems Design Engineering');
     this.root.add(this.pedestal.group);
     const t0 = performance.now();
-    this.interior = buildInterior(this.globeCenter, R);
+    this.interior = buildBlenderWorld(this.globeCenter, this.renderer);
     if (new URLSearchParams(location.search).has('debug')) console.info(`interior built in ${(performance.now() - t0).toFixed(0)} ms`);
     this.root.add(this.interior.group);
     this.buildGlobe();
@@ -150,9 +151,9 @@ export class Experience {
 
   private buildLights() {
     // Daylight in a quiet room: soft fill, a warm key, a cool rim.
-    this.scene.add(new THREE.HemisphereLight('#f3f1ec', '#6e604f', 0.6));
+    this.scene.add(new THREE.HemisphereLight('#ffd9cc', '#6e504a', 0.55));
     // Golden-hour key, low from the back-left: rims the trees and throws long shadows.
-    const key = new THREE.DirectionalLight('#ffd49a', 3.4);
+    const key = new THREE.DirectionalLight('#ffb57a', 3.6);
     key.position.set(-4.4, 4.6, -1.2);
     key.target.position.set(0, 0.9, 0);
     key.castShadow = true;
@@ -163,13 +164,13 @@ export class Experience {
     key.shadow.bias = -0.0003;
     key.shadow.normalBias = 0.015;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#dce8f5', 1.0);
+    const rim = new THREE.DirectionalLight('#f2b8c8', 1.1);
     rim.position.set(4, 3.5, -4.5);
-    const front = new THREE.DirectionalLight('#fff4e6', 1.2);
+    const front = new THREE.DirectionalLight('#ffd8bf', 1.1);
     front.position.set(-1.5, 3, 5);
     this.scene.add(front);
     this.scene.add(rim);
-    const fill = new THREE.DirectionalLight('#e8eef5', 0.5);
+    const fill = new THREE.DirectionalLight('#f0c8d0', 0.45);
     fill.position.set(4, 1.5, 4);
     this.scene.add(fill);
 

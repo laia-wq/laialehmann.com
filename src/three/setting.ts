@@ -18,7 +18,7 @@ export function paperBackdrop(): { texture: THREE.CanvasTexture; fit(aspect: num
   c.width = W; c.height = H;
   const g = c.getContext('2d')!;
   const r = rng(77);
-  g.fillStyle = '#f3ede2';
+  g.fillStyle = '#f6e4d8';
   g.fillRect(0, 0, W, H);
   // Large soft mottling.
   const low = fbmField(256, 4, 4, 81);
@@ -47,8 +47,8 @@ export function paperBackdrop(): { texture: THREE.CanvasTexture; fit(aspect: num
   }
   // Soft vignette and a gentle light pool behind the globe.
   const v = g.createRadialGradient(W / 2, H * 0.45, H * 0.2, W / 2, H * 0.5, W * 0.62);
-  v.addColorStop(0, 'rgba(255,250,240,0.25)');
-  v.addColorStop(1, 'rgba(90,70,50,0.22)');
+  v.addColorStop(0, 'rgba(255,236,222,0.35)');
+  v.addColorStop(1, 'rgba(150,80,70,0.18)');
   g.fillStyle = v;
   g.fillRect(0, 0, W, H);
 
