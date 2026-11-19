@@ -815,7 +815,7 @@ def carve_tunnel(terrain):
     rope bridges join one path through the mountain."""
     me = terrain.data
     bm = bmesh.new(); bm.from_mesh(me)
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if any(in_tunnel(v.co, 0.002) for v in f.verts)], context='FACES')
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if in_tunnel(f.calc_center_median())], context='FACES')
     bm.to_mesh(me); bm.free()
     A, B = tunnel_axis()
     ab = B - A; side = Vector((-(ab.y), ab.x, 0)).normalized()
@@ -827,7 +827,7 @@ def carve_tunnel(terrain):
         floor = A.z + ab.z * max(0, min(1, t))
         for j in range(NA + 1):
             a = math.pi * j / NA
-            jig = 1 + 0.12 * fbm(i * 0.4, j * 0.5, 3, 2)
+            jig = 1.12 + 0.1 * abs(fbm(i * 0.4, j * 0.5, 3, 2))  # bulge slightly past the cut to seal the seam
             verts.append(tuple(Vector((q.x, q.y, floor)) + side * math.cos(a) * TUNNEL_R[0] * jig + Vector((0, 0, math.sin(a) * TUNNEL_R[1] * jig))))
             if i and j:
                 k = (i - 1) * (NA + 1) + j - 1
@@ -913,7 +913,7 @@ def carve_cave(terrain):
     chamber's rock walls only where they're inside the mountain."""
     me = terrain.data
     bm = bmesh.new(); bm.from_mesh(me)
-    kill = [f for f in bm.faces if any(in_chamber(v.co, 0.002) for v in f.verts)]
+    kill = [f for f in bm.faces if in_chamber(f.calc_center_median())]
     bmesh.ops.delete(bm, geom=kill, context='FACES')
     # Round the cut edge into the opening: relax the boundary outline, then
     # curl the rim and the ring of vertices behind it inward and down.
@@ -942,7 +942,7 @@ def carve_cave(terrain):
     o = bpy.context.object; o.name = 'cave_chamber'; o['tag'] = 'structure'
     for v in o.data.vertices:
         n = v.co.normalized()
-        k = 1 + 0.12 * fbm(n.x * 3 + 5, n.y * 3, n.z * 3, 4)
+        k = 1.1 + 0.08 * fbm(n.x * 3 + 5, n.y * 3, n.z * 3, 4)
         a, c, u = n.x * ra * k, n.y * rc * k, n.z * ru * k
         wx, wy = C.x + a * dx - c * dy, C.y + a * dy + c * dx
         wz = max(C.z + u, floor)  # flat floor
@@ -1118,7 +1118,7 @@ def build_maples():
             continue
         if abs(x - LAKE[0]) < LAKE[2] * 1.2 and LAKE[1] - 0.4 < y < LAKE[1]:
             continue
-        H = random.uniform(0.075, 0.11)
+        H = random.uniform(0.1, 0.14)
         g = ground_at(x, y)
         lean = Vector((random.uniform(-0.01, 0.01), random.uniform(-0.01, 0.01), H * 0.6))
         base = Vector((x, y, g - 0.004))
@@ -1334,12 +1334,13 @@ def tinted(src, hue, sat, val, tag):
             continue
         m2 = m.copy(); m2.name = f'{m.name}_{tag}'
         nt = m2.node_tree
-        b = next((n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-        if b and b.inputs['Base Color'].is_linked:
-            link = b.inputs['Base Color'].links[0]
-            hsv = nt.nodes.new('ShaderNodeHueSaturation')
-            hsv.inputs['Hue'].default_value = hue; hsv.inputs['Saturation'].default_value = sat; hsv.inputs['Value'].default_value = val
-            nt.links.new(link.from_socket, hsv.inputs['Color']); nt.links.new(hsv.outputs['Color'], b.inputs['Base Color'])
+        # Tint the colour texture itself (works whether the shader is a
+        # Principled BSDF or Poly Haven's node group).
+        for t in [n for n in nt.nodes if n.type == 'TEX_IMAGE' and n.image and n.image.colorspace_settings.name == 'sRGB']:
+            for link in list(t.outputs['Color'].links):
+                hsv = nt.nodes.new('ShaderNodeHueSaturation')
+                hsv.inputs['Hue'].default_value = hue; hsv.inputs['Saturation'].default_value = sat; hsv.inputs['Value'].default_value = val
+                nt.links.new(t.outputs['Color'], hsv.inputs['Color']); nt.links.new(hsv.outputs['Color'], link.to_socket)
         o.data.materials[i] = m2
     o['size'] = tuple(mesh_size(src))
     return o
