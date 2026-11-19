@@ -526,9 +526,9 @@ def spring(name, x, y, z, sc):
     dark = bpy.data.materials.get('spring_dark')
     if not dark:
         dark = bpy.data.materials.new('spring_dark'); dark.use_nodes = True
-        b = dark.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value = (0.01, 0.012, 0.012, 1); b.inputs['Roughness'].default_value = 0.15
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1, location=(x, y + 0.004, z + 0.002))
-    o = bpy.context.object; o.name = name; o.scale = (0.009 * sc + 0.004, 0.006, 0.012 * sc + 0.004); o.data.materials.append(dark); o['tag'] = 'structure'
+        b = dark.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value = (0.025, 0.028, 0.025, 1); b.inputs['Roughness'].default_value = 0.45
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1, location=(x, y + 0.006, z - 0.002))
+    o = bpy.context.object; o.name = name; o.scale = (0.004 * sc + 0.002, 0.006, 0.007 * sc + 0.002); o.data.materials.append(dark); o['tag'] = 'structure'
 
 def build_fall(name, fx, y_top, sc, cm):
     """A falls that cascades down its tiered gorge, following the rock, then
@@ -845,7 +845,7 @@ def carve_tunnel(terrain):
     tm = bpy.data.meshes.new('tunnel'); tm.from_pydata(verts, [], faces)
     o = bpy.data.objects.new('tunnel', tm); scene.collection.objects.link(o); o['tag'] = 'structure'
     bm = bmesh.new(); bm.from_mesh(tm)
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.calc_center_median().z > ground_at(*f.calc_center_median().xy) + 0.001], context='FACES')
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if all(v.co.z > ground_at(v.co.x, v.co.y) + 0.006 for v in f.verts)], context='FACES')
     bm.to_mesh(tm); bm.free()
     tm.shade_smooth()
     shade_like_mountain(o, 0.7)
@@ -949,8 +949,10 @@ def carve_cave(terrain):
         v.co = (wx, wy, wz)
     bm = bmesh.new(); bm.from_mesh(o.data)
     def outside(f):
-        p = f.calc_center_median()
-        return p.z > ground_at(p.x, p.y) + 0.001  # in open air: that's the mouth
+        # Only drop faces clearly in open air, so the walls overlap the cut edge (no gaps).
+        if all(abs(v.co.z - floor) < 1e-4 for v in f.verts) and ground_at(*f.calc_center_median().xy) > floor - 0.03:
+            return False
+        return all(v.co.z > ground_at(v.co.x, v.co.y) + 0.006 for v in f.verts)
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if outside(f)], context='FACES')
     bmesh.ops.reverse_faces(bm, faces=bm.faces)  # face inward
     bm.to_mesh(o.data); bm.free()
@@ -1113,6 +1115,8 @@ def build_maples():
             break
         x, y = rand_disc(0.88)
         if not ok(x, y, max_slope=0.5, path=0.05, build=0.12) or massif_h(x, y) > 0.04:
+            continue
+        if abs(x - LAKE[0]) < LAKE[2] * 1.2 and LAKE[1] - 0.4 < y < LAKE[1]:
             continue
         H = random.uniform(0.075, 0.11)
         g = ground_at(x, y)
@@ -1290,7 +1294,8 @@ def build_stepping_stones(rocks, put):
     i = min(range(len(STREAM) - 1), key=lambda k: math.hypot(STREAM[k][0] - cx, STREAM[k][1] - cy))
     tx, ty = STREAM[i + 1][0] - STREAM[i][0], STREAM[i + 1][1] - STREAM[i][1]
     l = math.hypot(tx, ty); ax, ay = -ty / l, tx / l
-    m = stone_mat('step_stone'); m.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (40, 40, 40)
+    m = stone_mat('step_stone'); m.node_tree.nodes['Mapping'].inputs['Scale'].default_value = (9, 9, 9)
+    hs = [n for n in m.node_tree.nodes if n.type == 'HUE_SAT'][0]; hs.inputs['Saturation'].default_value = 0.7; hs.inputs['Value'].default_value = 0.7
     for k in range(-3, 4):
         x = cx + ax * k * 0.014 + random.uniform(-0.002, 0.002); y = cy + ay * k * 0.014 + random.uniform(-0.002, 0.002)
         r = random.uniform(0.0055, 0.007)
@@ -1299,7 +1304,7 @@ def build_stepping_stones(rocks, put):
         seed = random.uniform(0, 40)
         for v in o.data.vertices:
             n = v.co.normalized()
-            v.co = n * (1 + 0.1 * fbm(n.x * 2 + seed, n.y * 2, n.z * 2, 2))
+            v.co = n * (1 + 0.22 * fbm(n.x * 1.6 + seed, n.y * 1.6, n.z * 1.6, 3) + 0.05 * fbm(n.x * 6, n.y * 6, n.z * 6 + seed, 2))
             if v.co.z > 0.35:
                 v.co.z = 0.35 + (v.co.z - 0.35) * 0.3  # flat top
         o.scale = (r * random.uniform(1.0, 1.25), r, r * 0.9)
@@ -1481,6 +1486,8 @@ def build_vegetation():
         on_mtn = massif_h(x, y) > 0.08 and math.hypot(x, y) < 0.4
         if fall_weight(x, y, 0.006, 0.08) > 0.2:
             continue
+        if abs(x - LAKE[0]) < LAKE[2] * 1.2 and LAKE[1] - 0.4 < y < LAKE[1]:
+            continue  # keep the view of the lake and falls open
         if not ok(x, y, water=0.04, max_slope=1.1 if on_mtn else 0.7, path=0.05, build=0.12):
             continue
         g = grove(x, y)
