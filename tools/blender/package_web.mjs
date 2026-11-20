@@ -19,7 +19,7 @@ copyFileSync(`${src}/world.json`, `${out}/world.json`);
 if (existsSync(`${src}/veg.json`)) {
   rmSync(`${out}/veg`, { recursive: true, force: true });
   mkdirSync(`${out}/veg`, { recursive: true });
-  gt(['meshopt', `${src}/veg/veg.glb`, `${out}/veg/veg.glb`, '--level', 'medium']);
+  gt(['meshopt', `${src}/veg/veg.glb`, `${out}/veg/veg.glb`, '--level', 'high']);
   for (const f of readdirSync(`${src}/veg`).filter((f) => f.endsWith('.png'))) {
     await sharp(`${src}/veg/${f}`).webp({ quality: 86, alphaQuality: 95, effort: 5 }).toFile(`${out}/veg/${f.replace('.png', '.webp')}`);
   }

@@ -305,6 +305,11 @@ export class Experience {
     return null;
   }
 
+  /** Resolves once the island (models, plants, textures) has loaded. */
+  get worldReady() {
+    return this.interior.ready;
+  }
+
   get isWalking() {
     return this.walking;
   }

@@ -67,6 +67,7 @@ async function boot3D() {
     <main id="content" tabindex="-1">
       <h1 class="visually-hidden">${person.name}, ${person.role}</h1>
       <div class="stage" id="stage"><div class="loading" aria-hidden="true"></div></div>
+      <p class="island-loading" role="status">Growing the island…</p>
       <div class="globe-ui">
         <button class="alarm" type="button" aria-describedby="alarm-hint">
           <span class="alarm-small">In case of curiosity</span>
@@ -143,6 +144,7 @@ async function boot3D() {
     exp.unfocus();
   };
 
+  void exp.worldReady.then(() => app.querySelector('.island-loading')?.classList.add('is-done'));
   app.querySelector('.alarm')!.addEventListener('click', () => exp.breakGlass());
   app.querySelector('.walk-toggle')!.addEventListener('click', () => exp.setWalk(!exp.isWalking));
   if (matchMedia('(pointer: coarse)').matches)
