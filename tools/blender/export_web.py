@@ -98,79 +98,97 @@ def bbox_local(o):
     mx = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
     return mn, mx
 
-cards = []  # one per source per view
-CELL = {'tree': (192, 384), 'small': (128, 128)}
+cards = []  # one per source, three views each (0, 60, 120 degrees)
+NV = 3
+CELL = {'tree': (256, 512), 'small': (160, 160)}
 tmp_files = []
+card_scene.cycles.samples = 8 if FAST else 32
 for idx, (dname, src) in enumerate(sources.items()):
     kind = 'tree' if tag(src) in ('tree', 'maple') else 'small'
     t = bpy.data.objects.new('card_tmp', src.data)
     card_scene.collection.objects.link(t)
     co = np.empty(len(src.data.vertices) * 3, dtype=np.float32); src.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
-    mn, mx = Vector(co.min(0)), Vector(co.max(0))
+    zmin, zmax = float(co[:, 2].min()), float(co[:, 2].max())
     W, H = CELL[kind]
     entry = {'src': dname, 'kind': kind, 'views': []}
-    for view in range(2):
-        if view == 0:
-            hmin, hmax = mn.x, mx.x
-        else:
-            hmin, hmax = mn.y, mx.y
-        w, h = max(hmax - hmin, 1e-4), max(mx.z - mn.z, 1e-4)
-        # Ortho scale spans the larger render dimension.
+    for view in range(NV):
+        th = view * math.pi / NV
+        r = np.array([math.cos(th), math.sin(th)])
+        hv = co[:, :2] @ r
+        hmin, hmax = float(hv.min()), float(hv.max())
+        w, h = max(hmax - hmin, 1e-4), max(zmax - zmin, 1e-4)
         if H >= W:
             ortho = max(h, w * H / W) * 1.02; fh = ortho; fw = ortho * W / H
         else:
             ortho = max(w, h * W / H) * 1.02; fw = ortho; fh = ortho * H / W
-        cam_d.ortho_scale = ortho
-        cx = (hmin + hmax) / 2; cz = (mn.z + mx.z) / 2
-        if view == 0:
-            cam.location = (cx, mn.y - 5, cz); cam.rotation_euler = (math.pi / 2, 0, 0)
-        else:
-            cam.location = (mx.x + 5, cx, cz); cam.rotation_euler = (math.pi / 2, 0, math.pi / 2)
-        cam_d.clip_end = 20
+        cam_d.ortho_scale = ortho; cam_d.clip_end = 20
+        cx = (hmin + hmax) / 2; cz = (zmin + zmax) / 2
+        f = Vector((-math.sin(th), math.cos(th), 0))
+        centre = Vector((r[0] * cx, r[1] * cx, cz))
+        cam.location = centre - f * 5
+        cam.rotation_euler = (math.pi / 2, 0, th)
         card_scene.render.resolution_x, card_scene.render.resolution_y = W, H
         fp = os.path.join(OUT, f'_card_{idx}_{view}.png')
         card_scene.render.filepath = fp
         bpy.ops.render.render(write_still=True, scene=card_scene.name)
         tmp_files.append(fp)
         entry['views'].append({'file': fp, 'cx': cx, 'cz': cz, 'fw': fw, 'fh': fh})
-    entry['kind'] = kind
     cards.append(entry)
     card_scene.collection.objects.unlink(t); bpy.data.objects.remove(t)
     print('card', idx, len(sources), dname, flush=True)
 
-# Pack atlases.
 def load_png(fp):
     im = bpy.data.images.load(fp)
     a = np.array(im.pixels[:], dtype=np.float32).reshape(im.size[1], im.size[0], 4)
     bpy.data.images.remove(im)
     return a
 
-def save_webp(arr, path):
+def box_blur(x, k):
+    """Separable box blur via cumulative sums (edge-padded)."""
+    p = np.pad(x, ((k, k), (k, k)) + ((0, 0),) * (x.ndim - 2), mode='edge')
+    c = np.cumsum(p, axis=0); c = np.concatenate([np.zeros_like(c[:1]), c], 0)
+    y = (c[2 * k + 1:] - c[:-2 * k - 1]) / (2 * k + 1)
+    c = np.cumsum(y, axis=1); c = np.concatenate([np.zeros_like(c[:, :1]), c], 1)
+    return (c[:, 2 * k + 1:] - c[:, :-2 * k - 1]) / (2 * k + 1)
+
+def bleed(px):
+    """Push leaf colours out into the transparent pixels so mipmaps and
+    filtering never pull in black (the dark halos)."""
+    rgb, a = px[..., :3], px[..., 3:4]
+    out = rgb.copy()
+    filled = (a > 0.01).astype(np.float32)
+    for k in (2, 4, 8, 16, 32):
+        num = box_blur(rgb * filled, k); den = box_blur(filled, k)
+        fill = num / np.maximum(den, 1e-5)
+        m = (filled < 0.5) & (den > 1e-4)
+        out = np.where(m, fill, out)
+        filled = np.maximum(filled, (den > 1e-4).astype(np.float32))
+    return np.concatenate([out, a], -1)
+
+def save_png(arr, path):
     h, w, _ = arr.shape
     im = bpy.data.images.new(os.path.basename(path), w, h, alpha=True)
     im.pixels.foreach_set(arr.reshape(-1).astype(np.float32))
-    im.filepath_raw = path.replace('.webp', '.png'); im.file_format = 'PNG'
-    im.save()
-    bpy.data.images.remove(im)
-    return path.replace('.webp', '.png')
+    im.filepath_raw = path; im.file_format = 'PNG'
+    im.save(); bpy.data.images.remove(im)
 
-atlases = {}
+PAGE = 4096
 for kind, (W, H) in CELL.items():
-    items = [(ci, vi) for ci, c in enumerate(cards) if c['kind'] == kind for vi in range(2)]
-    if not items:
-        continue
-    cols = max(1, int(4096 // W)) if kind == 'tree' else 16
-    rows = math.ceil(len(items) / cols)
-    A = np.zeros((rows * H, cols * W, 4), dtype=np.float32)
-    for n, (ci, vi) in enumerate(items):
-        r, c = divmod(n, cols)
-        px = load_png(cards[ci]['views'][vi]['file'])
-        # numpy rows go bottom-up in Blender pixel order; keep that order consistently.
-        A[r * H:(r + 1) * H, c * W:(c + 1) * W] = px
-        v = cards[ci]['views'][vi]
-        v['uv'] = [c * W / A.shape[1], r * H / A.shape[0], W / A.shape[1], H / A.shape[0]]
-        v['atlas'] = kind
-    atlases[kind] = save_webp(A, os.path.join(OUT, f'cards_{kind}.webp'))
+    ids = [ci for ci, c in enumerate(cards) if c['kind'] == kind]
+    cols, rows = PAGE // W, PAGE // H
+    per_page = (cols * rows) // NV
+    for pg in range(math.ceil(len(ids) / per_page) if ids else 0):
+        chunk = ids[pg * per_page:(pg + 1) * per_page]
+        used_rows = math.ceil(len(chunk) * NV / cols)
+        A = np.zeros((used_rows * H, cols * W, 4), dtype=np.float32)
+        n = 0
+        for ci in chunk:
+            cards[ci]['page'] = f'{kind}{pg}'
+            for vi in range(NV):
+                r_, c_ = divmod(n, cols); n += 1
+                A[r_ * H:(r_ + 1) * H, c_ * W:(c_ + 1) * W] = bleed(load_png(cards[ci]['views'][vi]['file']))
+                cards[ci]['views'][vi]['uv'] = [c_ * W / A.shape[1], r_ * H / A.shape[0], W / A.shape[1], H / A.shape[0]]
+        save_png(A, os.path.join(OUT, f'cards_{kind}{pg}.png'))
 for fp in tmp_files:
     os.remove(fp)
 
@@ -225,7 +243,7 @@ def bake(obj, size, uv_name, path, samples):
     obj.data.uv_layers.active = obj.data.uv_layers[uv_name]
     bpy.ops.object.select_all(action='DESELECT'); obj.select_set(True); bpy.context.view_layer.objects.active = obj
     scene.cycles.samples = samples
-    scene.render.bake.margin = 4
+    scene.render.bake.margin = 16
     # Mist volumes would fog the bake; hide them.
     for o in scene.objects:
         if o.name.startswith(('mist', 'foam')):
@@ -248,7 +266,7 @@ bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.003)
 bpy.ops.object.mode_set(mode='OBJECT')
 uvn = S.data.uv_layers.active.name
-LM = 1024 if FAST else 2048
+LM = 1024 if FAST else 4096
 bake(S, LM, uvn, os.path.join(OUT, 'static_bake.png'), 4 if FAST else 16)
 for o in stat:
     o.hide_render = True  # avoid double-occluding the terrain bake? keep visible instead
@@ -277,7 +295,7 @@ bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.002)
 bpy.ops.object.mode_set(mode='OBJECT')
 terrain.hide_render = True
-TM = 1024 if FAST else 2048
+TM = 1024 if FAST else 4096
 bake(T, TM, 'UVMap', os.path.join(OUT, 'terrain_bake.png'), 4 if FAST else 16)
 bake(C, TM, C.data.uv_layers.active.name, os.path.join(OUT, 'cliffs_bake.png'), 4 if FAST else 16)
 single_material(C, os.path.join(OUT, 'cliffs_bake.png'), 'cliffs_baked')
@@ -300,7 +318,7 @@ for o in water:
 export(water, os.path.join(OUT, 'water.glb'))
 
 json.dump({
-    'cards': [{'kind': c['kind'], 'views': [{k: v[k] for k in ('cx', 'cz', 'fw', 'fh', 'uv')} for v in c['views']]} for c in cards],
+    'cards': [{'page': c['page'], 'views': [{k: v[k] for k in ('cx', 'cz', 'fw', 'fh', 'uv')} for v in c['views']]} for c in cards],
     'instances': instances,
     'glows': glows,
     'mists': mists,

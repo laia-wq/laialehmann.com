@@ -20,7 +20,7 @@ import type { Interior } from './interior';
 
 interface CardView { cx: number; cz: number; fw: number; fh: number; uv: [number, number, number, number] }
 interface WorldData {
-  cards: { kind: 'tree' | 'small'; views: [CardView, CardView] }[];
+  cards: { page: string; views: CardView[] }[];
   instances: [number, number, number, number, number, number][];
   glows: { p: [number, number, number]; c: [number, number, number]; e: number; k: string }[];
   mists: { p: [number, number, number]; s: [number, number, number]; n: string }[];
@@ -42,26 +42,33 @@ function softTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+/**
+ * Each plant is three textured planes at 0/60/120 degrees (a star), each
+ * showing the plant rendered from that direction, so it reads as solid from
+ * any angle. Leaf colour is bled into the transparent pixels at export, so
+ * edges stay clean (no dark halos).
+ */
 function cardMaterial(map: THREE.Texture, uTime: { value: number }) {
   return new THREE.ShaderMaterial({
-    uniforms: { map: { value: map }, uTime, uTint: { value: new THREE.Color(1, 1, 1) }, uOpacity: { value: 1 } },
-    transparent: false,
+    uniforms: { map: { value: map }, uTime, uTint: { value: new THREE.Color(1.3, 1.27, 1.24) }, uOpacity: { value: 1 } },
     side: THREE.DoubleSide,
     vertexShader: /* glsl */ `
       attribute float aView;
       attribute vec2 aQ;
-      attribute vec4 aF0; attribute vec4 aF1; attribute vec4 aU0; attribute vec4 aU1;
+      attribute vec4 aF0; attribute vec4 aF1; attribute vec4 aF2;
+      attribute vec4 aU0; attribute vec4 aU1; attribute vec4 aU2;
       uniform float uTime;
       varying vec2 vUv;
       void main() {
-        vec4 F = aView < 0.5 ? aF0 : aF1;
-        vec4 U = aView < 0.5 ? aU0 : aU1;
+        vec4 F = aView < 0.5 ? aF0 : (aView < 1.5 ? aF1 : aF2);
+        vec4 U = aView < 0.5 ? aU0 : (aView < 1.5 ? aU1 : aU2);
+        float th = aView * 1.0471976;
+        vec2 r = vec2(cos(th), sin(th));
         float h = F.x + (aQ.x - 0.5) * F.z;
         float z = F.y + (aQ.y - 0.5) * F.w;
-        vec3 p = aView < 0.5 ? vec3(h, 0.0, z) : vec3(0.0, h, z);
+        vec3 p = vec3(r * h, z);
         vec4 ip = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        float sway = sin(uTime * 1.3 + ip.x * 17.0 + ip.y * 11.0) * 0.012 * aQ.y * aQ.y * F.w;
-        p.x += sway;
+        p.xy += r * sin(uTime * 1.3 + ip.x * 17.0 + ip.y * 11.0) * 0.01 * aQ.y * aQ.y * F.w;
         vUv = U.xy + aQ * U.zw;
         gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
       }`,
@@ -165,13 +172,13 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
   });
 
   const ready = (async () => {
-    const [data, staticG, waterG, atlasTree, atlasSmall] = await Promise.all([
+    const [data, staticG, waterG] = await Promise.all([
       fetch(BASE + 'world.json').then((r) => r.json() as Promise<WorldData>),
       gltf.loadAsync(BASE + 'static.glb'),
       gltf.loadAsync(BASE + 'water.glb'),
-      loadTex('cards_tree.webp'),
-      loadTex('cards_small.webp'),
     ]);
+    const pages = [...new Set(data.cards.map((c) => c.page))];
+    const atlases = Object.fromEntries(await Promise.all(pages.map(async (pg) => [pg, await loadTex(`cards_${pg}.webp`)] as const)));
     hm = data.heightmap;
 
     // Static: baked lighting, drawn unlit.
@@ -196,14 +203,14 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
     });
     group.add(waterG.scene);
 
-    // Plant cards, one instanced mesh per atlas.
-    for (const kind of ['tree', 'small'] as const) {
-      const list = data.instances.filter((it) => data.cards[it[0]].kind === kind);
+    // Plant cards, one instanced mesh per atlas page.
+    for (const page of pages) {
+      const list = data.instances.filter((it) => data.cards[it[0]].page === page);
       if (!list.length) continue;
       const geo = new THREE.BufferGeometry();
       const q = [0, 0, 1, 0, 1, 1, 0, 1];
       const aQ: number[] = [], aView: number[] = [], pos: number[] = [], idx: number[] = [];
-      for (let v = 0; v < 2; v++) {
+      for (let v = 0; v < 3; v++) {
         for (let k = 0; k < 4; k++) { aQ.push(q[k * 2], q[k * 2 + 1]); aView.push(v); pos.push(0, 0, 0); }
         const b = v * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
       }
@@ -212,22 +219,18 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
       geo.setAttribute('aView', new THREE.Float32BufferAttribute(aView, 1));
       geo.setIndex(idx);
       const N = list.length;
-      const F0 = new Float32Array(N * 4), F1 = new Float32Array(N * 4), U0 = new Float32Array(N * 4), U1 = new Float32Array(N * 4);
-      const mat = cardMaterial(kind === 'tree' ? atlasTree : atlasSmall, uTime);
+      const F = [0, 1, 2].map(() => new Float32Array(N * 4)), U = [0, 1, 2].map(() => new Float32Array(N * 4));
+      const mat = cardMaterial(atlases[page], uTime);
       const im = new THREE.InstancedMesh(geo, mat, N);
-      const m4 = new THREE.Matrix4(), qn = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+      const m4 = new THREE.Matrix4(), qn = new THREE.Quaternion(), sv = new THREE.Vector3(), p = new THREE.Vector3(), zAxis = new THREE.Vector3(0, 0, 1);
       list.forEach(([ci, x, y, z, sc, rz], i) => {
-        const [v0, v1] = data.cards[ci].views;
-        F0.set([v0.cx, v0.cz, v0.fw, v0.fh], i * 4); F1.set([v1.cx, v1.cz, v1.fw, v1.fh], i * 4);
-        U0.set(v0.uv, i * 4); U1.set(v1.uv, i * 4);
-        qn.setFromAxisAngle(new THREE.Vector3(0, 0, 1), rz);
-        m4.compose(p.set(x, y, z), qn, s.setScalar(sc));
+        data.cards[ci].views.forEach((v, k) => { F[k].set([v.cx, v.cz, v.fw, v.fh], i * 4); U[k].set(v.uv, i * 4); });
+        qn.setFromAxisAngle(zAxis, rz);
+        m4.compose(p.set(x, y, z), qn, sv.setScalar(sc));
         im.setMatrixAt(i, m4);
       });
-      geo.setAttribute('aF0', new THREE.InstancedBufferAttribute(F0, 4));
-      geo.setAttribute('aF1', new THREE.InstancedBufferAttribute(F1, 4));
-      geo.setAttribute('aU0', new THREE.InstancedBufferAttribute(U0, 4));
-      geo.setAttribute('aU1', new THREE.InstancedBufferAttribute(U1, 4));
+      F.forEach((a, k) => geo.setAttribute(`aF${k}`, new THREE.InstancedBufferAttribute(a, 4)));
+      U.forEach((a, k) => geo.setAttribute(`aU${k}`, new THREE.InstancedBufferAttribute(a, 4)));
       im.frustumCulled = false;
       mats.push(mat);
       zup.add(im);

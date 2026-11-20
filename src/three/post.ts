@@ -108,7 +108,7 @@ export class Post {
       this.gtao = gtao;
     }
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.16, 0.4, 0.95);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.1, 0.3, 0.97);
     this.composer.addPass(this.bloom);
 
     this.tiltH = new ShaderPass(TiltShift);

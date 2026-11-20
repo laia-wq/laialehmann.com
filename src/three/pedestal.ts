@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { canvasToField, fbmField, makeNoise3, normalMapFromField, rng } from './textures';
+import { canvasToField, makeNoise3, normalMapFromField, rng } from './textures';
 
 /**
  * Turned, varnished wooden base for the crystal globe: a moulded foot, a
@@ -105,52 +105,31 @@ export function revolve(profile: [number, number][], segments: number, bands: Ba
  * Varnished mahogany as it looks on turned work: growth rings sweep around
  * the piece, with darker latewood lines, uneven colour and a glossy coat.
  */
+/**
+ * Real wood: Poly Haven's scanned "Dark Wood" (CC0), grain running around the
+ * turned piece like the rings of a lathe-turned base, with a satin finish.
+ */
 function turnedWood(): THREE.MeshPhysicalMaterial {
-  const W = 1024, H = 1024;
-  const n1 = fbmField(W, 4, 5, 51);
-  const n2 = fbmField(W, 64, 3, 52);
-  const n3 = fbmField(W, 12, 4, 53);
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d')!;
-  const img = g.createImageData(W, H);
-  const height = new Float32Array(W * H);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      // Rings run around (along x); the warp makes them wander like real grain.
-      const t = (y / H) * 8 + n1[i] * 1.4 + n3[i] * 0.45 + (x / W) * 0.6;
-      const f = t - Math.floor(t);
-      const late = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 3); // dark latewood band
-      // Fibres: noise stretched along the rings, so it reads as streaks, not speckle.
-      const pores = Math.pow(n2[y * W + ((x * 0.08) | 0)], 2.2);
-      const tone = 0.95 + n3[i] * 0.4 - late * 0.55 - pores * 0.18;
-      // Deep mahogany / walnut.
-      img.data[i * 4] = Math.min(255, Math.max(0, 92 * tone));
-      img.data[i * 4 + 1] = Math.min(255, Math.max(0, 44 * tone));
-      img.data[i * 4 + 2] = Math.min(255, Math.max(0, 22 * tone));
-      img.data[i * 4 + 3] = 255;
-      height[i] = 1 - late * 0.5 - pores * 0.3;
-    }
-  }
-  g.putImageData(img, 0, 0);
-  const map = new THREE.CanvasTexture(c);
-  map.colorSpace = THREE.SRGBColorSpace;
-  map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(2, 1);
-  map.anisotropy = 8;
-  const normalMap = normalMapFromField(height, W, H, 0.9);
-  normalMap.wrapT = THREE.RepeatWrapping;
-  normalMap.repeat.set(3, 1);
+  const L = new THREE.TextureLoader();
+  const base = import.meta.env.BASE_URL + 'textures/';
+  const t = (f: string, srgb: boolean) => {
+    const x = L.load(base + f);
+    x.wrapS = x.wrapT = THREE.RepeatWrapping;
+    x.repeat.set(5, 1.4);
+    x.anisotropy = 8;
+    x.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    return x;
+  };
   return new THREE.MeshPhysicalMaterial({
-    map,
-    vertexColors: true,
-    roughness: 0.5,
-    normalMap,
-    normalScale: new THREE.Vector2(0.25, 0.25),
-    clearcoat: 0.85,
-    clearcoatRoughness: 0.12,
-    envMapIntensity: 1.8,
+    map: t('dark_wood_diff.webp', true),
+    normalMap: t('dark_wood_nor.webp', false),
+    normalScale: new THREE.Vector2(0.6, 0.6),
+    roughnessMap: t('dark_wood_rough.webp', false),
+    roughness: 0.9,
+    vertexColors: true,  // carving crevices stay darker
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.35,
+    envMapIntensity: 0.6,
   });
 }
 
@@ -237,8 +216,10 @@ export function buildPedestal(name: string, role: string): Pedestal {
   // a shoulder, and a shallow cup the sphere sits in.
   // The base rises to the level of the terrain inside, so its wooden rim
   // hides the soil and the glass meets the world at ground level.
-  const KX = 1.74, KY = 1.2;
-  const CUP_TOP = 0.45 * KY, CUP_R = 0.5 * KX;
+  const RIM = 0.87, KY = 0.95;
+  const CUP_TOP = 0.45 * KY, CUP_R = RIM;
+  // Offset the profile outward to the rim (rather than scaling it), so the
+  // foot doesn't balloon: the base stays slim under the globe.
   const raw: [number, number][] = [
     [0, 0], [0.8, 0], [0.82, 0.012], [0.825, 0.055], [0.81, 0.075], [0.79, 0.085],
     [0.79, 0.1], [0.775, 0.115], [0.745, 0.13], [0.72, 0.15], [0.69, 0.175],
@@ -247,7 +228,7 @@ export function buildPedestal(name: string, role: string): Pedestal {
     [0.67, 0.35], [0.68, 0.365], [0.67, 0.38], [0.645, 0.39], [0.6, 0.405],
     [0.57, 0.42], [0.56, 0.435], [0.54, 0.448], [0.5, 0.45], [0, 0.45],
   ];
-  const profile = raw.map(([r, y]) => [r * KX, y * KY] as [number, number]);
+  const profile = raw.map(([r, y]) => [r === 0 ? 0 : r + (RIM - 0.5) * 0.82, y * KY] as [number, number]);
   const base = new THREE.Mesh(
     revolve(profile, 320, [
       { y0: 0.015, y1: 0.07, lobes: 150, amp: 0.012, shape: 'bead' },
@@ -262,7 +243,7 @@ export function buildPedestal(name: string, role: string): Pedestal {
   group.add(base);
 
   // Brass plaque set into the front of the carved band, following its curve.
-  const arc = 0.5, ph = 0.1 * KY, pr = 0.675 * KX;
+  const arc = 0.5, ph = 0.1 * KY, pr = 0.675 + (RIM - 0.5) * 0.82;
   const plaque = new THREE.Mesh(
     new THREE.CylinderGeometry(pr, pr, ph, 48, 1, true, -arc / 2, arc),
     new THREE.MeshPhysicalMaterial({ color: '#c9a061', metalness: 1, roughness: 0.4 }),
@@ -286,6 +267,6 @@ export function buildPedestal(name: string, role: string): Pedestal {
     cupTop: CUP_TOP,
     cupRadius: CUP_R,
     baseTop: 0.39 * KY,
-    baseRadius: 0.68 * KX,
+    baseRadius: 0.68 + (RIM - 0.5) * 0.82,
   };
 }

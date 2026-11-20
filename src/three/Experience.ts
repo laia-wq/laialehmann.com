@@ -23,8 +23,8 @@ export interface ExperienceEvents {
 
 // Scene dimensions (world units, floor at y = 0).
 const R = 1;
-const CUP_TOP = 0.45 * 1.2; // rim of the wooden base, level with the terrain inside
-const CUP_R = 0.5 * 1.74;
+const CUP_TOP = 0.45 * 0.95; // rim of the wooden base, level with the terrain inside
+const CUP_R = 0.87;
 const CUT_Y = -Math.sqrt(1 - CUP_R * CUP_R); // relative to the centre: the cup hides the glass below this
 const GLOBE_Y = CUP_TOP - CUT_Y;
 
@@ -635,7 +635,8 @@ export class Experience {
     const target = this.phase === 'globe' || this.phase === 'cracking' ? this.globeCenter.clone().setY(GLOBE_Y - 0.25) : this.camLook.clone();
     const p = this.root.localToWorld(target).project(this.camera);
     const inGlobe = this.phase === 'globe' || this.phase === 'cracking';
-    this.post.setFocus(p.y * 0.5 + 0.5, inGlobe ? 0.5 : 0.16, inGlobe ? 0.4 : 1.0);
+    // Keep the globe fully sharp; only a whisper of tilt-shift once inside.
+    this.post.setFocus(p.y * 0.5 + 0.5, inGlobe ? 1.0 : 0.3, inGlobe ? 0.0 : 0.35);
   }
 
   /** If the first seconds run slowly, drop to the cheaper pipeline. */
