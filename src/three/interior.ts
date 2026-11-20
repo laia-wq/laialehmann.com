@@ -111,7 +111,7 @@ function splitComponents(g: THREE.BufferGeometry): THREE.BufferGeometry[] {
 
 const loader = new THREE.TextureLoader();
 function tex(name: string, srgb: boolean, repeat = 1): THREE.Texture {
-  const t = loader.load(`/textures/${name}.webp`);
+  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}.webp`);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = 8;
