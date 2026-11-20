@@ -108,10 +108,31 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
     new Promise<THREE.Texture>((res, rej) => tex.load(BASE + f, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); res(t); }, undefined, rej));
   const gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 
-  const waterMat = new THREE.MeshPhysicalMaterial({
-    // Still water at sunset: teal depth with a warm rosy sheen from the sky.
-    color: '#3d6c68', emissive: '#4a2c2a', emissiveIntensity: 0.35, roughness: 0.08, metalness: 0,
-    clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.6, transparent: true, opacity: 0.86, depthWrite: false,
+  // Still water at sunset: deep teal looking down, the warm peach-pink sky
+  // reflected at grazing angles, with slow ripples.
+  const waterMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, uniforms: { uTime },
+    vertexShader: /* glsl */ `
+      varying vec3 vW; varying vec3 vN;
+      void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime; varying vec3 vW; varying vec3 vN;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+      void main(){
+        vec3 V = normalize(cameraPosition - vW);
+        float rip = n(vW.xz * 90.0 + uTime * 0.35) * 0.6 + n(vW.xz * 210.0 - uTime * 0.5) * 0.4;
+        float fres = pow(1.0 - max(dot(V, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+        fres = clamp(fres + (rip - 0.5) * 0.12, 0.0, 1.0);
+        vec3 deep = vec3(0.07, 0.17, 0.16);
+        vec3 sky = mix(vec3(1.0, 0.72, 0.62), vec3(1.0, 0.86, 0.7), rip);
+        vec3 col = mix(deep, sky, 0.18 + 0.7 * fres);
+        col += vec3(1.0, 0.8, 0.6) * pow(rip, 8.0) * 0.6;   // glints
+        gl_FragColor = vec4(col, 0.9);
+        #include <colorspace_fragment>
+      }`,
   });
   const fallMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uTime },
@@ -132,11 +153,12 @@ export function buildBlenderWorld(c: THREE.Vector3, renderer: THREE.WebGLRendere
         float big = n(vec2(vUv.x * 9.0, vUv.y * 6.0 - uTime * 1.8));
         float small = n(vec2(vUv.x * 34.0, vUv.y * 26.0 - uTime * 4.5));
         float s = big * 0.6 + small * 0.4;
-        float edge = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
+        float wob = (n(vec2(vUv.y * 12.0 - uTime, 3.0)) - 0.5) * 0.12;
+        float edge = smoothstep(0.0, 0.32, vUv.x + wob) * smoothstep(1.0, 0.68, vUv.x - wob);
         vec3 drop = mix(vec3(0.75, 0.82, 0.86), vec3(1.0, 0.97, 0.94), s);
-        vec3 tread = mix(vec3(0.2, 0.28, 0.28), vec3(0.6, 0.66, 0.66), s);
+        vec3 tread = mix(vec3(0.62, 0.7, 0.72), vec3(0.88, 0.92, 0.93), s);
         vec3 col = mix(tread, drop, vDrop);
-        float a = edge * mix(0.75, 0.88 + 0.12 * s, vDrop);
+        float a = edge * mix(0.55, 0.7 + 0.25 * s, vDrop);
         gl_FragColor = vec4(col, a);
         #include <colorspace_fragment>
       }`,
