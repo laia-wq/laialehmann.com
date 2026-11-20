@@ -78,6 +78,10 @@ async function boot3D() {
       <nav class="world-nav" aria-label="Projects">
         <ul>${placed.map((p) => `<li><button type="button" data-id="${p.id}">${p.title}</button></li>`).join('')}</ul>
       </nav>
+      <div class="world-tools">
+        <button class="walk-toggle" type="button" aria-pressed="false">Walk around</button>
+        <p class="world-hint">Drag to look around · scroll or pinch to zoom · right-drag to move · double-click to fly there</p>
+      </div>
       <p class="live visually-hidden" aria-live="polite"></p>
     </main>`;
 
@@ -105,6 +109,16 @@ async function boot3D() {
     onSelect(id) {
       open(id);
     },
+    onWalk(on) {
+      const b = app.querySelector('.walk-toggle') as HTMLButtonElement;
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = on ? 'Fly out' : 'Walk around';
+      const touch = matchMedia('(pointer: coarse)').matches;
+      (app.querySelector('.world-hint') as HTMLElement).textContent = on
+        ? touch ? 'Drag on the left to walk · drag on the right to look around' : 'W A S D or arrow keys to walk · Shift to run · drag to look · Esc to fly out'
+        : 'Drag to look around · scroll or pinch to zoom · right-drag to move · double-click to fly there';
+      live.textContent = on ? 'Walking on the island.' : 'Flying above the island.';
+    },
     onHover(id) {
       labels.querySelectorAll<HTMLElement>('.obj-label').forEach((l) => l.classList.toggle('is-hover', l.dataset.id === id));
     },
@@ -130,6 +144,9 @@ async function boot3D() {
   };
 
   app.querySelector('.alarm')!.addEventListener('click', () => exp.breakGlass());
+  app.querySelector('.walk-toggle')!.addEventListener('click', () => exp.setWalk(!exp.isWalking));
+  if (matchMedia('(pointer: coarse)').matches)
+    (app.querySelector('.world-hint') as HTMLElement).textContent = 'Drag to look around · pinch to zoom · two fingers to move';
   app.querySelector('.skip-anim')!.addEventListener('click', () => {
     exp.skip();
     (app.querySelector('.world-nav button') as HTMLElement | null)?.focus();

@@ -23,7 +23,7 @@ export interface Interior {
   groundAt(x: number, z: number): number;
   groundY: number;
   radius: number;
-  update(t: number): void;
+  update(t: number, camera?: THREE.Camera): void;
   setOpacity(o: number): void;
   transparents: THREE.Object3D[];
   /** Resolves when the lazy-loaded scanned assets are placed. */

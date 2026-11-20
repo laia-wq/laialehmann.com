@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { studioScene } from './studio';
 import { glass, glassBack, noDirectSpecular } from './materials';
-import { Snow } from './snow';
 import { crackMaterial, fractureSphere, type Fracture } from './fracture';
 import { ShatterSim } from './shatter';
 import { buildPedestal, type Pedestal } from './pedestal';
@@ -19,6 +18,7 @@ export interface ExperienceEvents {
   onHover(id: string | null): void;
   /** Screen position of each object's label anchor, every frame in world/focus. */
   onLabels(labels: { id: string; x: number; y: number; visible: boolean }[]): void;
+  onWalk?(on: boolean): void;
 }
 
 // Scene dimensions (world units, floor at y = 0).
@@ -57,7 +57,6 @@ export class Experience {
   private post!: Post;
   private quality: 0 | 1 = 1;
   private frameTimes: number[] = [];
-  private snow!: Snow;
   private fracture: Fracture | null = null;
   private shardGroup = new THREE.Group();
   private crackMesh: THREE.Mesh | null = null;
@@ -67,7 +66,6 @@ export class Experience {
   private objects: PlacedObject[] = [];
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(9, 9);
-  private prevPointerWorld: THREE.Vector3 | null = null;
   private phase: Phase = 'globe';
   private events: ExperienceEvents;
   private container: HTMLElement;
@@ -96,7 +94,16 @@ export class Experience {
   private camVia: THREE.Vector3 | null = null;
   private focused: string | null = null;
   private hovered: string | null = null;
-  private worldYaw = 0;
+  // Free camera inside the world: orbit (drag), zoom (wheel / pinch),
+  // pan (right-drag / two fingers / shift-drag), double-click to fly there.
+  private orb = { yaw: 0, pitch: 0.5, dist: 1.6, target: new THREE.Vector3() };
+  private orbGoal = { yaw: 0, pitch: 0.5, dist: 1.6, target: new THREE.Vector3() };
+  // Walk mode: a small person on the island.
+  private walking = false;
+  private walker = { pos: new THREE.Vector3(), heading: 0, pitch: -0.05, y: 0 };
+  private keys = new Set<string>();
+  private touches = new Map<number, { x: number; y: number; sx: number; sy: number; stick: boolean }>();
+  private pinch: { d: number; cx: number; cy: number } | null = null;
 
   constructor(container: HTMLElement, projects: Project[], events: ExperienceEvents) {
     this.container = container;
@@ -136,7 +143,9 @@ export class Experience {
     const lowPower = qp === 'low' || (qp !== 'high' && (navigator.hardwareConcurrency ?? 8) <= 4);
     this.quality = lowPower ? 0 : 1;
     this.post = new Post(this.renderer, this.scene, this.camera, this.quality);
-    this.post.aoExclude = [this.glassMesh, this.shardGroup, this.snow.points, ...this.interior.transparents];
+    this.post.aoExclude = [this.glassMesh, this.shardGroup, ...this.interior.transparents];
+    // The world's transparent bits (mist, water, glows) arrive once it loads.
+    void this.interior.ready.then(() => { this.post.aoExclude = [this.glassMesh, this.shardGroup, ...this.interior.transparents]; if (this.crackMesh) this.post.aoExclude.push(this.crackMesh); });
 
     this.setCameraForGlobe(true);
     this.bindEvents();
@@ -195,7 +204,7 @@ export class Experience {
     this.hitSphere.position.copy(this.globeCenter);
     this.root.add(this.hitSphere);
 
-    // Glass needn't write depth: the snow inside must still draw over it.
+    // Glass needn't write depth: the glows inside must still draw over it.
     this.glassMaterial.depthWrite = false;
     // Shards: clear faces that mostly reflect, and greenish edges like cut glass.
     // (Cheaper than transmission and it reads better while moving.)
@@ -227,8 +236,6 @@ export class Experience {
     this.shardGroup.visible = false;
     this.root.add(this.shardGroup);
 
-    this.snow = new Snow({ count: 300, radius: R * 0.96, center: this.globeCenter, floorY: this.interior.groundY, groundAt: this.interior.groundAt });
-    this.root.add(this.snow.points);
   }
 
   // ---------------------------------------------------------------- camera
@@ -244,14 +251,89 @@ export class Experience {
     return { pos: new THREE.Vector3(0, look.y + dist * 0.12, dist), look };
   }
 
-  private worldView() {
+  /** Default free-camera framing once inside: the whole island, fairly close. */
+  private resetOrbit() {
     const aspect = this.camera.aspect || 1;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const hw = 1.05;
-    const dist = Math.max(0.62 / t, hw / (t * aspect));
-    const look = new THREE.Vector3(0, this.interior.groundY + 0.05, -0.05);
-    const dir = new THREE.Vector3(0, 0.42, 1).normalize();
-    return { pos: look.clone().addScaledVector(dir, dist), look };
+    const dist = Math.max(0.55 / t, 0.92 / (t * aspect));
+    this.orbGoal.yaw = 0;
+    this.orbGoal.pitch = 0.42;
+    this.orbGoal.dist = dist;
+    this.orbGoal.target.set(0, this.interior.groundY + 0.12, -0.02).add(new THREE.Vector3(0, 0, 0));
+    this.orb.yaw = this.orbGoal.yaw; this.orb.pitch = this.orbGoal.pitch; this.orb.dist = this.orbGoal.dist;
+    this.orb.target.copy(this.orbGoal.target);
+  }
+
+  private orbitPose(o: { yaw: number; pitch: number; dist: number; target: THREE.Vector3 }) {
+    const cp = Math.cos(o.pitch);
+    const pos = o.target.clone().add(new THREE.Vector3(Math.sin(o.yaw) * cp, Math.sin(o.pitch), Math.cos(o.yaw) * cp).multiplyScalar(o.dist));
+    return { pos, look: o.target.clone() };
+  }
+
+  private worldView() {
+    return this.orbitPose(this.orbGoal);
+  }
+
+  private static EYE = 0.017;
+
+  private walkPose() {
+    const w = this.walker;
+    const pos = new THREE.Vector3(w.pos.x, w.y, w.pos.z);
+    const dir = new THREE.Vector3(-Math.sin(w.heading) * Math.cos(w.pitch), Math.sin(w.pitch), -Math.cos(w.heading) * Math.cos(w.pitch));
+    return { pos, look: pos.clone().add(dir) };
+  }
+
+  /** Point on the island under a screen position (ray-marched against the heightmap). */
+  private groundUnder(ndc: THREE.Vector2): THREE.Vector3 | null {
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const { origin, direction } = this.raycaster.ray;
+    const p = new THREE.Vector3();
+    let prev = origin.clone();
+    for (let s = 0.004; s < 6; s *= 1.04) {
+      p.copy(origin).addScaledVector(direction, s);
+      if (Math.hypot(p.x, p.z) < this.interior.radius && p.y < this.interior.groundAt(p.x, p.z)) {
+        // Refine between prev and p.
+        let a = prev.clone(), b = p.clone();
+        for (let k = 0; k < 12; k++) {
+          const m = a.clone().lerp(b, 0.5);
+          if (m.y < this.interior.groundAt(m.x, m.z)) b = m; else a = m;
+        }
+        return b;
+      }
+      prev.copy(p);
+    }
+    return null;
+  }
+
+  get isWalking() {
+    return this.walking;
+  }
+
+  /** Toggle walk mode (a small person on the island) from the UI. */
+  setWalk(on: boolean) {
+    if (this.phase !== 'world' || on === this.walking) return;
+    this.walking = on;
+    if (on) {
+      const t = this.orb.target;
+      const r = Math.hypot(t.x, t.z), max = this.interior.radius * 0.9;
+      this.walker.pos.set(t.x, 0, t.z);
+      if (r > max) this.walker.pos.multiplyScalar(max / r);
+      this.walker.heading = this.orb.yaw;
+      this.walker.pitch = -0.05;
+      this.walker.y = this.interior.groundAt(this.walker.pos.x, this.walker.pos.z) + Experience.EYE;
+      const v = this.walkPose();
+      this.tweenCamera(v.pos, v.look, 1.4);
+    } else {
+      this.orbGoal.target.set(this.walker.pos.x, this.walker.y - Experience.EYE * 0.5, this.walker.pos.z);
+      this.orbGoal.yaw = this.walker.heading;
+      this.orbGoal.pitch = 0.5;
+      this.orbGoal.dist = 0.35;
+      Object.assign(this.orb, { yaw: this.orbGoal.yaw, pitch: this.orbGoal.pitch, dist: this.orbGoal.dist });
+      this.orb.target.copy(this.orbGoal.target);
+      const v = this.orbitPose(this.orbGoal);
+      this.tweenCamera(v.pos, v.look, 1.2);
+    }
+    this.events.onWalk?.(on);
   }
 
   private focusView(id: string) {
@@ -309,12 +391,60 @@ export class Experience {
       } else this.camPos.lerpVectors(this.camFrom.pos, this.camTo.pos, e);
       this.camLook.lerpVectors(this.camFrom.look, this.camTo.look, e);
     }
-    // A touch of parallax from the cursor in the world view.
-    const par = this.phase === 'world' ? 0.03 : this.phase === 'globe' || this.phase === 'cracking' ? 0.05 : 0;
+    else if (this.phase === 'world') {
+      if (this.walking) this.updateWalk(dt);
+      else {
+        const o = this.orb, g = this.orbGoal;
+        o.yaw = damp(o.yaw, g.yaw, 12, dt);
+        o.pitch = damp(o.pitch, g.pitch, 12, dt);
+        o.dist = Math.exp(damp(Math.log(o.dist), Math.log(g.dist), 9, dt));
+        o.target.lerp(g.target, 1 - Math.exp(-9 * dt));
+      }
+      const v = this.walking ? this.walkPose() : this.orbitPose(this.orb);
+      if (!this.walking) {
+        // Never dip under the ground.
+        const floor = this.interior.groundAt(v.pos.x, v.pos.z) + 0.006;
+        if (Math.hypot(v.pos.x, v.pos.z) < this.interior.radius && v.pos.y < floor) v.pos.y = floor;
+      }
+      this.camPos.copy(v.pos);
+      this.camLook.copy(v.look);
+    }
+    // Near plane follows the scale we're looking at (walking is tiny).
+    const near = this.walking ? 0.0012 : this.phase === 'world' ? Math.max(0.002, Math.min(0.01, this.orb.dist * 0.02)) : 0.01;
+    if (Math.abs(this.camera.near - near) > 1e-5) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
+    // A touch of parallax from the cursor in the globe view.
+    const par = this.phase === 'globe' || this.phase === 'cracking' ? 0.05 : 0;
     const px = THREE.MathUtils.clamp(this.pointer.x, -1, 1) * par;
     const py = THREE.MathUtils.clamp(this.pointer.y, -1, 1) * par;
-    this.camera.position.set(this.camPos.x + px, this.camPos.y + py + this.pitch, this.camPos.z);
+    const inWorld = this.phase === 'world' || this.phase === 'focus';
+    this.camera.position.set(this.camPos.x + px, this.camPos.y + py + (inWorld ? 0 : this.pitch), this.camPos.z);
     this.camera.lookAt(this.camLook);
+  }
+
+  private updateWalk(dt: number) {
+    const w = this.walker;
+    let f = 0, s = 0;
+    const k = this.keys;
+    if (k.has('KeyW') || k.has('ArrowUp')) f += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) f -= 1;
+    if (k.has('KeyA')) s -= 1;
+    if (k.has('KeyD')) s += 1;
+    if (k.has('ArrowLeft')) w.heading += dt * 1.6;
+    if (k.has('ArrowRight')) w.heading -= dt * 1.6;
+    // Touch: a virtual stick wherever a finger went down on the left third.
+    for (const t of this.touches.values()) {
+      if (!t.stick) continue;
+      f += THREE.MathUtils.clamp(-(t.y - t.sy) / 60, -1, 1);
+      s += THREE.MathUtils.clamp((t.x - t.sx) / 60, -1, 1);
+    }
+    const speed = (k.has('ShiftLeft') || k.has('ShiftRight') ? 0.09 : 0.04) * dt;
+    const fx = -Math.sin(w.heading), fz = -Math.cos(w.heading);
+    w.pos.x += (fx * f - fz * s) * speed;
+    w.pos.z += (fz * f + fx * s) * speed;
+    const r = Math.hypot(w.pos.x, w.pos.z), max = this.interior.radius * 0.95;
+    if (r > max) w.pos.multiplyScalar(max / r);
+    const ground = this.interior.groundAt(w.pos.x, w.pos.z) + Experience.EYE;
+    w.y = damp(w.y || ground, ground, 14, dt);
   }
 
   // ---------------------------------------------------------------- public API
@@ -336,9 +466,9 @@ export class Experience {
     this.glassMesh.visible = false;
     this.shardGroup.visible = false;
     if (this.crackMesh) this.crackMesh.visible = false;
-    this.snow.open = true;
     this.yaw = 0;
     this.yawVel = 0;
+    this.resetOrbit();
     const v = this.worldView();
     this.camPos.copy(v.pos);
     this.camLook.copy(v.look);
@@ -358,7 +488,9 @@ export class Experience {
   unfocus() {
     if (this.phase !== 'focus') return;
     this.focused = null;
-    const v = this.worldView();
+    Object.assign(this.orb, { yaw: this.orbGoal.yaw, pitch: this.orbGoal.pitch, dist: this.orbGoal.dist });
+    this.orb.target.copy(this.orbGoal.target);
+    const v = this.orbitPose(this.orbGoal);
     this.tweenCamera(v.pos, v.look, 1.0);
     this.setPhase('world');
   }
@@ -423,8 +555,6 @@ export class Experience {
     if (this.crackMesh) this.crackMesh.visible = false;
     this.breakTime = this.time;
     this.yawVel = 0;
-    this.snow.open = true;
-    this.snow.burst(this.impact.clone().add(this.globeCenter), 0.5);
     this.setPhase('shattering');
   }
 
@@ -443,7 +573,8 @@ export class Experience {
       this.sim?.update(dt);
       const since = this.time - this.breakTime;
       if (since > 0.28 && this.camVia === null && this.camT >= 1) {
-        // Dive: rise slightly over the broken rim, then down into the world.
+        // Dive: rise over the broken rim, then swoop down close to the island.
+        this.resetOrbit();
         const v = this.worldView();
         // Rise above the sphere's top, then swing down into it.
         const via = new THREE.Vector3(0.15, GLOBE_Y + 1.9, 2.6);
@@ -456,6 +587,7 @@ export class Experience {
       this.shardEdgeMaterial.opacity = 0.35 * (1 - fade);
       if (since > 3.6) {
         this.shardGroup.visible = false;
+        this.yaw = 0;
         this.camVia = null;
         this.setPhase('world');
       }
@@ -469,7 +601,22 @@ export class Experience {
     el.addEventListener('pointerdown', (e) => this.onDown(e));
     window.addEventListener('pointermove', (e) => this.onMove(e));
     window.addEventListener('pointerup', (e) => this.onUp(e));
-    window.addEventListener('pointercancel', () => { this.drag = null; this.holding = false; });
+    window.addEventListener('pointercancel', (e) => { this.drag = null; this.holding = false; this.touches.delete(e.pointerId); this.pinch = null; });
+    el.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    el.addEventListener('dblclick', (e) => this.onDouble(e));
+    el.addEventListener('contextmenu', (e) => { if (this.phase === 'world') e.preventDefault(); });
+    window.addEventListener('keydown', (e) => {
+      if (this.phase !== 'world') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (e.code === 'Escape' && this.walking) { this.setWalk(false); return; }
+      if (this.walking && /^(Key[WASD]|Arrow(Up|Down|Left|Right)|Shift(Left|Right))$/.test(e.code)) {
+        this.keys.add(e.code);
+        e.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('blur', () => this.keys.clear());
     el.addEventListener('pointerleave', () => { this.pointer.set(9, 9); this.setHover(null); });
   }
 
@@ -492,13 +639,42 @@ export class Experience {
 
   private onDown(e: PointerEvent) {
     this.setPointer(e);
+    if (e.pointerType === 'touch') {
+      const r = this.renderer.domElement.getBoundingClientRect();
+      const stick = this.walking && e.clientX - r.left < r.width * 0.38;
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, stick });
+      const pts = [...this.touches.values()].filter((t) => !t.stick);
+      if (pts.length === 2 && this.phase === 'world' && !this.walking) {
+        this.pinch = { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), cx: (pts[0].x + pts[1].x) / 2, cy: (pts[0].y + pts[1].y) / 2 };
+        this.drag = null;
+        return;
+      }
+      if (stick) return;
+    }
     const onGlobe = (this.phase === 'globe' || this.phase === 'cracking') && !!this.hitGlobe();
     this.drag = { x: e.clientX, y: e.clientY, moved: false, t: performance.now(), onGlobe };
+    Object.assign(this.drag, { px: e.clientX, py: e.clientY, pan: e.button === 2 });
     this.renderer.domElement.setPointerCapture?.(e.pointerId);
   }
 
   private onMove(e: PointerEvent) {
     this.setPointer(e);
+    const tp = this.touches.get(e.pointerId);
+    if (tp) {
+      tp.x = e.clientX; tp.y = e.clientY;
+      if (tp.stick) return;
+      if (this.pinch) {
+        const pts = [...this.touches.values()].filter((t) => !t.stick);
+        if (pts.length >= 2) {
+          const dd = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
+          this.zoomBy(this.pinch.d / Math.max(dd, 1));
+          this.panBy(cx - this.pinch.cx, cy - this.pinch.cy);
+          this.pinch = { d: dd, cx, cy };
+        }
+        return;
+      }
+    }
     const d = this.drag;
     if (d) {
       const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -506,18 +682,33 @@ export class Experience {
         d.moved = true;
         this.holding = false;
       }
-      if (d.moved && (this.phase === 'globe' || this.phase === 'cracking' || this.phase === 'world')) {
-        const k = this.phase === 'world' ? 0.004 : 0.008;
-        this.yawVel = (e.movementX || 0) * k * 60;
-        this.yaw += (e.movementX || 0) * k;
-        if (this.phase === 'world') this.worldYaw = THREE.MathUtils.clamp(this.yaw, -0.7, 0.7), this.yaw = this.worldYaw;
-        this.pitch = THREE.MathUtils.clamp(this.pitch + (e.movementY || 0) * 0.002, -0.25, 0.35);
+      const mx = e.clientX - (d as { px?: number }).px!, my = e.clientY - (d as { py?: number }).py!;
+      (d as { px?: number }).px = e.clientX; (d as { py?: number }).py = e.clientY;
+      if (d.moved && (this.phase === 'globe' || this.phase === 'cracking')) {
+        const k = 0.008;
+        this.yawVel = mx * k * 60;
+        this.yaw += mx * k;
+        this.pitch = THREE.MathUtils.clamp(this.pitch + my * 0.002, -0.25, 0.35);
+      } else if (d.moved && this.phase === 'world') {
+        if (this.walking) {
+          this.walker.heading += mx * 0.004;
+          this.walker.pitch = THREE.MathUtils.clamp(this.walker.pitch + my * 0.003, -1.2, 1.1);
+        } else if ((e.buttons & 2) || e.shiftKey || (d as { pan?: boolean }).pan) {
+          this.panBy(mx, my);
+        } else {
+          this.orbGoal.yaw -= mx * 0.006;
+          this.orbGoal.pitch = THREE.MathUtils.clamp(this.orbGoal.pitch + my * 0.004, 0.03, 1.45);
+        }
       }
     }
     if (this.phase === 'world') this.setHover(this.hitObject());
   }
 
   private onUp(e: PointerEvent) {
+    const tp = this.touches.get(e.pointerId);
+    this.touches.delete(e.pointerId);
+    if (this.pinch) { if ([...this.touches.values()].filter((t) => !t.stick).length < 2) this.pinch = null; this.drag = null; return; }
+    if (tp?.stick) return;
     const d = this.drag;
     this.drag = null;
     this.holding = false;
@@ -530,6 +721,55 @@ export class Experience {
       // A tap knocks the glass: each knock spreads the cracks further.
       this.knock();
     }
+  }
+
+  private panBy(dx: number, dy: number) {
+    const g = this.orbGoal;
+    const h = this.renderer.domElement.clientHeight || 800;
+    const k = (2 * g.dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / h;
+    const right = new THREE.Vector3(Math.cos(g.yaw), 0, -Math.sin(g.yaw));
+    const fwd = new THREE.Vector3(-Math.sin(g.yaw), 0, -Math.cos(g.yaw));
+    g.target.addScaledVector(right, -dx * k).addScaledVector(fwd, dy * k / Math.max(Math.sin(g.pitch), 0.35));
+    const r = Math.hypot(g.target.x, g.target.z), max = this.interior.radius;
+    if (r > max) { g.target.x *= max / r; g.target.z *= max / r; }
+    const floor = this.interior.groundAt(g.target.x, g.target.z) + 0.01;
+    g.target.y = THREE.MathUtils.clamp(g.target.y, floor, floor + 0.5);
+  }
+
+  private zoomBy(f: number) {
+    const g = this.orbGoal;
+    const before = g.dist;
+    g.dist = THREE.MathUtils.clamp(g.dist * f, 0.05, 3.2);
+    // Zooming in pulls the pivot toward what's under the cursor.
+    if (g.dist < before && this.pointer.x < 5) {
+      const hit = this.groundUnder(this.pointer);
+      if (hit) {
+        hit.y += 0.01;
+        g.target.lerp(hit, Math.min(0.6, 1 - g.dist / before) );
+      }
+    }
+  }
+
+  private onWheel(e: WheelEvent) {
+    if (this.phase !== 'world') return;
+    e.preventDefault();
+    this.setPointer(e as unknown as PointerEvent);
+    if (this.walking) {
+      this.walker.pitch = THREE.MathUtils.clamp(this.walker.pitch - e.deltaY * 0.001, -1.2, 1.1);
+      return;
+    }
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    this.zoomBy(Math.exp(dy * 0.0012));
+  }
+
+  private onDouble(e: MouseEvent) {
+    if (this.phase !== 'world' || this.walking) return;
+    this.setPointer(e as PointerEvent);
+    const hit = this.groundUnder(this.pointer);
+    if (!hit) return;
+    this.orbGoal.target.copy(hit).add(new THREE.Vector3(0, 0.012, 0));
+    this.orbGoal.dist = Math.min(this.orbGoal.dist, 0.22);
+    this.orbGoal.pitch = Math.min(this.orbGoal.pitch, 0.45);
   }
 
   private knock() {
@@ -576,25 +816,7 @@ export class Experience {
       this.pitch = damp(this.pitch, 0, 3, dt);
     }
     this.root.rotation.y = this.yaw;
-    this.snow.setSwirl(this.phase === 'globe' || this.phase === 'cracking' ? (this.drag?.moved ? this.yawVel : this.yawVel * 0.3) : 0);
 
-    // Cursor stirs the snow: ray through the cursor, pushed by cursor motion.
-    if (this.pointer.x < 5 && (this.phase === 'globe' || this.phase === 'cracking')) {
-      this.raycaster.setFromCamera(this.pointer, this.camera);
-      const ray = this.raycaster.ray;
-      const closest = ray.closestPointToPoint(this.root.localToWorld(this.globeCenter.clone()), new THREE.Vector3());
-      if (this.prevPointerWorld) {
-        const push = closest.clone().sub(this.prevPointerWorld);
-        if (push.lengthSq() > 1e-7) {
-          const inv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
-          const o = ray.origin.clone().applyMatrix4(inv);
-          const dir = ray.direction.clone().transformDirection(inv);
-          const p = push.transformDirection(inv).multiplyScalar(Math.min(push.length() * 40, 1.2));
-          this.snow.setStir(o, dir, p);
-        }
-      }
-      this.prevPointerWorld = closest;
-    } else this.prevPointerWorld = null;
   }
 
   // ---------------------------------------------------------------- loop
@@ -607,7 +829,6 @@ export class Experience {
     this.camera.aspect = w / h;
     this.backdrop.fit(w / h);
     this.camera.updateProjectionMatrix();
-    this.snow.setPointScale(Math.min(w, h * 1.4) * 0.022);
     if (this.camT >= 1) {
       const v =
         this.phase === 'world' ? this.worldView()
@@ -649,7 +870,7 @@ export class Experience {
         this.quality = 0;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
         this.post = new Post(this.renderer, this.scene, this.camera, 0);
-        this.post.aoExclude = [this.glassMesh, this.shardGroup, this.snow.points, ...this.interior.transparents];
+        this.post.aoExclude = [this.glassMesh, this.shardGroup, ...this.interior.transparents];
         this.resize();
       }
     }
@@ -660,8 +881,7 @@ export class Experience {
     this.updateInput(dt);
     this.updateBreak(dt);
     this.updateCamera(dt);
-    this.snow.update(dt);
-    this.interior.update(this.time);
+    this.interior.update(this.time, this.camera);
     this.updateObjects(dt);
   }
 

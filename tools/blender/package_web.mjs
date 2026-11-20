@@ -1,7 +1,7 @@
 // Compress the Blender export for the web: meshopt geometry, WebP textures.
 // Usage: node tools/blender/package_web.mjs <export-dir> [out-dir=public/world]
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import sharp from 'sharp';
 const [src, out = 'public/world'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
@@ -13,4 +13,16 @@ for (const f of readdirSync(src).filter((f) => /^cards_.*\.png$/.test(f))) {
   await sharp(`${src}/${f}`).webp({ quality: 84, alphaQuality: 92, effort: 5 }).toFile(`${out}/${f.replace('.png', '.webp')}`);
 }
 copyFileSync(`${src}/world.json`, `${out}/world.json`);
+
+// Real vegetation meshes (export_veg.py). Only meshopt here: optimize would
+// join the LOD meshes and merge the placeholder slot materials.
+if (existsSync(`${src}/veg.json`)) {
+  rmSync(`${out}/veg`, { recursive: true, force: true });
+  mkdirSync(`${out}/veg`, { recursive: true });
+  gt(['meshopt', `${src}/veg/veg.glb`, `${out}/veg/veg.glb`, '--level', 'medium']);
+  for (const f of readdirSync(`${src}/veg`).filter((f) => f.endsWith('.png'))) {
+    await sharp(`${src}/veg/${f}`).webp({ quality: 86, alphaQuality: 95, effort: 5 }).toFile(`${out}/veg/${f.replace('.png', '.webp')}`);
+  }
+  copyFileSync(`${src}/veg.json`, `${out}/veg.json`);
+}
 console.log('packaged to', out);

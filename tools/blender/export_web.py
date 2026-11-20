@@ -21,6 +21,7 @@ from mathutils import Vector
 ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
 BLEND, OUT = ARGS[-2], ARGS[-1]
 FAST = '--fast' in sys.argv
+CARDS = '--cards' in sys.argv  # legacy impostors; the site now uses real meshes (export_veg.py)
 os.makedirs(OUT, exist_ok=True)
 bpy.ops.wm.open_mainfile(filepath=BLEND)
 scene = bpy.context.scene
@@ -52,13 +53,15 @@ def ground_z(x, y, terrain, depsgraph):
 
 terrain = bpy.data.objects['terrain']
 dg = bpy.context.evaluated_depsgraph_get()
-# Heightmap over the disc, terrain only (temporarily hide everything else).
+# Heightmap over the disc for walking: the terrain plus low walkable floors
+# (bridge deck, pavilion floors and steps). Everything else hidden.
+WALK = ('bridge_plank', 'pav_floor', 'pav_plinth', 'pav_step', 'bridge_footing')
 hidden = []
 for o in scene.objects:
-    if o is not terrain and o.type == 'MESH' and not o.hide_get():
+    if o is not terrain and not o.name.startswith(WALK) and o.type == 'MESH' and not o.hide_get():
         o.hide_viewport = True; hidden.append(o)
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
-HM = 128
+HM = 256
 EXT = 0.86
 hmap = []
 for j in range(HM):
@@ -78,126 +81,131 @@ sources = {}
 for o in veg:
     sources.setdefault(o.data.name, o)
 
-card_scene = bpy.data.scenes.new('cards')
-card_scene.render.engine = 'CYCLES'; card_scene.cycles.device = 'CPU'
-card_scene.cycles.samples = 8 if FAST else 24; card_scene.cycles.use_denoising = True
-card_scene.render.film_transparent = True
-card_scene.view_settings.view_transform = 'Standard'
-cw = bpy.data.worlds.new('card_world'); card_scene.world = cw; cw.use_nodes = True
-cw.node_tree.nodes['Background'].inputs['Color'].default_value = (1.0, 0.75, 0.68, 1)
-cw.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.6
-for nm in ('sun', 'sky_fill'):
-    if nm in bpy.data.objects:
-        card_scene.collection.objects.link(bpy.data.objects[nm])
-cam_d = bpy.data.cameras.new('card_cam'); cam_d.type = 'ORTHO'
-cam = bpy.data.objects.new('card_cam', cam_d); card_scene.collection.objects.link(cam); card_scene.camera = cam
+cards = []
+if CARDS:
+  card_scene = bpy.data.scenes.new('cards')
+  card_scene.render.engine = 'CYCLES'; card_scene.cycles.device = 'CPU'
+  card_scene.cycles.samples = 8 if FAST else 24; card_scene.cycles.use_denoising = True
+  card_scene.render.film_transparent = True
+  card_scene.view_settings.view_transform = 'Standard'
+  cw = bpy.data.worlds.new('card_world'); card_scene.world = cw; cw.use_nodes = True
+  cw.node_tree.nodes['Background'].inputs['Color'].default_value = (1.0, 0.75, 0.68, 1)
+  cw.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.6
+  for nm in ('sun', 'sky_fill'):
+      if nm in bpy.data.objects:
+          card_scene.collection.objects.link(bpy.data.objects[nm])
+  cam_d = bpy.data.cameras.new('card_cam'); cam_d.type = 'ORTHO'
+  cam = bpy.data.objects.new('card_cam', cam_d); card_scene.collection.objects.link(cam); card_scene.camera = cam
 
-def bbox_local(o):
-    vs = [Vector(c) for c in o.bound_box]
-    mn = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
-    mx = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
-    return mn, mx
+  def bbox_local(o):
+      vs = [Vector(c) for c in o.bound_box]
+      mn = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
+      mx = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
+      return mn, mx
 
-cards = []  # one per source, three views each (0, 60, 120 degrees)
-NV = 3
-CELL = {'tree': (256, 512), 'small': (160, 160)}
-tmp_files = []
-card_scene.cycles.samples = 8 if FAST else 32
-for idx, (dname, src) in enumerate(sources.items()):
-    kind = 'tree' if tag(src) in ('tree', 'maple') else 'small'
-    t = bpy.data.objects.new('card_tmp', src.data)
-    card_scene.collection.objects.link(t)
-    co = np.empty(len(src.data.vertices) * 3, dtype=np.float32); src.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
-    zmin, zmax = float(co[:, 2].min()), float(co[:, 2].max())
-    W, H = CELL[kind]
-    entry = {'src': dname, 'kind': kind, 'views': []}
-    for view in range(NV):
-        th = view * math.pi / NV
-        r = np.array([math.cos(th), math.sin(th)])
-        hv = co[:, :2] @ r
-        hmin, hmax = float(hv.min()), float(hv.max())
-        w, h = max(hmax - hmin, 1e-4), max(zmax - zmin, 1e-4)
-        if H >= W:
-            ortho = max(h, w * H / W) * 1.02; fh = ortho; fw = ortho * W / H
-        else:
-            ortho = max(w, h * W / H) * 1.02; fw = ortho; fh = ortho * H / W
-        cam_d.ortho_scale = ortho; cam_d.clip_end = 20
-        cx = (hmin + hmax) / 2; cz = (zmin + zmax) / 2
-        f = Vector((-math.sin(th), math.cos(th), 0))
-        centre = Vector((r[0] * cx, r[1] * cx, cz))
-        cam.location = centre - f * 5
-        cam.rotation_euler = (math.pi / 2, 0, th)
-        card_scene.render.resolution_x, card_scene.render.resolution_y = W, H
-        fp = os.path.join(OUT, f'_card_{idx}_{view}.png')
-        card_scene.render.filepath = fp
-        bpy.ops.render.render(write_still=True, scene=card_scene.name)
-        tmp_files.append(fp)
-        entry['views'].append({'file': fp, 'cx': cx, 'cz': cz, 'fw': fw, 'fh': fh})
-    cards.append(entry)
-    card_scene.collection.objects.unlink(t); bpy.data.objects.remove(t)
-    print('card', idx, len(sources), dname, flush=True)
+  cards = []  # one per source, three views each (0, 60, 120 degrees)
+  NV = 3
+  CELL = {'tree': (256, 512), 'small': (160, 160)}
+  tmp_files = []
+  card_scene.cycles.samples = 8 if FAST else 32
+  for idx, (dname, src) in enumerate(sources.items()):
+      kind = 'tree' if tag(src) in ('tree', 'maple') else 'small'
+      t = bpy.data.objects.new('card_tmp', src.data)
+      card_scene.collection.objects.link(t)
+      co = np.empty(len(src.data.vertices) * 3, dtype=np.float32); src.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+      zmin, zmax = float(co[:, 2].min()), float(co[:, 2].max())
+      W, H = CELL[kind]
+      entry = {'src': dname, 'kind': kind, 'views': []}
+      for view in range(NV):
+          th = view * math.pi / NV
+          r = np.array([math.cos(th), math.sin(th)])
+          hv = co[:, :2] @ r
+          hmin, hmax = float(hv.min()), float(hv.max())
+          w, h = max(hmax - hmin, 1e-4), max(zmax - zmin, 1e-4)
+          if H >= W:
+              ortho = max(h, w * H / W) * 1.02; fh = ortho; fw = ortho * W / H
+          else:
+              ortho = max(w, h * W / H) * 1.02; fw = ortho; fh = ortho * H / W
+          cam_d.ortho_scale = ortho; cam_d.clip_end = 20
+          cx = (hmin + hmax) / 2; cz = (zmin + zmax) / 2
+          f = Vector((-math.sin(th), math.cos(th), 0))
+          centre = Vector((r[0] * cx, r[1] * cx, cz))
+          cam.location = centre - f * 5
+          cam.rotation_euler = (math.pi / 2, 0, th)
+          card_scene.render.resolution_x, card_scene.render.resolution_y = W, H
+          fp = os.path.join(OUT, f'_card_{idx}_{view}.png')
+          card_scene.render.filepath = fp
+          bpy.ops.render.render(write_still=True, scene=card_scene.name)
+          tmp_files.append(fp)
+          entry['views'].append({'file': fp, 'cx': cx, 'cz': cz, 'fw': fw, 'fh': fh})
+      cards.append(entry)
+      card_scene.collection.objects.unlink(t); bpy.data.objects.remove(t)
+      print('card', idx, len(sources), dname, flush=True)
 
-def load_png(fp):
-    im = bpy.data.images.load(fp)
-    a = np.array(im.pixels[:], dtype=np.float32).reshape(im.size[1], im.size[0], 4)
-    bpy.data.images.remove(im)
-    return a
+  def load_png(fp):
+      im = bpy.data.images.load(fp)
+      a = np.array(im.pixels[:], dtype=np.float32).reshape(im.size[1], im.size[0], 4)
+      bpy.data.images.remove(im)
+      return a
 
-def box_blur(x, k):
-    """Separable box blur via cumulative sums (edge-padded)."""
-    p = np.pad(x, ((k, k), (k, k)) + ((0, 0),) * (x.ndim - 2), mode='edge')
-    c = np.cumsum(p, axis=0); c = np.concatenate([np.zeros_like(c[:1]), c], 0)
-    y = (c[2 * k + 1:] - c[:-2 * k - 1]) / (2 * k + 1)
-    c = np.cumsum(y, axis=1); c = np.concatenate([np.zeros_like(c[:, :1]), c], 1)
-    return (c[:, 2 * k + 1:] - c[:, :-2 * k - 1]) / (2 * k + 1)
+  def box_blur(x, k):
+      """Separable box blur via cumulative sums (edge-padded)."""
+      p = np.pad(x, ((k, k), (k, k)) + ((0, 0),) * (x.ndim - 2), mode='edge')
+      c = np.cumsum(p, axis=0); c = np.concatenate([np.zeros_like(c[:1]), c], 0)
+      y = (c[2 * k + 1:] - c[:-2 * k - 1]) / (2 * k + 1)
+      c = np.cumsum(y, axis=1); c = np.concatenate([np.zeros_like(c[:, :1]), c], 1)
+      return (c[:, 2 * k + 1:] - c[:, :-2 * k - 1]) / (2 * k + 1)
 
-def bleed(px):
-    """Push leaf colours out into the transparent pixels so mipmaps and
-    filtering never pull in black (the dark halos)."""
-    rgb, a = px[..., :3], px[..., 3:4]
-    out = rgb.copy()
-    filled = (a > 0.01).astype(np.float32)
-    for k in (2, 4, 8, 16, 32):
-        num = box_blur(rgb * filled, k); den = box_blur(filled, k)
-        fill = num / np.maximum(den, 1e-5)
-        m = (filled < 0.5) & (den > 1e-4)
-        out = np.where(m, fill, out)
-        filled = np.maximum(filled, (den > 1e-4).astype(np.float32))
-    return np.concatenate([out, a], -1)
+  def bleed(px):
+      """Push leaf colours out into the transparent pixels so mipmaps and
+      filtering never pull in black (the dark halos)."""
+      rgb, a = px[..., :3], px[..., 3:4]
+      out = rgb.copy()
+      filled = (a > 0.01).astype(np.float32)
+      for k in (2, 4, 8, 16, 32):
+          num = box_blur(rgb * filled, k); den = box_blur(filled, k)
+          fill = num / np.maximum(den, 1e-5)
+          m = (filled < 0.5) & (den > 1e-4)
+          out = np.where(m, fill, out)
+          filled = np.maximum(filled, (den > 1e-4).astype(np.float32))
+      return np.concatenate([out, a], -1)
 
-def save_png(arr, path):
-    h, w, _ = arr.shape
-    im = bpy.data.images.new(os.path.basename(path), w, h, alpha=True)
-    im.pixels.foreach_set(arr.reshape(-1).astype(np.float32))
-    im.filepath_raw = path; im.file_format = 'PNG'
-    im.save(); bpy.data.images.remove(im)
+  def save_png(arr, path):
+      h, w, _ = arr.shape
+      im = bpy.data.images.new(os.path.basename(path), w, h, alpha=True)
+      im.pixels.foreach_set(arr.reshape(-1).astype(np.float32))
+      im.filepath_raw = path; im.file_format = 'PNG'
+      im.save(); bpy.data.images.remove(im)
 
-PAGE = 4096
-for kind, (W, H) in CELL.items():
-    ids = [ci for ci, c in enumerate(cards) if c['kind'] == kind]
-    cols, rows = PAGE // W, PAGE // H
-    per_page = (cols * rows) // NV
-    for pg in range(math.ceil(len(ids) / per_page) if ids else 0):
-        chunk = ids[pg * per_page:(pg + 1) * per_page]
-        used_rows = math.ceil(len(chunk) * NV / cols)
-        A = np.zeros((used_rows * H, cols * W, 4), dtype=np.float32)
-        n = 0
-        for ci in chunk:
-            cards[ci]['page'] = f'{kind}{pg}'
-            for vi in range(NV):
-                r_, c_ = divmod(n, cols); n += 1
-                A[r_ * H:(r_ + 1) * H, c_ * W:(c_ + 1) * W] = bleed(load_png(cards[ci]['views'][vi]['file']))
-                cards[ci]['views'][vi]['uv'] = [c_ * W / A.shape[1], r_ * H / A.shape[0], W / A.shape[1], H / A.shape[0]]
-        save_png(A, os.path.join(OUT, f'cards_{kind}{pg}.png'))
-for fp in tmp_files:
-    os.remove(fp)
+  PAGE = 4096
+  for kind, (W, H) in CELL.items():
+      ids = [ci for ci, c in enumerate(cards) if c['kind'] == kind]
+      cols, rows = PAGE // W, PAGE // H
+      per_page = (cols * rows) // NV
+      for pg in range(math.ceil(len(ids) / per_page) if ids else 0):
+          chunk = ids[pg * per_page:(pg + 1) * per_page]
+          used_rows = math.ceil(len(chunk) * NV / cols)
+          A = np.zeros((used_rows * H, cols * W, 4), dtype=np.float32)
+          n = 0
+          for ci in chunk:
+              cards[ci]['page'] = f'{kind}{pg}'
+              for vi in range(NV):
+                  r_, c_ = divmod(n, cols); n += 1
+                  A[r_ * H:(r_ + 1) * H, c_ * W:(c_ + 1) * W] = bleed(load_png(cards[ci]['views'][vi]['file']))
+                  cards[ci]['views'][vi]['uv'] = [c_ * W / A.shape[1], r_ * H / A.shape[0], W / A.shape[1], H / A.shape[0]]
+          save_png(A, os.path.join(OUT, f'cards_{kind}{pg}.png'))
+  for fp in tmp_files:
+      os.remove(fp)
 
-src_index = {c['src']: i for i, c in enumerate(cards)}
-instances = []
-for o in veg:
-    loc = o.matrix_world.translation
-    instances.append([src_index[o.data.name], round(loc.x, 4), round(loc.y, 4), round(loc.z, 4),
-                      round(o.matrix_world.to_scale().x, 4), round(o.matrix_world.to_euler().z, 3)])
+  src_index = {c['src']: i for i, c in enumerate(cards)}
+  instances = []
+  for o in veg:
+      loc = o.matrix_world.translation
+      instances.append([src_index[o.data.name], round(loc.x, 4), round(loc.y, 4), round(loc.z, 4),
+                        round(o.matrix_world.to_scale().x, 4), round(o.matrix_world.to_euler().z, 3)])
+
+else:
+  instances = []
 
 # ------------------------------------------------------------------ static geometry + lightmaps
 def collect_static():
@@ -261,16 +269,26 @@ def single_material(obj, img_path, name):
         p.material_index = 0
 
 stat = collect_static()
-S = make_real(stat, 'static')
-bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.003)
-bpy.ops.object.mode_set(mode='OBJECT')
-uvn = S.data.uv_layers.active.name
-LM = 1024 if FAST else 4096
-bake(S, LM, uvn, os.path.join(OUT, 'static_bake.png'), 4 if FAST else 16)
-for o in stat:
-    o.hide_render = True  # avoid double-occluding the terrain bake? keep visible instead
-    o.hide_render = False
+# Bake groups, each with its own lightmap so small things (pavilions, tower,
+# well) get real texel density instead of crumbs of one shared atlas.
+soil = [o for o in stat if o.name.startswith('soil')]
+rocks = [o for o in stat if (o.get('tag') or '') == 'rock']
+struct = [o for o in stat if o not in soil and o not in rocks]
+GROUPS = [('soil', soil, 1024), ('struct', struct, 4096), ('rocks', rocks, 2048)]
+SAMPLES = 4 if FAST else 32
+
+def smart_uv(O, angle=66, margin=0.002):
+    bpy.ops.object.select_all(action='DESELECT'); O.select_set(True); bpy.context.view_layer.objects.active = O
+    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(angle_limit=math.radians(angle), island_margin=margin)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return O.data.uv_layers.active.name
+
+joined = []
+for name, objs, size in GROUPS:
+    if objs:
+        O = make_real(objs, name + '_bake')
+        joined.append((O, size, smart_uv(O)))
 
 # Terrain: gentle ground keeps a top-down planar UV; steep rock (the
 # mountain's faces) is split off and smart-projected so cliffs aren't smeared.
@@ -290,18 +308,24 @@ for poly in T.data.polygons:
     for li in poly.loop_indices:
         co = T.data.vertices[T.data.loops[li].vertex_index].co
         uvl.data[li].uv = (co.x / (2 * EDGE) + 0.5, co.y / (2 * EDGE) + 0.5)
-bpy.ops.object.select_all(action='DESELECT'); C.select_set(True); bpy.context.view_layer.objects.active = C
-bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.002)
-bpy.ops.object.mode_set(mode='OBJECT')
-terrain.hide_render = True
-TM = 1024 if FAST else 4096
-bake(T, TM, 'UVMap', os.path.join(OUT, 'terrain_bake.png'), 4 if FAST else 16)
-bake(C, TM, C.data.uv_layers.active.name, os.path.join(OUT, 'cliffs_bake.png'), 4 if FAST else 16)
-single_material(C, os.path.join(OUT, 'cliffs_bake.png'), 'cliffs_baked')
+cuv = smart_uv(C, 66, 0.002)
 
-single_material(S, os.path.join(OUT, 'static_bake.png'), 'static_baked')
+# The originals must not render while their copies bake: coincident
+# surfaces shadow each other (this is what turned buildings black).
+for o in stat + [terrain]:
+    o.hide_render = True
+
+TM = 1024 if FAST else 4096
+bake(T, TM, 'UVMap', os.path.join(OUT, 'terrain_bake.png'), SAMPLES)
+bake(C, TM, cuv, os.path.join(OUT, 'cliffs_bake.png'), SAMPLES)
 single_material(T, os.path.join(OUT, 'terrain_bake.png'), 'terrain_baked')
+single_material(C, os.path.join(OUT, 'cliffs_bake.png'), 'cliffs_baked')
+static_out = [T, C]
+for O, size, uvn in joined:
+    path = os.path.join(OUT, O.name + '.png')
+    bake(O, 1024 if FAST else size, uvn, path, SAMPLES)
+    single_material(O, path, O.name.replace('_bake', '_baked'))
+    static_out.append(O)
 
 def export(objs, path):
     bpy.ops.object.select_all(action='DESELECT')
@@ -311,7 +335,7 @@ def export(objs, path):
                               export_texcoords=True, export_normals=True, export_materials='EXPORT',
                               export_image_format='AUTO', export_yup=True)
 
-export([S, T, C], os.path.join(OUT, 'static.glb'))
+export(static_out, os.path.join(OUT, 'static.glb'))
 water = [o for o in scene.objects if o.type == 'MESH' and o.name.startswith(WATER_PREFIX)]
 for o in water:
     o.data.materials.clear()
