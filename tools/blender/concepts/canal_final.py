@@ -1262,6 +1262,7 @@ if os.environ.get('NO_SMOKE'):
     # The browser animates the chimney smoke, so take the baked puffs out and
     # remember where each plume starts (its lowest puff), in 0..1 screen space.
     from bpy_extras.object_utils import world_to_camera_view
+    bpy.context.view_layer.update()
     puffs = [o for o in sc.objects if o.name.startswith('smoke')]
     for o in puffs:
         p = o.matrix_world.translation
@@ -1270,6 +1271,8 @@ if os.environ.get('NO_SMOKE'):
             v = world_to_camera_view(sc, cam, p)
             SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5)})
         o.hide_render = True
+if os.environ.get('NO_RENDER'):
+    render = lambda *a, **k: None
 render(sc, OUT, SAMPLES)
 if os.environ.get('OFF_OUT'):
     # Same scene with every lamp, candle, window and sign switched off.
