@@ -1254,8 +1254,8 @@ while placed < 110:
             sphere('lpetal', (x + math.cos(a) * 0.02, y + math.sin(a) * 0.02, 0.025), 0.02, solid('lp%.2f' % fc[1], fc, 0.5), 8, (1, 0.4, 0.2)).rotation_euler = (0, -0.5, a)
     placed += 1
 
-lighting(sc, sun_rot=(math.radians(78), 0, math.radians(-40)), sun_energy=0.6, sun_color=(0.55, 0.62, 0.85),
-         bg_top=(0.05, 0.07, 0.13), bg_bottom=(0.35, 0.24, 0.24), hdri_strength=0.08)
+lighting(sc, sun_rot=(math.radians(76), 0, math.radians(-40)), sun_energy=1.9, sun_color=(1.0, 0.64, 0.42),
+         bg_top=(0.05, 0.07, 0.13), bg_bottom=(0.35, 0.24, 0.24), hdri_strength=0.13)
 cam = iso_camera(sc, (-0.1, 0.4, 2.4), 15.5, res=(int(os.environ.get('RES_X', 1400)), int(os.environ.get('RES_Y', 1050))))
 SMOKE = []
 if os.environ.get('NO_SMOKE'):

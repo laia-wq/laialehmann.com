@@ -230,10 +230,17 @@ export const person = {
     'Incoming Honours Systems Design Engineering student at the University of Waterloo, starting September 2026. I work across software, applied ML and hardware, and on community and nonprofit projects.',
   languages: ['Python', 'C++17', 'JavaScript / TypeScript', 'React', 'Node', 'HTML / CSS', 'SQL'],
   spoken: ['English', 'French (DALF C1)', 'Spanish', 'Catalan'],
-  // TODO(laia): confirm exact links before launch.
+  // From the 2026 résumé. Never add the phone number here.
   contact: [
+    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/laia-lehmann-5274a6334' },
+    { label: 'Email', href: 'mailto:laia.lehmanngimenez@gmail.com' },
     { label: 'GitHub', href: 'https://github.com/laia-wq' },
-    { label: 'Email', href: 'mailto:TODO-confirm-email' },
-    { label: 'LinkedIn', href: 'TODO-confirm-linkedin' },
   ] as ProjectLink[],
+  /** Home page phrase: greeting, then "I build for <em>…</em>". */
+  greeting: 'bona nit,',
+  phraseLead: 'I build for',
+  phraseEm: 'the overlooked.',
+  tagLeft: 'systems design engineering',
+  tagRight: 'recently: syde @uwaterloo',
+  scholarships: ["President's Scholarship of Distinction", 'Joyce A. Borrie and George W. Stevenson Memorial Scholarship'],
 };

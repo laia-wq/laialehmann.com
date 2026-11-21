@@ -17,6 +17,8 @@
 export interface CanalEvents {
   onHover(group: string | null): void;
   onSelect(group: string): void;
+  /** Where the render sits on screen (CSS px), so overlays can line up with it. */
+  onLayout?(rect: { left: number; top: number; width: number; height: number }): void;
 }
 
 interface SceneJson {
@@ -99,15 +101,15 @@ void main() {
     vec4 S = uSmoke[i];
     for (int j = 0; j < 6; j++) {
       float ph = fract(t * 0.055 + float(j) / 6.0 + S.w);
-      vec2 cen = S.xy + vec2(S.z * (3.5 * ph + 0.6 * sin(t * 0.6 + float(j) * 1.7 + S.w * 6.0)), -0.075 * ph);
-      float rad = S.z * (0.9 + 2.4 * ph);
+      vec2 cen = S.xy + vec2(S.z * (4.5 * ph + 0.7 * sin(t * 0.6 + float(j) * 1.7 + S.w * 6.0)), -0.11 * ph);
+      float rad = S.z * (1.2 + 3.0 * ph);
       vec2 dd = vec2(uv.x - cen.x, (uv.y - cen.y) / uAspect);
       float dist = length(dd) / rad;
       float wisp = 0.75 + 0.5 * vnoise(dd / rad * 2.5 + vec2(float(j) * 3.1, t * 0.3));
-      a += smoothstep(1.0, 0.15, dist) * (1.0 - ph) * smoothstep(0.0, 0.12, ph) * 0.42 * wisp;
+      a += smoothstep(1.0, 0.1, dist) * (1.0 - ph) * smoothstep(0.0, 0.1, ph) * 0.6 * wisp;
     }
   }
-  c.rgb = mix(c.rgb, vec3(0.16, 0.16, 0.19), clamp(a, 0.0, 0.7));
+  c.rgb = mix(c.rgb, vec3(0.5, 0.48, 0.52) * (0.55 + 0.45 * uOn), clamp(a, 0.0, 0.8));
 
   // Hover: lift the building under the pointer a little.
   float id = texture2D(uIds, uv).r;
@@ -277,6 +279,7 @@ export class CanalScene {
     const el = (this.fallback ?? this.canvas) as HTMLElement;
     el.style.width = `${cw}px`;
     el.style.height = `${ch}px`;
+    this.events.onLayout?.({ left: (w - cw) / 2, top: (h - ch) / 2, width: cw, height: ch });
     if (!this.fallback) {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       this.canvas.width = Math.round(Math.min(cw * dpr, this.img.naturalWidth));
@@ -337,6 +340,10 @@ export class CanalScene {
     if (!gl || !p) return;
     const s = (performance.now() - this.start) / 1000;
     const sw = this.switchOn(s);
+    if (this.lightsOff) {
+      const k = this.motion ? Math.max(0, 1 - (performance.now() - this.offAt) / 350) : 0;
+      sw.on = k; sw.late = [k, k, k, k];
+    }
     gl.uniform1f(this.u.uTime, s);
     gl.uniform1f(this.u.uMotion, this.motion);
     gl.uniform1f(this.u.uOn, sw.on);
@@ -350,9 +357,20 @@ export class CanalScene {
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
-    if (document.hidden || (!this.motion && !this.intro)) return;
+    if (document.hidden || (!this.motion && !this.intro && !this.lightsOff)) return;
     this.draw();
   };
+
+  private lightsOff = false;
+  private offAt = 0;
+  get lightsOn() { return !this.lightsOff; }
+  /** The dock's lights switch: off fades the street dark, on replays the switch-on. */
+  setLights(on: boolean) {
+    if (!this.gl) return;
+    if (on) { this.lightsOff = false; this.replayIntro(); }
+    else { this.lightsOff = true; this.offAt = performance.now(); }
+    if (!this.motion) this.draw();
+  }
 
   /** Test hook: replay the lights switching on. */
   replayIntro() {
