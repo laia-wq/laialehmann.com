@@ -395,3 +395,9 @@ html[data-mode='scene'], html[data-mode='scene'] body { height: 100%; background
   opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
 }
 .canal-label.is-on { opacity: 1; }
+.canal-canvas {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent);
+  mask-composite: intersect;
+}

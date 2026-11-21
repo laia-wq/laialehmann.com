@@ -20,6 +20,7 @@ interface SceneJson {
   size: [number, number];
   groups: string[];
   lights: { x: number; y: number; k: string; c: [number, number, number]; e: number }[];
+  bg?: [number, number, number][];
 }
 
 const BASE = `${import.meta.env.BASE_URL}canal/`;
@@ -103,7 +104,7 @@ export class CanalScene {
     const big = Math.min(window.devicePixelRatio || 1, 2) * Math.max(innerWidth, innerHeight * 4 / 3) > 1500;
     const [data, img, water, ids] = await Promise.all([
       fetch(BASE + 'scene.json').then((r) => r.json() as Promise<SceneJson>),
-      loadImage(BASE + (big ? 'canal.webp' : 'canal-1400.webp')),
+      loadImage(BASE + (big ? 'canal.avif' : 'canal-1400.avif')).catch(() => loadImage(BASE + (big ? 'canal.webp' : 'canal-1400.webp'))),
       loadImage(BASE + 'water.png'),
       loadImage(BASE + 'ids.png'),
     ]);
@@ -115,16 +116,11 @@ export class CanalScene {
     const ictx = ic.getContext('2d', { willReadFrequently: true })!;
     ictx.drawImage(ids, 0, 0);
     this.ids = ictx.getImageData(0, 0, ic.width, ic.height);
-    // Page background matches the far canal so the letterbox is invisible.
-    const sc = document.createElement('canvas');
-    sc.width = sc.height = 8;
-    const sctx = sc.getContext('2d')!;
-    sctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight * 0.06, 0, 0, 8, 8);
-    const px = sctx.getImageData(0, 0, 8, 8).data;
-    let r = 0, g = 0, b = 0;
-    for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i + 1]; b += px[i + 2]; }
-    const n = px.length / 4;
-    this.container.style.background = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
+    // The page behind the letterbox continues the render's own edge colours,
+    // and the render's edges fade into it, so there is no visible rectangle.
+    const [t, m, b] = data.bg ?? [[12, 13, 20], [4, 5, 8], [6, 7, 11]];
+    this.container.style.background = `linear-gradient(to bottom, rgb(${t}), rgb(${m}) 50%, rgb(${b}))`;
+    document.body.style.background = `rgb(${m})`;
 
     this.gl = this.canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, alpha: false });
     if (this.gl && this.setupGL(img, water, ids)) {
