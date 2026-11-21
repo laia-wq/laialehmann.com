@@ -1,4 +1,5 @@
 import '@fontsource/cormorant-garamond/latin-500.css';
+import '@fontsource/monsieur-la-doulaise/latin-400.css';
 import '@fontsource/cormorant-garamond/latin-500-italic.css';
 import '@fontsource-variable/inter/index.css';
 import './styles.css';

@@ -1257,7 +1257,38 @@ while placed < 110:
 lighting(sc, sun_rot=(math.radians(78), 0, math.radians(-40)), sun_energy=0.6, sun_color=(0.55, 0.62, 0.85),
          bg_top=(0.05, 0.07, 0.13), bg_bottom=(0.35, 0.24, 0.24), hdri_strength=0.08)
 cam = iso_camera(sc, (-0.1, 0.4, 2.4), 15.5, res=(int(os.environ.get('RES_X', 1400)), int(os.environ.get('RES_Y', 1050))))
+SMOKE = []
+if os.environ.get('NO_SMOKE'):
+    # The browser animates the chimney smoke, so take the baked puffs out and
+    # remember where each plume starts (its lowest puff), in 0..1 screen space.
+    from bpy_extras.object_utils import world_to_camera_view
+    puffs = [o for o in sc.objects if o.name.startswith('smoke')]
+    for o in puffs:
+        p = o.matrix_world.translation
+        lower = [q for q in puffs if q is not o and (q.matrix_world.translation.xy - p.xy).length < 0.45 and q.matrix_world.translation.z < p.z - 0.05]
+        if not lower:
+            v = world_to_camera_view(sc, cam, p)
+            SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5)})
+        o.hide_render = True
 render(sc, OUT, SAMPLES)
+if os.environ.get('OFF_OUT'):
+    # Same scene with every lamp, candle, window and sign switched off.
+    for o in sc.objects:
+        if o.type == 'LIGHT' and o.data.type != 'SUN':
+            o.data.energy = 0.0
+    for m in bpy.data.materials:
+        if m.use_nodes and m.node_tree:
+            for n in m.node_tree.nodes:
+                if n.type == 'BSDF_PRINCIPLED':
+                    n.inputs['Emission Strength'].default_value = 0.0
+                    for l in list(n.inputs['Emission Strength'].links):
+                        m.node_tree.links.remove(l)
+                if n.type == 'EMISSION':
+                    n.inputs['Strength'].default_value = 0.0
+    render(sc, os.environ['OFF_OUT'], SAMPLES)
+if SMOKE and os.environ.get('SMOKE_JSON'):
+    import json
+    json.dump(SMOKE, open(os.environ['SMOKE_JSON'], 'w'))
 WEB = os.environ.get('WEB_OUT', '')
 if WEB:
     import json

@@ -3,7 +3,7 @@
 //   canal.png (2800×2100)       → canal(.avif/.webp) + canal-1400(.avif/.webp)
 //   mask_water.png (alpha)      → water.png (grey = how much canal shows)
 //   mask_<group>.png (alpha)    → ids.png (red = 40 × group index, 0 = nothing)
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import sharp from 'sharp';
 
 const [src, out = 'public/canal'] = process.argv.slice(2);
@@ -13,11 +13,15 @@ const [W, H] = scene.size;
 
 // AVIF 4:4:4 keeps the dark sky gradient smooth (lossy WebP turns it blocky);
 // near-lossless WebP is the fallback for browsers without AVIF.
-const avif = { quality: 80, effort: 6, chromaSubsampling: '4:4:4' };
-await sharp(`${src}/canal.png`).avif(avif).toFile(`${out}/canal.avif`);
-await sharp(`${src}/canal.png`).resize(1400, 1050).avif(avif).toFile(`${out}/canal-1400.avif`);
-await sharp(`${src}/canal.png`).webp({ nearLossless: true, quality: 60, effort: 6 }).toFile(`${out}/canal.webp`);
-await sharp(`${src}/canal.png`).resize(1400, 1050).webp({ nearLossless: true, quality: 60, effort: 6 }).toFile(`${out}/canal-1400.webp`);
+const avif = { quality: 88, effort: 6, chromaSubsampling: '4:4:4' };
+for (const [png, name] of [['canal.png', 'canal'], ['canal_off.png', 'canal-off']]) {
+  if (!existsSync(`${src}/${png}`)) continue;
+  await sharp(`${src}/${png}`).avif(avif).toFile(`${out}/${name}.avif`);
+  await sharp(`${src}/${png}`).resize(1400, 1050).avif(avif).toFile(`${out}/${name}-1400.avif`);
+  await sharp(`${src}/${png}`).webp({ nearLossless: true, quality: 60, effort: 6 }).toFile(`${out}/${name}.webp`);
+  await sharp(`${src}/${png}`).resize(1400, 1050).webp({ nearLossless: true, quality: 60, effort: 6 }).toFile(`${out}/${name}-1400.webp`);
+}
+if (existsSync(`${src}/smoke.json`)) scene.smoke = JSON.parse(readFileSync(`${src}/smoke.json`, 'utf8'));
 // Colours along the top, middle and bottom edges, for the page behind the letterbox.
 {
   const { data, info } = await sharp(`${src}/canal.png`).removeAlpha().resize(64, 48).raw().toBuffer({ resolveWithObject: true });

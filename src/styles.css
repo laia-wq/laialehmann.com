@@ -385,7 +385,7 @@ html[data-mode='scene'], html[data-mode='scene'] body { height: 100%; background
   padding: clamp(14px, 3vh, 26px) clamp(16px, 3vw, 32px);
   pointer-events: none;
 }
-.canal-top .wordmark { font-family: 'Cormorant Garamond', serif; font-size: clamp(18px, 2.2vw, 24px); color: #e9dfcf; opacity: 0.85; }
+.canal-top .wordmark { font-family: 'Monsieur La Doulaise', 'Cormorant Garamond', cursive; font-size: clamp(34px, 4.2vw, 52px); line-height: 1; color: #efe3cf; opacity: 0.92; font-weight: 400; letter-spacing: 0.01em; text-shadow: 0 0 18px rgba(255, 190, 120, 0.12); }
 .canal-list { pointer-events: auto; font-size: 13px; color: #cfc4b2; opacity: 0.7; text-decoration: none; border-bottom: 1px solid rgba(207, 196, 178, 0.35); }
 .canal-list:hover { opacity: 1; }
 .canal-label {
