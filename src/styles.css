@@ -370,3 +370,28 @@ html[data-phase='world'] .world-tools { opacity: 1; pointer-events: auto; }
 .island-loading.is-done { opacity: 0; animation: none; pointer-events: none; }
 @keyframes island-pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .island-loading { animation: none; } }
+
+/* ------------------------------------------------------------ canal scene */
+html[data-mode='scene'], html[data-mode='scene'] body { height: 100%; background: #0b0b10; overflow: hidden; }
+.canal-stage {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #0b0b10;
+}
+.canal-canvas { display: block; user-select: none; -webkit-user-drag: none; }
+.canal-top {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 3;
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: clamp(14px, 3vh, 26px) clamp(16px, 3vw, 32px);
+  pointer-events: none;
+}
+.canal-top .wordmark { font-family: 'Cormorant Garamond', serif; font-size: clamp(18px, 2.2vw, 24px); color: #e9dfcf; opacity: 0.85; }
+.canal-list { pointer-events: auto; font-size: 13px; color: #cfc4b2; opacity: 0.7; text-decoration: none; border-bottom: 1px solid rgba(207, 196, 178, 0.35); }
+.canal-list:hover { opacity: 1; }
+.canal-label {
+  position: fixed; left: 0; top: 0; z-index: 4; margin: 0;
+  padding: 5px 10px; border-radius: 999px;
+  font-size: 12px; color: #f1e7d6; background: rgba(20, 16, 14, 0.72);
+  opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
+}
+.canal-label.is-on { opacity: 1; }
