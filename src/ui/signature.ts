@@ -1,7 +1,8 @@
 /**
  * Laia's signature, drawn like a pen: each stroke is an SVG path, sampled
- * along its length and painted onto a canvas with a calligraphy nib (thick on
- * downstrokes, hairline on sideways strokes). On first view it writes itself.
+ * along its length and widened into a filled vector outline by a calligraphy
+ * nib (thick on downstrokes, hairline on sideways strokes). On first view it
+ * writes itself.
  */
 
 // viewBox 0 0 600 190. Baseline ~130, small letters ~14 tall, capitals ~125.
@@ -26,64 +27,95 @@ export const SIGNATURE_STROKES: { d: string; w: number }[] = [
 ];
 export const SIGNATURE_DOT = { x: 586, y: 139, r: 2.8 };
 
-export function drawSignature(canvas: HTMLCanvasElement, opts: { color: string; animate: boolean; width?: number; nib?: number }) {
-  const VB_W = 600, VB_H = 190;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const cssW = opts.width ?? canvas.clientWidth ?? 300;
-  const scale = cssW / VB_W;
-  canvas.width = Math.round(cssW * dpr);
-  canvas.height = Math.round(VB_H * scale * dpr);
-  canvas.style.width = `${cssW}px`;
-  canvas.style.height = `${VB_H * scale}px`;
-  const ctx = canvas.getContext('2d')!;
-  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-  ctx.fillStyle = opts.color;
-  // Sample every stroke into (x, y, width) dabs once.
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
-  svg.style.position = 'absolute';
-  document.body.appendChild(svg);
-  const nib = opts.nib ?? 4.4;
-  const nibAngle = -0.6; // radians: a pen held at an angle
-  const dabs: { x: number; y: number; r: number }[][] = SIGNATURE_STROKES.map(({ d, w }) => {
-    const p = document.createElementNS(svgNS, 'path');
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const VB_W = 600, VB_H = 190;
+
+/** Each stroke as a filled outline: the pen's centreline, widened by a
+ *  calligraphy nib (thick across the nib, hairline along it, tapered ends).
+ *  Built from small quads all wound the same way, so loops that cross
+ *  themselves stay solid. Pure vector: sharp at any size. */
+function outlines(nib: number) {
+  const tmp = document.createElementNS(SVG_NS, 'svg');
+  tmp.setAttribute('width', '0'); tmp.setAttribute('height', '0');
+  tmp.style.position = 'absolute';
+  document.body.appendChild(tmp);
+  const nibAngle = -0.6;
+  const res = SIGNATURE_STROKES.map(({ d, w }) => {
+    const p = document.createElementNS(SVG_NS, 'path');
     p.setAttribute('d', d);
-    svg.appendChild(p);
+    tmp.appendChild(p);
     const L = p.getTotalLength();
-    const n = Math.max(2, Math.ceil(L / 0.6));
-    const out: { x: number; y: number; r: number }[] = [];
-    let prev = p.getPointAtLength(0);
-    for (let i = 0; i <= n; i++) {
+    const n = Math.max(2, Math.ceil(L / 0.9));
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i <= n; i++) { const q = p.getPointAtLength((i / n) * L); pts.push({ x: q.x, y: q.y }); }
+    const left: [number, number][] = [], right: [number, number][] = [];
+    let maxR = 0;
+    pts.forEach((q, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n, i + 1)];
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const t = (i / n) * L;
-      const q = p.getPointAtLength(t);
-      const ang = Math.atan2(q.y - prev.y, q.x - prev.x);
-      // thick across the nib, hairline along it; taper at both ends of a stroke
       const across = Math.abs(Math.sin(ang - nibAngle));
       const taper = Math.min(1, t / 6, (L - t) / 10);
-      out.push({ x: q.x, y: q.y, r: Math.max(0.32, (0.18 + 0.82 * across) * nib * w * 0.5 * (0.35 + 0.65 * taper)) });
-      prev = q;
+      const r = Math.max(0.3, (0.18 + 0.82 * across) * nib * w * 0.5 * (0.35 + 0.65 * taper));
+      maxR = Math.max(maxR, r);
+      const nx = -Math.sin(ang), ny = Math.cos(ang);
+      left.push([q.x + nx * r, q.y + ny * r]); right.push([q.x - nx * r, q.y - ny * r]);
+    });
+    const f = (v: number) => v.toFixed(2);
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      let quad = [left[i], left[i + 1], right[i + 1], right[i]];
+      let area = 0;
+      for (let k = 0; k < 4; k++) { const [x0, y0] = quad[k], [x1, y1] = quad[(k + 1) % 4]; area += x0 * y1 - x1 * y0; }
+      if (area < 0) quad = quad.reverse();
+      out += `M${f(quad[0][0])} ${f(quad[0][1])}L${f(quad[1][0])} ${f(quad[1][1])}L${f(quad[2][0])} ${f(quad[2][1])}L${f(quad[3][0])} ${f(quad[3][1])}Z`;
     }
-    return out;
+    // round the two ends
+    const cap = (q: { x: number; y: number }, r: number) => { const rr = f(r); return `M${f(q.x - r)} ${f(q.y)}a${rr} ${rr} 0 1 0 ${f(2 * r)} 0a${rr} ${rr} 0 1 0 ${f(-2 * r)} 0Z`; };
+    out += cap(pts[0], Math.hypot(left[0][0] - pts[0].x, left[0][1] - pts[0].y)) + cap(pts[n], Math.hypot(left[n][0] - pts[n].x, left[n][1] - pts[n].y));
+    return { d, fill: out, length: L, width: maxR * 2 + 2 };
   });
-  svg.remove();
-  const all = dabs.flat();
-  const total = all.length;
-  const paint = (upto: number) => {
-    ctx.clearRect(0, 0, VB_W, VB_H);
-    for (let i = 0; i < upto; i++) {
-      const b = all[i];
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
-    }
-    if (upto >= total) { ctx.beginPath(); ctx.arc(SIGNATURE_DOT.x, SIGNATURE_DOT.y, SIGNATURE_DOT.r, 0, Math.PI * 2); ctx.fill(); }
-  };
-  if (!opts.animate) { paint(total); return; }
+  tmp.remove();
+  return res;
+}
+
+let cache: ReturnType<typeof outlines> | null = null;
+let uid = 0;
+
+/** Draw the signature into an <svg>; on first view it writes itself (a mask
+ *  following each stroke's centreline uncovers the ink in pen order). */
+export function drawSignature(svg: SVGSVGElement, opts: { color: string; animate: boolean; width?: number; nib?: number }) {
+  cache ??= outlines(opts.nib ?? 4.4);
+  const cssW = opts.width ?? 300;
+  svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+  svg.style.width = `${cssW}px`;
+  svg.style.height = `${(cssW * VB_H) / VB_W}px`;
+  if (svg.dataset.built) return;   // resize: the vector just scales
+  svg.dataset.built = '1';
+  const id = `sig-mask-${uid++}`;
+  const ink = cache.map((s) => s.fill).join('') + (() => { const { x, y, r } = SIGNATURE_DOT; return `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`; })();
+  if (!opts.animate) {
+    svg.innerHTML = `<path fill="${opts.color}" d="${ink}"/>`;
+    return;
+  }
+  // one mask per stroke, so a stroke only uncovers its own ink
+  svg.innerHTML = '<defs>' + cache.map((s, i) => `<mask id="${id}-${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="${VB_W}" height="${VB_H}">`
+    + `<path d="${s.d}" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="${s.width.toFixed(1)}" stroke-dasharray="${s.length.toFixed(1)} ${(s.length + 10).toFixed(1)}" stroke-dashoffset="${s.length.toFixed(1)}"/></mask>`).join('')
+    + '</defs>' + cache.map((s, i) => `<path fill="${opts.color}" d="${s.fill}" mask="url(#${id}-${i})"/>`).join('');
+  const strokes = Array.from(svg.querySelectorAll('mask path')) as SVGPathElement[];
+  const total = cache.reduce((a, s) => a + s.length, 0);
   const dur = 1900, t0 = performance.now();
   const step = () => {
     const k = Math.min(1, (performance.now() - t0) / dur);
     const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-    paint(Math.round(e * total));
+    let left = e * total;
+    cache!.forEach((s, i) => {
+      const drawn = Math.max(0, Math.min(s.length, left));
+      strokes[i].setAttribute('stroke-dashoffset', (s.length - drawn).toFixed(1));
+      left -= s.length;
+    });
     if (k < 1) requestAnimationFrame(step);
+    else svg.innerHTML = `<path fill="${opts.color}" d="${ink}"/>`;
   };
   requestAnimationFrame(step);
 }

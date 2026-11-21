@@ -68,7 +68,7 @@ def camera_hidden(*objs):
     for o in objs:
         o.visible_camera = False   # still shows up in the water's reflection
 
-def life(W, u, z, w, h, frame):
+def _life(W, u, z, w, h, frame):
     """Props just inside a lit window: curtains plus one or two of many small
     signs of life. People only appear in the canal's reflection."""
     inside = -0.05
@@ -88,18 +88,19 @@ def life(W, u, z, w, h, frame):
         dark = lambda nm, c: solid(nm, c, 0.6)
         if what == 'cat':
             c = W.P(uu, 0.09, z + 0.05)
-            sphere('cat_body', c, 0.06, silhouette_m, 12, (1.3, 0.8, 0.9) if W.axis == 'y' else (0.8, 1.3, 0.9))
-            hdp = c + W.t * 0.08 + Vector((0, 0, 0.06)); sphere('cat_head', hdp, 0.038, silhouette_m, 10)
+            fur = solid('cat_fur', RG.choice([(0.3, 0.2, 0.13), (0.5, 0.33, 0.18), (0.42, 0.42, 0.4)]), 0.8)
+            sphere('cat_body', c, 0.06, fur, 12, (1.3, 0.8, 0.9) if W.axis == 'y' else (0.8, 1.3, 0.9))
+            hdp = c + W.t * 0.08 + Vector((0, 0, 0.06)); sphere('cat_head', hdp, 0.038, fur, 10)
             for sg in (-1, 1):
-                cyl('cat_ear', hdp + W.t * sg * 0.02 + Vector((0, 0, 0.035)), 0.014, 0.03, silhouette_m, verts=4, r2=0.0)
-            limb(c - W.t * 0.07, c - W.t * 0.12 + Vector((0, 0, -0.1)), 0.008, silhouette_m)
+                cyl('cat_ear', hdp + W.t * sg * 0.02 + Vector((0, 0, 0.035)), 0.014, 0.03, fur, verts=4, r2=0.0)
+            limb(c - W.t * 0.07, c - W.t * 0.12 + Vector((0, 0, -0.1)), 0.008, fur)
         elif what == 'plants':
             for q in range(RG.randint(1, 3)):
                 p = W.P(uu - 0.08 + q * 0.08, inside, z + 0.02)
                 cyl('ipot', p + Vector((0, 0, 0.04)), 0.032, 0.08, varied('ipot', (0.5, 0.28, 0.18), 0.15, 0.8), verts=10)
-                sphere('ileaves', p + Vector((0, 0, 0.12)), RG.uniform(0.045, 0.07), dark('ileaf', (0.06, 0.1, 0.04)), 10, (1, 1, 1.4))
+                sphere('ileaves', p + Vector((0, 0, 0.12)), RG.uniform(0.045, 0.07), dark('ileaf_w', (0.14, 0.28, 0.09)), 10, (1, 1, 1.4))
         elif what == 'lamp':
-            cyl('lamp_stem', sill + Vector((0, 0, 0.07)), 0.008, 0.14, silhouette_m, verts=6)
+            cyl('lamp_stem', sill + Vector((0, 0, 0.07)), 0.008, 0.14, brass_d, verts=6)
             cyl('lamp_shade', sill + Vector((0, 0, 0.17)), 0.06, 0.08, lamp_glow, verts=14, r2=0.035)
         elif what == 'candle':
             p = W.P(uu, 0.09, z + 0.02)
@@ -156,6 +157,32 @@ def life(W, u, z, w, h, frame):
                 a = q / 8 * 6.28
                 limb(top + Vector((math.cos(a) * 0.01, 0, 0)), top + Vector((math.cos(a) * 0.05, 0, -0.14)) + W.t * math.sin(a) * 0.05, 0.002, brass_d)
             sphere('bird', top - Vector((0, 0, 0.09)), 0.018, solid('bird', (0.95, 0.85, 0.2), 0.5), 8, (1.3, 1, 1))
+
+_LIT = {}
+def lit_copy(m, k=0.45):
+    """Same material, faintly self-lit: props just inside a bright window are lit
+    by the room behind them, not silhouetted against it."""
+    if m is None or not m.use_nodes or m.name.startswith(('silhouette', 'flame', 'ember', 'lamp_glow', 'dial')):
+        return m
+    if m.name in _LIT: return _LIT[m.name]
+    c = m.copy(); c.name = m.name + '_lit'
+    b = next((n for n in c.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    if b is not None and b.inputs['Emission Strength'].default_value == 0:
+        src = b.inputs['Base Color']
+        if src.links: c.node_tree.links.new(src.links[0].from_socket, b.inputs['Emission Color'])
+        else: b.inputs['Emission Color'].default_value = src.default_value
+        b.inputs['Emission Strength'].default_value = k
+    _LIT[m.name] = c
+    return c
+
+def life(W, u, z, w, h, frame):
+    before = set(bpy.data.objects.keys())
+    _life(W, u, z, w, h, frame)
+    for name in set(bpy.data.objects.keys()) - before:
+        o = bpy.data.objects[name]
+        if o.type != 'MESH' or not o.visible_camera or o.name.startswith('curtain'): continue
+        for slot in o.material_slots:
+            slot.material = lit_copy(slot.material)
 
 GLOWS = [glass_glow('g_warm', (1.0, 0.58, 0.26), 6.0), glass_glow('g_cream', (1.0, 0.8, 0.55), 5.0), glass_glow('g_amber', (1.0, 0.48, 0.18), 6.5),
          glass_glow('g_pale', (1.0, 0.9, 0.7), 4.5), glass_glow('g_rose', (1.0, 0.6, 0.5), 5.0), glass_glow('g_cool', (0.8, 0.9, 1.0), 3.5)]
@@ -437,7 +464,7 @@ def houseboat(x, y, a, L=2.2):
     lr = cyl('lifering', P(cx + cl * 0.2, -0.27, 0.45), 0.075, 0.03, varied('ring', (0.85, 0.3, 0.2), 0.05, 0.6), verts=24, rot=(math.pi / 2, 0, a)); cut(lr, cyl('lr_hole', P(cx + cl * 0.2, -0.27, 0.45), 0.04, 0.2, None, verts=16, rot=(math.pi / 2, 0, a)))
     # the sign: a big piece of cardboard, lettered in a hurry, propped on the roof
     sb = P(cx - cl * 0.05, -0.2, 0.98)
-    card = solid('cardboard', (0.62, 0.46, 0.3), 0.85)
+    card = solid('cardboard', (0.44, 0.32, 0.21), 0.85)
     cb = box('cardboard', sb, (1.62, 0.012, 0.42), card, bevel=0.004, rot=(-0.22, 0, a))
     for k in range(5):  # corrugated edge and a torn corner
         box('card_edge', sb + d * (-0.55 + k * 0.27) + Vector((0, 0, 0.23)), (0.2, 0.014, 0.012), solid('card_dark', (0.45, 0.32, 0.2), 0.9), bevel=0, rot=(-0.22, 0, a))
@@ -541,6 +568,8 @@ def makeshift_corridor(a, b, z, w=0.55, h=0.7, legs=True):
         limb(c - Vector((0, 0, 0.9)) - nrm * 0.1, c + Vector((0, 0, 0.02)), 0.03, weathered)
     room_light(tuple((a + b) / 2 + Vector((0, 0, h / 2))), 12)
 
+FAR_COL = tuple(float(v) for v in os.environ.get('FAR_COL', '0.6,0.62,0.95').split(','))
+FAR_GLOW = float(os.environ.get('FAR_GLOW', '0.02'))
 def endless_water(size=80.0):
     """Canal water to the edges of the view, fading into dusk haze far out."""
     m, n, l, b = node_mat('endless_canal')
@@ -552,10 +581,19 @@ def endless_water(size=80.0):
     fr = n.new('ShaderNodeMapRange'); fr.inputs['From Min'].default_value = 6.0; fr.inputs['From Max'].default_value = 14.0
     l.new(vl.outputs['Value'], fr.inputs['Value'])
     mx = n.new('ShaderNodeMix'); mx.data_type = 'RGBA'
-    mx.inputs['A'].default_value = (0.02, 0.035, 0.035, 1); mx.inputs['B'].default_value = (0.12, 0.1, 0.12, 1)
+    mx.inputs['A'].default_value = (0.012, 0.022, 0.024, 1); mx.inputs['B'].default_value = (0.07, 0.06, 0.08, 1)
     l.new(fr.outputs['Result'], mx.inputs['Factor']); l.new(mx.outputs['Result'], b.inputs['Base Color'])
     rr = n.new('ShaderNodeMapRange'); rr.inputs['To Min'].default_value = 0.04; rr.inputs['To Max'].default_value = 0.35
     l.new(fr.outputs['Result'], rr.inputs['Value']); l.new(rr.outputs['Result'], b.inputs['Roughness'])
+    # Far out the water is just dusk haze: a fixed glow, so the warm sun on the
+    # buildings doesn't lift the background. FAR_GLOW sets its brightness.
+    em = n.new('ShaderNodeEmission'); em.inputs['Color'].default_value = (*FAR_COL, 1)
+    em.inputs['Strength'].default_value = FAR_GLOW
+    ms = n.new('ShaderNodeMixShader'); out = next(x for x in n if x.type == 'OUTPUT_MATERIAL')
+    fk = n.new('ShaderNodeMapRange'); fk.inputs['From Min'].default_value = 7.0; fk.inputs['From Max'].default_value = 13.0
+    l.new(vl.outputs['Value'], fk.inputs['Value'])
+    l.new(fk.outputs['Result'], ms.inputs['Fac']); l.new(b.outputs['BSDF'], ms.inputs[1]); l.new(em.outputs['Emission'], ms.inputs[2])
+    l.new(ms.outputs['Shader'], out.inputs['Surface'])
     me = bpy.data.meshes.new('canal'); bm_ = bmesh.new(); bmesh.ops.create_grid(bm_, x_segments=1, y_segments=1, size=size / 2)
     bm_.to_mesh(me); bm_.free(); o = link(bpy.data.objects.new('canal', me)); me.materials.append(m)
     # a dark bed below so the quays don't float
@@ -872,7 +910,7 @@ def gable_end(x, y0, y1, z0, rise, mat, oculus=True, side=1):
             box('oculus_brick', c + Vector((side * 0.01, math.cos(a) * (r + 0.07), math.sin(a) * (r + 0.07))), (0.04, 0.06, 0.09), varied('voussoir', (0.42, 0.24, 0.17), 0.12, 0.85), bevel=0.005).rotation_euler = (a + math.pi / 2, 0, 0)
         room_light(tuple(c - Vector((side * 0.4, 0, 0))), 10, gcol)
         if RG.random() < 0.7:  # a plant silhouette in the round window
-            sphere('oc_plant', c - Vector((side * 0.03, 0, r * 0.45)), r * 0.45, solid('ileaf', (0.06, 0.1, 0.04), 0.7), 10, (0.4, 1, 0.8))
+            sphere('oc_plant', c - Vector((side * 0.03, 0, r * 0.45)), r * 0.45, lit_copy(solid('ileaf_o', (0.14, 0.28, 0.09), 0.7)), 10, (0.4, 1, 0.8))
 
 def big_flower_pot(p, colour=(0.96, 0.62, 0.72)):
     """A big terracotta pot overflowing with peony-like blooms."""
@@ -936,7 +974,7 @@ def candle(p, h=0.07, r=0.014, energy=12):
     sphere('candle_drip', p + Vector((r * 0.7, 0, h * 0.8)), r * 0.35, solid('wax', (0.9, 0.85, 0.75), 0.6), 6, (1, 1, 1.6))
     fl = p + Vector((0, 0, h + 0.012))
     sphere('flame', fl, 0.007, solid('flame', (1, 0.8, 0.4), 0.3, emit=(1.0, 0.68, 0.28), strength=60), 8, (1, 1, 2.0))
-    L = bpy.data.lights.new('candle', 'POINT'); L.energy = energy; L.color = CANDLE_COL; L.shadow_soft_size = 0.01
+    L = bpy.data.lights.new('candle', 'POINT'); L.energy = energy; L.color = CANDLE_COL; L.shadow_soft_size = 0.04
     link(bpy.data.objects.new('candle', L)).location = fl
 
 def gas_lamp(x, y, z0, h=1.2):
@@ -958,7 +996,7 @@ def gas_lamp(x, y, z0, h=1.2):
             box('gl_corner', (x + sx * 0.068, y + sy * 0.068, hz), (0.014, 0.014, 0.24), iron, bevel=0)
     cyl('gl_roof', (x, y, hz + 0.16), 0.11, 0.1, iron, verts=4, r2=0.02, rot=(0, 0, math.pi / 4))
     sphere('gl_finial', (x, y, hz + 0.23), 0.02, iron, 8)
-    candle((x, y, hz - 0.1), 0.1, 0.02, 20)
+    candle((x, y, hz - 0.1), 0.1, 0.02, 32)
 
 def wall_lantern(W, u, z):
     base = W.P(u, 0.02, z)
@@ -975,7 +1013,7 @@ def wall_lantern(W, u, z):
         box('wl_bar', lp + Vector((math.cos(a) * 0.052, math.sin(a) * 0.052, 0)), (0.008, 0.008, 0.14), iron, bevel=0)
     cyl('wl_roof', lp + Vector((0, 0, 0.09)), 0.07, 0.05, iron, verts=6, r2=0.015)
     cyl('wl_bottom', lp - Vector((0, 0, 0.075)), 0.055, 0.02, iron, verts=6)
-    candle(lp - Vector((0, 0, 0.065)), 0.06, 0.012, 9)
+    candle(lp - Vector((0, 0, 0.065)), 0.06, 0.012, 15)
 
 def lantern(loc, s=1.0):
     x, y, z = loc
@@ -1136,7 +1174,7 @@ for x in (-0.85, 0.55):
 hanging_lanterns((-0.85, 2.42, topB + 1.13), (0.55, 2.42, topB + 1.13), 3, 0.1)
 # a small roof garden: planter boxes of flowers, a bench, a watering can
 rg_z = topB + 0.35
-for (cx, cy, w_, d_) in ((-0.25, 3.55, 1.1, 0.32), (0.75, 3.25, 0.32, 0.8)):
+for (cx, cy, w_, d_) in ((0.45, 3.72, 0.9, 0.3), (-0.62, 3.0, 0.3, 0.6)):
     box('roof_planter', (cx, cy, rg_z + 0.1), (w_, d_, 0.2), timber_h, bevel=0.01)
     box('roof_soil', (cx, cy, rg_z + 0.2), (w_ - 0.05, d_ - 0.05, 0.01), solid('soil', (0.13, 0.09, 0.06), 0.95), bevel=0)
     for _ in range(int(w_ * d_ * 120)):
@@ -1148,11 +1186,11 @@ for (cx, cy, w_, d_) in ((-0.25, 3.55, 1.1, 0.32), (0.75, 3.25, 0.32, 0.8)):
     for _ in range(int(w_ * d_ * 40)):
         sphere('roof_leaf', (cx + RG.uniform(-w_ / 2 + 0.05, w_ / 2 - 0.05), cy + RG.uniform(-d_ / 2 + 0.05, d_ / 2 - 0.05), rg_z + 0.24), 0.035,
                solid('rleaf', (0.16, 0.3, 0.1), 0.7), 8, (1, 1, 0.7))
-box('roof_bench', (0.0, 3.0, rg_z + 0.15), (0.6, 0.2, 0.04), timber_h, bevel=0.006)
-for dx in (-0.25, 0.25):
-    box('roof_bench_leg', (dx, 3.0, rg_z + 0.07), (0.04, 0.18, 0.14), timber, bevel=0)
-cyl('watering_can', (0.5, 2.75, rg_z + 0.06), 0.05, 0.12, solid('can', (0.35, 0.45, 0.4), 0.4, metal=0.6), verts=14)
-limb(Vector((0.55, 2.75, rg_z + 0.06)), Vector((0.66, 2.75, rg_z + 0.14)), 0.008, solid('can', (0.35, 0.45, 0.4), 0.4, metal=0.6))
+box('roof_bench', (0.35, 3.2, rg_z + 0.15), (0.6, 0.2, 0.04), timber_h, bevel=0.006)
+for dx in (0.1, 0.6):
+    box('roof_bench_leg', (dx, 3.2, rg_z + 0.07), (0.04, 0.18, 0.14), timber, bevel=0)
+cyl('watering_can', (0.95, 3.05, rg_z + 0.06), 0.05, 0.12, solid('can', (0.35, 0.45, 0.4), 0.4, metal=0.6), verts=14)
+limb(Vector((1.0, 3.05, rg_z + 0.06)), Vector((1.11, 3.05, rg_z + 0.14)), 0.008, solid('can', (0.35, 0.45, 0.4), 0.4, metal=0.6))
 # shopfronts: B (neon), D (bakery glow with awning), C hanging sign
 cut(B, box('shopc', (-0.56, 2.25, 0.85), (0.75, 0.6, 1.0), None, bevel=0))
 box('shop_glass', (-0.56, 2.33, 0.85), (0.75, 0.01, 1.0), glow, bevel=0)
@@ -1221,11 +1259,32 @@ graffiti(CS, 3.3, 0.52, 'K!', (0.3, 0.42, 0.55), 0.2, 0.0)
 graffiti(BF, 0.95, 0.5, 'mira', (0.62, 0.52, 0.28), 0.14, 0.06)
 for (x, y, z, a) in ((-3.0, 3.2, topA + 1.25, 0.4), (-3.25, 3.0, topA + 1.22, 2.0), (0.3, 2.3, topB + 0.36, 1.0), (0.9, 2.3, topB + 0.36, 3.0), (3.6, 0.15, topC + 0.12, 1.5)):
     pigeon(x, y, z, a)
-trash(-3.5, -3.15, 0.28)
-box('chalkboard', (-4.6, -3.15, 0.55), (0.3, 0.04, 0.42), solid('chalk', (0.08, 0.1, 0.09), 0.8), bevel=0.01, rot=(0.15, 0, 0))
-box('chalk_frame', (-4.6, -3.13, 0.55), (0.34, 0.03, 0.46), timber_h, bevel=0.005, rot=(0.15, 0, 0))
-for k in range(4):
-    box('chalk_line', (-4.6 + RG.uniform(-0.05, 0.05), -3.18, 0.65 - k * 0.07), (RG.uniform(0.12, 0.2), 0.004, 0.012), solid('chalk_w', (0.85, 0.85, 0.8), 0.9), bevel=0, rot=(0.15, 0, 0))
+trash(-3.15, -3.2, 0.28)
+# an old kitchen chair someone carried out to sit by the water, a cat asleep on it
+def old_chair(x, y, z, a):
+    R = Matrix.Rotation(a, 3, 'Z'); O = Vector((x, y, z))
+    P = lambda dx, dy, dz: O + R @ Vector((dx, dy, dz))
+    wood = varied('chair_wood', (0.36, 0.22, 0.13), 0.1, 0.75)
+    paint = solid('chair_paint', (0.3, 0.38, 0.33), 0.8)   # flaking green paint on the seat
+    for (dx, dy) in ((-0.1, -0.1), (0.1, -0.1), (-0.1, 0.1), (0.1, 0.1)):
+        limb(P(dx, dy, 0.0), P(dx * 1.05, dy * 1.05, 0.25), 0.012, wood)
+    for dz in (0.08,):
+        limb(P(-0.1, -0.1, dz), P(-0.1, 0.1, dz), 0.006, wood); limb(P(0.1, -0.1, dz), P(0.1, 0.1, dz), 0.006, wood)
+    box('chair_seat', P(0, 0, 0.26), (0.24, 0.24, 0.025), paint, bevel=0.006).rotation_euler = (0, 0, a)
+    for dx in (-0.1, 0.1):
+        limb(P(dx, 0.11, 0.26), P(dx, 0.14, 0.58), 0.011, wood)
+    for dz in (0.38, 0.47, 0.56):
+        limb(P(-0.1, 0.125 + (dz - 0.26) * 0.09, dz), P(0.1, 0.125 + (dz - 0.26) * 0.09, dz), 0.007, wood)
+    fur = solid('cat_fur_c', (0.48, 0.32, 0.18), 0.85)
+    c = P(0.0, -0.01, 0.31)
+    sphere('chair_cat', c, 0.075, fur, 12, (1.25, 1.0, 0.55))
+    sphere('chair_cat_head', P(0.07, -0.05, 0.32), 0.035, fur, 10)
+    for sg in (-1, 1):
+        cyl('chair_cat_ear', P(0.08 + sg * 0.012, -0.05 + sg * 0.012, 0.355), 0.01, 0.022, fur, verts=4, r2=0.0)
+    for k in range(6):   # tail curled round the front
+        t0, t1 = k / 6 * 2.4, (k + 1) / 6 * 2.4
+        limb(P(-0.08 * math.cos(t0), -0.08 * math.sin(t0) - 0.02, 0.29), P(-0.08 * math.cos(t1), -0.08 * math.sin(t1) - 0.02, 0.29), 0.012, fur)
+old_chair(-4.5, -3.12, 0.28, 0.35)
 cyl('mailbox', (1.95, 2.2, 0.62), 0.07, 0.24, solid('mailbox', (0.5, 0.12, 0.1), 0.5), verts=14, rot=(math.pi / 2, 0, 0))
 cyl('umbrella', (-0.75, 2.1, 0.5), 0.012, 0.45, iron, verts=6, rot=(0.25, 0, 0))
 cyl('umbrella_c', (-0.75, 2.06, 0.6), 0.06, 0.3, solid('umbrella', (0.1, 0.12, 0.2), 0.6), verts=8, r2=0.01, rot=(0.25, 0, 0))
@@ -1237,6 +1296,21 @@ for k in range(4):
 limb(Vector((-2.35, 1.25, 1.75)), Vector((-1.3, 0.2, 2.1)), 0.004, timber_h)          # a fishing rod out of a window
 limb(Vector((-1.3, 0.2, 2.1)), Vector((-1.25, 0.15, 0.0)), 0.0015, solid('line', (0.8, 0.8, 0.8), 0.3))
 sphere('bobber', (-1.25, 0.15, 0.01), 0.015, solid('bobber', (0.85, 0.15, 0.1), 0.4), 8)
+# a scatter of far-off waterlilies, out where the water fades
+far = 0
+while far < 26:
+    x, y = RG.uniform(-17, 17), RG.uniform(-17, 17)
+    r = math.hypot(x - 0.2, y - 0.5)
+    if r < 7.0 or r > 16.5 or RG.random() > math.exp(-(r - 7.0) / 4.0): continue
+    if any(x0 - 0.15 < x < x1 + 0.15 and y0 - 0.15 < y < y1 + 0.15 for (x0, x1, y0, y1) in QUAYS): continue
+    rr = RG.uniform(0.06, 0.11)
+    cyl('pad', (x, y, 0.005), rr, 0.006, varied('pad_d', (0.12, 0.24, 0.08), 0.3, 0.4), verts=14)
+    if RG.random() < 0.32:
+        fc = RG.choice([(0.95, 0.9, 0.88), (0.9, 0.6, 0.68)])
+        for k in range(6):
+            a = k / 6 * 6.28
+            sphere('lpetal', (x + math.cos(a) * 0.02, y + math.sin(a) * 0.02, 0.025), 0.02, solid('lp%.2f' % fc[1], fc, 0.5), 8, (1, 0.4, 0.2)).rotation_euler = (0, -0.5, a)
+    far += 1
 # waterlilies across the whole canal, thinning with distance
 placed = 0
 quays = [(-4.85, -2.0, 0.85, 4.15), (-1.15, 2.35, 1.6, 4.15), (2.85, 4.85, -0.3, 4.15), (-4.85, -2.55, -3.4, 0.25)]
@@ -1256,6 +1330,19 @@ while placed < 110:
 
 lighting(sc, sun_rot=(math.radians(76), 0, math.radians(-40)), sun_energy=1.9, sun_color=(1.0, 0.64, 0.42),
          bg_top=(0.05, 0.07, 0.13), bg_bottom=(0.35, 0.24, 0.24), hdri_strength=0.13)
+# The canal mirrors the sky: keep what it reflects at the old, darker dusk level,
+# while the walls take the brighter late sun and sky.
+_wn = sc.world.node_tree.nodes; _wl = sc.world.node_tree.links
+_lp = _wn.new('ShaderNodeLightPath'); _mr = _wn.new('ShaderNodeMapRange')
+_mr.inputs['To Min'].default_value = 0.13; _mr.inputs['To Max'].default_value = float(os.environ.get('GLOSSY_WORLD', '0.08'))
+_wl.new(_lp.outputs['Is Glossy Ray'], _mr.inputs['Value']); _wl.new(_mr.outputs['Result'], _wn['Background'].inputs['Strength'])
+# ...and the low sun lights the buildings, not the water (light linking).
+_ns = bpy.data.collections.new('no_sun')
+for _nm in ('canal', 'canal_bed'):
+    if _nm in bpy.data.objects: _ns.objects.link(bpy.data.objects[_nm])
+_sun = next(o for o in sc.objects if o.type == 'LIGHT' and o.data.type == 'SUN')
+_sun.light_linking.receiver_collection = _ns
+for _co in _ns.collection_objects: _co.light_linking.link_state = 'EXCLUDE'
 cam = iso_camera(sc, (-0.1, 0.4, 2.4), 15.5, res=(int(os.environ.get('RES_X', 1400)), int(os.environ.get('RES_Y', 1050))))
 SMOKE = []
 if os.environ.get('NO_SMOKE'):
@@ -1333,11 +1420,37 @@ if WEB:
     canal.data.materials.clear(); [canal.data.materials.append(m) for m in keep]
     for g, f in GROUPS.items():
         mask(g, lambda o, f=f: f(centres[o.name]) and o is not canal)
+    # 3) switch-on order: every glowing thing (window panes, flames, signs) gets
+    # its own random grey; the browser spreads it to the light around it.
+    def glows(m):
+        if m is None or not m.use_nodes: return False
+        for nd in m.node_tree.nodes:
+            if nd.type == 'BSDF_PRINCIPLED' and (nd.inputs['Emission Strength'].default_value > 0 or nd.inputs['Emission Strength'].links): return True
+            if nd.type == 'EMISSION' and nd.inputs['Strength'].default_value > 0: return True
+        return False
+    dm, dn, dl, db = node_mat('delay_id')
+    oi = dn.new('ShaderNodeObjectInfo'); dem = dn.new('ShaderNodeEmission')
+    dl.new(oi.outputs['Random'], dem.inputs['Color'])
+    dl.new(dem.outputs['Emission'], next(x for x in dn if x.type == 'OUTPUT_MATERIAL').inputs['Surface'])
+    saved = {}
+    for o in geo:
+        if o is not canal and any(glows(sl.material) for sl in o.material_slots):
+            saved[o.name] = [sl.material for sl in o.material_slots]
+            for sl in o.material_slots: sl.material = dm
+            o.is_holdout = False
+        else:
+            o.is_holdout = True
+    vt = sc.view_settings.view_transform; sc.view_settings.view_transform = 'Standard'
+    render(sc, os.path.join(WEB, 'delay.png'), 6)
+    sc.view_settings.view_transform = vt
+    for name, mats in saved.items():
+        for sl, m in zip(bpy.data.objects[name].material_slots, mats): sl.material = m
+    print('DELAY objects', len(saved))
     for o in geo:
         o.is_holdout = False
     json.dump({'size': [W2, H2], 'lights': lights, 'groups': list(GROUPS)}, open(os.path.join(WEB, 'scene.json'), 'w'), separators=(',', ':'))
     print('WEB EXPORT', len(lights), 'lights')
-else:
+elif os.environ.get('BOAT_CLOSEUP'):
     # close-up of the houseboat and its sign
     cam.data.type = 'PERSP'; cam.data.lens = 50
     tgt = HB(-0.1, -0.2, 0.55)

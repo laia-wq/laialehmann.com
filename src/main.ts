@@ -1,5 +1,4 @@
 import '@fontsource/cormorant-garamond/latin-500.css';
-import '@fontsource/monsieur-la-doulaise/latin-400.css';
 import '@fontsource/cormorant-garamond/latin-500-italic.css';
 import '@fontsource-variable/inter/index.css';
 import './styles.css';
@@ -81,7 +80,7 @@ async function bootScene() {
   app.innerHTML = `
     <header class="canal-top">
       <div class="sig-block">
-        <a class="sig" href="./" aria-label="${escHtml(person.name)}"><canvas class="sig-canvas" aria-hidden="true"></canvas></a>
+        <a class="sig" href="./" aria-label="${escHtml(person.name)}"><svg class="sig-canvas" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"></svg></a>
         <p class="sig-sub">${escHtml(person.tagLeft)} · university of waterloo</p>
       </div>
       <nav class="top-links" aria-label="Contact">${links}</nav>
@@ -147,9 +146,9 @@ async function bootScene() {
     else if (!sheet.hidden) closeSheet();
   });
 
-  const sigCanvas = app.querySelector('.sig-canvas') as HTMLCanvasElement;
+  const sigCanvas = app.querySelector('.sig-canvas') as SVGSVGElement;
   const firstVisit = (() => { try { return localStorage.getItem('canal-lights-seen') !== '1'; } catch { return true; } })();
-  const sigWidth = () => Math.min(380, Math.max(220, innerWidth * 0.24));
+  const sigWidth = () => Math.min(290, Math.max(170, innerWidth * 0.18));
   drawSignature(sigCanvas, { color: '#efe3cf', animate: firstVisit && !matchMedia('(prefers-reduced-motion: reduce)').matches, width: sigWidth() });
   addEventListener('resize', () => drawSignature(sigCanvas, { color: '#efe3cf', animate: false, width: sigWidth() }));
   const { CanalScene } = await import('./canal/scene');

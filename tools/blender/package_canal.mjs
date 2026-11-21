@@ -48,5 +48,30 @@ for (const [gi, g] of scene.groups.entries()) {
   }
 }
 await sharp(Buffer.from(ids), { raw: { width: W, height: H, channels: 1 } }).png({ compressionLevel: 9 }).toFile(`${out}/ids.png`);
+// Switch-on order: delay.png has one random grey per glowing thing (alpha =
+// where it is). Spread each grey into the light around it with a wide blur
+// (premultiplied, then divided back out) → r = when, g = how near a light.
+if (existsSync(`${src}/delay.png`)) {
+  const { data, info } = await sharp(`${src}/delay.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const n = info.width * info.height;
+  const pre = Buffer.alloc(n * 2);
+  for (let i = 0; i < n; i++) { const a = data[i * 4 + 3]; pre[i * 2] = Math.round(Math.pow(data[i * 4] / 255, 2.2) * a);   // back to an even 0..1 spread pre[i * 2 + 1] = a; }
+  const blur = async (ch, sigma) => {
+    const one = Buffer.alloc(n); for (let i = 0; i < n; i++) one[i] = pre[i * 2 + ch];
+    return sharp(one, { raw: { width: info.width, height: info.height, channels: 1 } }).blur(sigma).extractChannel(0).raw().toBuffer();
+  };
+  const [ra, aa] = [await blur(0, 16), await blur(1, 16)];
+  const [rs, as] = [await blur(0, 3), await blur(1, 3)];
+  const outb = Buffer.alloc(n * 3);
+  for (let i = 0; i < n; i++) {
+    // near a light: its own grey (tight blur); further out: the wide blend
+    const wide = aa[i] > 0 ? ra[i] / aa[i] : 0, tight = as[i] > 0 ? rs[i] / as[i] : wide;
+    const wn = Math.min(1, Math.max(0, (as[i] - 10) / 60));
+    const r = wide + (tight - wide) * wn;
+    outb[i * 3] = Math.round(Math.min(1, r) * 255);
+    outb[i * 3 + 1] = Math.min(255, Math.max(as[i], aa[i] * 6));
+  }
+  await sharp(outb, { raw: { width: info.width, height: info.height, channels: 3 } }).resize(700, 525).png({ compressionLevel: 9 }).toFile(`${out}/delay.png`);
+}
 writeFileSync(`${out}/scene.json`, JSON.stringify(scene));
 console.log('packaged canal to', out, scene.lights.length, 'lights');
