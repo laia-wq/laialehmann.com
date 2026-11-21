@@ -5,6 +5,7 @@ import '@fontsource-variable/inter/index.css';
 import './styles.css';
 import { person, projects } from './content/projects';
 import { Panel, projectBody } from './ui/panel';
+import { drawSignature } from './ui/signature';
 
 type Mode = 'scene' | '2d';
 
@@ -63,13 +64,6 @@ const ROOMS: { room: string; where: string; ids: string[] }[] = [
 
 const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function signature(name: string) {
-  // Big looping capitals tucked under the letters that follow, like a signature.
-  const words = name.split(' ').map((w) => `<span class="sig-cap">${escHtml(w[0])}</span><span class="sig-rest">${escHtml(w.slice(1))}</span>`);
-  return `<span class="sig-word">${words.join('</span><span class="sig-gap"></span><span class="sig-word">')}</span>
-    <svg class="sig-flourish" viewBox="0 0 360 60" aria-hidden="true" focusable="false"><path d="M 24 30 C 120 40, 250 34, 330 10 C 352 3, 352 -4, 338 -1 C 296 8, 226 42, 146 50" /></svg>`;
-}
-
 function updatedLabel() {
   const d = new Date(__BUILD_DATE__);
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`;
@@ -86,23 +80,16 @@ async function bootScene() {
   const links = person.contact.map((l) => `<a href="${escHtml(l.href)}"${l.href.startsWith('mailto:') ? '' : ' target="_blank" rel="noopener"'}>${escHtml(l.label)}</a>`).join('');
   app.innerHTML = `
     <header class="canal-top">
-      <a class="sig" href="./" aria-label="${escHtml(person.name)}">${signature(person.name)}</a>
+      <div class="sig-block">
+        <a class="sig" href="./" aria-label="${escHtml(person.name)}"><canvas class="sig-canvas" aria-hidden="true"></canvas></a>
+        <p class="sig-sub">${escHtml(person.tagLeft)} · university of waterloo</p>
+      </div>
       <nav class="top-links" aria-label="Contact">${links}</nav>
     </header>
     <main id="content" tabindex="-1">
       <h1 class="visually-hidden">${escHtml(person.name)}, ${escHtml(person.role)}</h1>
       <div class="canal-stage" id="stage"></div>
-      <div class="hero" aria-hidden="false">
-        <div class="hero-left">
-          <p class="hero-greet">${escHtml(person.greeting)}</p>
-          <p class="hero-big">${escHtml(person.phraseLead)}</p>
-          <p class="hero-tag">${escHtml(person.tagLeft)}</p>
-        </div>
-        <div class="hero-right">
-          <p class="hero-big hero-em">${escHtml(person.phraseEm)}</p>
-          <p class="hero-tag">${escHtml(person.tagRight)}</p>
-        </div>
-      </div>
+      <p class="invite">${escHtml(person.invite)}</p>
       <nav class="dock" aria-label="Sections">
         <button type="button" data-open="projects">${ICONS.projects}<span>projects</span></button>
         <button type="button" data-open="about">${ICONS.about}<span>about</span></button>
@@ -117,7 +104,6 @@ async function bootScene() {
       <p class="live visually-hidden" aria-live="polite"></p>
     </main>`;
   const stage = document.getElementById('stage')!;
-  const hero = app.querySelector('.hero') as HTMLElement;
   const label = app.querySelector('.canal-label') as HTMLElement;
   const live = app.querySelector('.live') as HTMLElement;
   const sheet = document.getElementById('sheet')!;
@@ -161,6 +147,11 @@ async function bootScene() {
     else if (!sheet.hidden) closeSheet();
   });
 
+  const sigCanvas = app.querySelector('.sig-canvas') as HTMLCanvasElement;
+  const firstVisit = (() => { try { return localStorage.getItem('canal-lights-seen') !== '1'; } catch { return true; } })();
+  const sigWidth = () => Math.min(380, Math.max(220, innerWidth * 0.24));
+  drawSignature(sigCanvas, { color: '#efe3cf', animate: firstVisit && !matchMedia('(prefers-reduced-motion: reduce)').matches, width: sigWidth() });
+  addEventListener('resize', () => drawSignature(sigCanvas, { color: '#efe3cf', animate: false, width: sigWidth() }));
   const { CanalScene } = await import('./canal/scene');
   stage.addEventListener('pointermove', (e) => { label.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 12}px)`; });
   const scene = new CanalScene(stage, {
@@ -172,19 +163,7 @@ async function bootScene() {
       live.textContent = `${GROUP_NAMES[g] ?? g}: rooms coming soon.`;
       openSheet('projects');
     },
-    onLayout(r) {
-      // The phrase sits in the night sky of the render, so it tracks the image.
-      // On tall screens there is empty space above the render: stack the phrase there instead.
-      const portrait = innerHeight > innerWidth * 1.15;
-      hero.classList.toggle('is-portrait', portrait);
-      if (portrait) {
-        const top = 120;
-        Object.assign(hero.style, { left: '0px', top: `${top}px`, width: '100%', height: `${Math.max(150, r.top + r.height * 0.06 - top)}px` });
-      } else {
-        Object.assign(hero.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-      }
-      hero.style.setProperty('--w', `${r.width}px`);
-    },
+    onLayout() {    },
   });
   const lightsBtn = app.querySelector('.lights') as HTMLButtonElement;
   lightsBtn.addEventListener('click', () => {

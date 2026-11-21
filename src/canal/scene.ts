@@ -44,7 +44,7 @@ precision highp float;
 varying vec2 vUv;
 uniform sampler2D uImg, uOff, uWater, uIds;
 uniform vec2 uImgPx;
-uniform float uTime, uHover, uMotion, uAspect, uOn;
+uniform float uTime, uHover, uMotion, uAspect, uOn, uIntroT;
 uniform vec4 uLights[${MAX_LIGHTS}];
 uniform int uCount;
 uniform vec4 uSmoke[${MAX_SMOKE}];
@@ -73,13 +73,15 @@ void main() {
   vec4 dark = texture2D(uOff, uv + off);
   on.rgb *= 1.0 + 0.04 * w * (n2 - 0.5) * uMotion;
 
-  // Lights switching on: everything at once, except a few lamps that stutter.
-  float k = uOn;
-  for (int i = 0; i < 4; i++) {
-    vec2 d = (uv - uLate[i].xy) * vec2(uAspect, 1.0);
-    float g = exp(-dot(d, d) / (uLate[i].z * uLate[i].z));
-    k = mix(k, k * uLate[i].w, g);
-  }
+  // Lights switching on, staggered: a slow wave across the street plus a
+  // random delay per patch, so windows and lamps come on one after another,
+  // and a few patches stutter before they catch.
+  float cell = hash(floor(uv * vec2(44.0, 33.0)) + 3.1);
+  float delay = 0.8 * vnoise(uv * 4.0 + 7.0) + 0.55 * cell;
+  float lt = uIntroT - delay;
+  float k = smoothstep(0.0, 0.09, lt);
+  if (cell > 0.8 && lt > 0.0 && lt < 0.7) k *= step(0.42, fract(lt * 6.5 + cell * 9.0));
+  k *= uOn;
   vec4 c = mix(dark, on, k);
 
   // Candle flicker around each small flame.
@@ -223,7 +225,7 @@ export class CanalScene {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return false;
     gl.useProgram(p);
     this.prog = p;
-    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uLate']) this.u[n] = gl.getUniformLocation(p, n);
+    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uIntroT', 'uLate']) this.u[n] = gl.getUniformLocation(p, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -331,7 +333,7 @@ export class CanalScene {
       const flick = Math.sin((s - 1.1) * (17 + i * 5) + l.seed) > 0.2 ? 1 : 0;
       return s < t0 ? 0.08 + 0.4 * flick : flick * (0.6 + 0.4 * step(t0, t0 + 1.2));
     });
-    if (s > 4.5) this.intro = false;
+    if (s > 3.6) this.intro = false;
     return { on, late };
   }
 
@@ -346,7 +348,8 @@ export class CanalScene {
     }
     gl.uniform1f(this.u.uTime, s);
     gl.uniform1f(this.u.uMotion, this.motion);
-    gl.uniform1f(this.u.uOn, sw.on);
+    gl.uniform1f(this.u.uOn, this.lightsOff ? sw.on : 1);
+    gl.uniform1f(this.u.uIntroT, this.intro ? s - 0.9 : 100);
     const late = new Float32Array(16);
     this.late.forEach((l, i) => late.set([l.x, l.y, l.r, sw.late[i]], i * 4));
     gl.uniform4fv(this.u.uLate, late);

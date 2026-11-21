@@ -242,5 +242,6 @@ export const person = {
   phraseEm: 'the overlooked.',
   tagLeft: 'systems design engineering',
   tagRight: 'recently: syde @uwaterloo',
+  invite: 'some of these windows are mine. come in.',
   scholarships: ["President's Scholarship of Distinction", 'Joyce A. Borrie and George W. Stevenson Memorial Scholarship'],
 };

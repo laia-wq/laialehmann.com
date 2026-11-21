@@ -509,3 +509,10 @@ html[data-mode='scene'] .panel { z-index: 8; }
   .top-links a { font-size: 10px; letter-spacing: 0.14em; }
   .sig { font-size: 26px; }
 }
+/* hand-drawn signature + quiet invitation */
+.sig-block { pointer-events: auto; display: flex; flex-direction: column; gap: 2px; }
+.sig { display: block; padding: 0; margin: -6px 0 0 -10px; transform: none; font-size: inherit; text-shadow: none; }
+.sig-canvas { display: block; filter: drop-shadow(0 0 10px rgba(255, 190, 120, 0.12)); }
+.sig-sub { margin: 0 0 0 4px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--cream-dim); }
+.invite { position: fixed; left: clamp(16px, 3vw, 32px); bottom: clamp(18px, 3.6vh, 32px); z-index: 3; margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--cream-dim); max-width: 22ch; line-height: 1.6; }
+@media (max-width: 720px) { .invite { display: none; } .sig-sub { font-size: 9px; } }
