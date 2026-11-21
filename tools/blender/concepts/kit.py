@@ -377,11 +377,12 @@ def asset(name):
     return objs
 
 def plant(name, loc, height, rot=None, pick=None, tilt=0.0):
-    objs = asset(name)
+    # skip flat helper meshes (ground cards, decals) that would scale up hugely
+    objs = [o for o in asset(name) if o.dimensions.z > 0.25 * max(o.dimensions.x, o.dimensions.y, 1e-4)] or asset(name)
     src = objs[pick % len(objs)] if pick is not None else R.choice(objs)
     o = link(bpy.data.objects.new(name, src.data))
-    h = max(src.dimensions.z, 1e-4)
-    s = height / h
+    d = src.dimensions
+    s = height / max(d.z, 0.35 * max(d.x, d.y), 1e-4)
     o.scale = (s, s, s)
     o.location = loc
     o.rotation_euler = (R.uniform(-tilt, tilt), R.uniform(-tilt, tilt), R.uniform(0, 6.28) if rot is None else rot)
