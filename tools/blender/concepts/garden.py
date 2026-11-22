@@ -49,6 +49,7 @@ def limb(a, b, r, bark):
     d = b - a
     c = cyl('limb', (a + b) / 2, r, d.length, bark, verts=8, r2=r * 0.5)
     c.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
+    return c
 
 def weeping_willow(base, height=3.0, crown=1.5):
     bark = varied('willow_bark', (0.3, 0.25, 0.2), 0.1, 0.9, bump=0.6, bump_scale=30)

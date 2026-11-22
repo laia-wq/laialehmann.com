@@ -218,14 +218,66 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
     fr = solid('frame_' + style, {'sash': (0.78, 0.74, 0.66), 'arch': (0.16, 0.22, 0.18), 'casement': (0.25, 0.17, 0.12), 'bay': (0.32, 0.12, 0.1)}[style], 0.55)
     rec = -0.08
     if style == 'bay':
-        bw, bd = w + 0.2, 0.32
-        box('bay', W.P(u, bd / 2, z + h / 2), W.S(bw, bd, h + 0.25), fr, bevel=0.015)
-        box('bay_roof', W.P(u, bd / 2 + 0.02, z + h + 0.18), W.S(bw + 0.1, bd + 0.12, 0.06), varied('bay_roofm', (0.18, 0.19, 0.22), 0.1, 0.6), bevel=0.01)
-        box('bay_glass', W.P(u, bd + 0.005, z + h / 2 + 0.02), W.S(w, 0.01, h * 0.8), gmat if lit else dark_win, bevel=0)
+        # an oriel: a little glazed room hung off the wall on carved brackets,
+        # windows on the front and both sides, panelled below, a cornice and a
+        # lead roof above. Painted timber, matt and brushy, not lacquer.
+        bw, bd = w + 0.22, 0.36
+        paint = varied('bay_paint', (0.4, 0.09, 0.07), 0.1, 0.85, bump=0.7, bump_scale=90)
+        trim = varied('bay_trim', (0.82, 0.76, 0.64), 0.06, 0.8, bump=0.4, bump_scale=90)
+        lead = varied('bay_lead', (0.24, 0.25, 0.27), 0.12, 0.55, bump=0.5, bump_scale=25)
+        glass = gmat if lit else dark_win
+        zb, zt = z - 0.1, z + h + 0.12          # apron bottom, cornice top
+        za, zf = z + 0.06, z + h - 0.02         # glazing from za to zf
+        sides = (-1, 1)
+        # apron (panelled) and frieze, front and both sides
+        box('bay', W.P(u, bd / 2, (zb + za) / 2), W.S(bw, bd, za - zb), paint, bevel=0.01)
+        box('bay', W.P(u, bd / 2, (zf + zt) / 2), W.S(bw, bd, zt - zf), paint, bevel=0.01)
+        for k in range(3):
+            pu = u - bw / 2 + (k + 0.5) * bw / 3
+            box('bay_panel', W.P(pu, bd + 0.006, (zb + za) / 2), W.S(bw / 3 - 0.05, 0.012, (za - zb) - 0.06), paint, bevel=0.006)
+        for sg in sides:
+            box('bay_panel', W.P(u + sg * (bw / 2 + 0.006), bd / 2 + 0.02, (zb + za) / 2), W.S(0.012, bd - 0.1, (za - zb) - 0.06), paint, bevel=0.006)
+        # corner posts
+        for sg in sides:
+            box('bay_post', W.P(u + sg * (bw / 2 - 0.022), bd - 0.022, (za + zf) / 2), W.S(0.05, 0.05, zf - za), paint, bevel=0.006)
+            box('bay_post', W.P(u + sg * (bw / 2 - 0.022), 0.03, (za + zf) / 2), W.S(0.05, 0.05, zf - za), paint, bevel=0.006)
+        # glazing: front in three lights with a transom, each side in two
+        gz = (za + zf) / 2; gh = zf - za; tz = zf - gh * 0.28
+        box('bay_glass', W.P(u, bd - 0.02, gz), W.S(bw - 0.06, 0.01, gh), glass, bevel=0)
         for k in range(4):
-            box('bay_mull', W.P(u - w / 2 + k * w / 3, bd + 0.012, z + h / 2 + 0.02), W.S(0.025, 0.02, h * 0.82), fr, bevel=0)
+            box('bay_mull', W.P(u - (bw - 0.06) / 2 + k * (bw - 0.06) / 3, bd - 0.012, gz), W.S(0.028, 0.022, gh), trim, bevel=0.003)
+        box('bay_mull', W.P(u, bd - 0.012, tz), W.S(bw - 0.06, 0.022, 0.024), trim, bevel=0.003)
+        for sg in sides:
+            xs = u + sg * (bw / 2 - 0.02)
+            box('bay_glass', W.P(xs, bd / 2 + 0.01, gz), W.S(0.01, bd - 0.1, gh), glass, bevel=0)
+            for dd in (0.04, bd / 2 + 0.01, bd - 0.05):
+                box('bay_mull', W.P(xs + sg * 0.008, dd, gz), W.S(0.022, 0.028, gh), trim, bevel=0.003)
+            box('bay_mull', W.P(xs + sg * 0.008, bd / 2 + 0.01, tz), W.S(0.022, bd - 0.08, 0.024), trim, bevel=0.003)
+        # sill all round
+        box('bay_sill', W.P(u, bd / 2 + 0.015, za - 0.005), W.S(bw + 0.05, bd + 0.03, 0.03), trim, bevel=0.006)
+        # cornice: a crown moulding and a row of little dentils
+        box('bay_cornice', W.P(u, bd / 2 + 0.02, zt + 0.015), W.S(bw + 0.08, bd + 0.07, 0.035), trim, bevel=0.008)
+        nd = 9
+        for k in range(nd):
+            box('bay_dentil', W.P(u - bw / 2 + 0.03 + k * (bw - 0.06) / (nd - 1), bd + 0.012, zt - 0.02), W.S(0.018, 0.018, 0.025), trim, bevel=0)
+        for sg in sides:
+            for k in range(4):
+                box('bay_dentil', W.P(u + sg * (bw / 2 + 0.012), 0.05 + k * (bd - 0.1) / 3, zt - 0.02), W.S(0.018, 0.018, 0.025), trim, bevel=0)
+        # lead roof, sloping back to the wall, with rolled seams and a finial
+        r_ = box('bay_roof', W.P(u, bd / 2 + 0.02, zt + 0.08), W.S(bw + 0.1, bd + 0.1, 0.04), lead, bevel=0.01)
+        r_.rotation_euler = (0.32, 0, 0) if W.axis == 'y' else (0, -0.32, 0)
+        for k in range(4):
+            sq = box('bay_seam', W.P(u - bw / 2 + 0.02 + k * bw / 3, bd / 2 + 0.02, zt + 0.105), W.S(0.014, bd + 0.08, 0.014), lead, bevel=0.005)
+            sq.rotation_euler = r_.rotation_euler
+        sphere('bay_finial', W.P(u, bd + 0.03, zt + 0.06), 0.022, trim, 12)
+        # two carved brackets under it, each three corbelled steps and a drop
+        for sg in sides:
+            for k, (dd, hh) in enumerate(((0.3, 0.05), (0.22, 0.06), (0.14, 0.07))):
+                box('bay_corbel', W.P(u + sg * (bw / 2 - 0.05), dd / 2, zb - 0.025 - k * 0.055), W.S(0.06, dd, hh), paint, bevel=0.008)
+            sphere('bay_drop', W.P(u + sg * (bw / 2 - 0.05), 0.31, zb - 0.04), 0.02, trim, 10, (1, 1, 1.4))
         if lit:
             room_light(tuple(W.P(u, -0.3, z + h / 2)), 16, gcol)
+            room_light(tuple(W.P(u, 0.18, z + h / 2)), 4, gcol)
         return
     box('pane', W.P(u, rec, z + h / 2), W.S(w, 0.01, h), gmat if lit else dark_win, bevel=0)
     t = 0.028
@@ -290,10 +342,14 @@ def building(name, x0, x1, y0, y1, z0, floors, fh, mat, style, fcols, scols, lit
     du = x0 + (fcols // 2 + 0.5) * Wd / fcols
     cut(o, box('dc', (du, y0, z0 + 0.6), (0.55, 0.6, 1.1), None, bevel=0))
     box('door', (du, y0 + 0.08, z0 + 0.55), (0.5, 0.05, 1.05), timber, bevel=0.01)
-    for k in range(2):
-        box('door_panel', (du, y0 + 0.05, z0 + 0.3 + k * 0.45), (0.38, 0.02, 0.36), timber_h, bevel=0.006)
-    sphere('knob', (du + 0.16, y0 + 0.03, z0 + 0.55), 0.02, brass_d, 8)
-    box('transom', (du, y0 - 0.02, z0 + 1.22), (0.5, 0.02, 0.12), glow, bevel=0)
+    # a panel below, glazing above (the hall light shows through it) -- the
+    # light belongs in the door, not floating on the wall over it
+    box('door_panel', (du, y0 + 0.05, z0 + 0.3), (0.38, 0.02, 0.36), timber_h, bevel=0.006)
+    box('transom', (du, y0 + 0.055, z0 + 0.78), (0.34, 0.01, 0.38), glow, bevel=0)
+    for dx in (-0.06, 0.06):
+        box('door_bar', (du + dx, y0 + 0.045, z0 + 0.78), (0.018, 0.015, 0.38), timber_h, bevel=0.002)
+    box('door_bar', (du, y0 + 0.045, z0 + 0.78), (0.34, 0.015, 0.018), timber_h, bevel=0.002)
+    sphere('knob', (du + 0.16, y0 + 0.03, z0 + 0.5), 0.02, brass_d, 8)
     box('step', (du, y0 - 0.15, z0 + 0.04), (0.7, 0.3, 0.08), quay, bevel=0.01)
     box('cornice', ((x0 + x1) / 2, (y0 + y1) / 2, z0 + H + 0.05), (Wd + 0.16, Dp + 0.16, 0.1), quay, bevel=0.01)
     for k in range(int(Wd / 0.3)):
@@ -335,8 +391,9 @@ def neon_sign(W, u, z, text_w=0.6, color=(1.0, 0.35, 0.45)):
     nm = solid('neon_' + str(color), color, 0.3, emit=color, strength=14)
     box('neon_back', W.P(u, 0.03, z), W.S(text_w + 0.12, 0.02, 0.26), solid('sign', (0.12, 0.1, 0.08), 0.6), bevel=0.01)
     pts = [W.P(u - text_w / 2 + text_w * t, 0.05, z + 0.06 * math.sin(t * 14)) for t in [k / 16 for k in range(17)]]
+    gid = (abs(hash((round(u, 3), round(z, 3)))) % 997) / 997.0
     for p, q in zip(pts, pts[1:]):
-        limb(p, q, 0.008, nm)
+        limb(p, q, 0.008, nm)['glow_group'] = gid      # the whole tube lights at once
     L = bpy.data.lights.new('neon', 'POINT'); L.energy = 5; L.color = color
     link(bpy.data.objects.new('neon', L)).location = W.P(u, 0.2, z)
 
@@ -390,6 +447,98 @@ def corrugated(name, base):
     b.inputs['Roughness'].default_value = 0.6; b.inputs['Metallic'].default_value = 0.4
     return m
 
+def rusty_steel(name, paint=(0.08, 0.12, 0.1)):
+    """Old painted steel: paint flaking off to rust in patches, orange runs
+    streaking down from seams, a red oxide waterline band and green slime
+    right at the water."""
+    m, n, l, b = node_mat(name)
+    tc = n.new('ShaderNodeTexCoord')
+    pz = n.new('ShaderNodeSeparateXYZ'); l.new(tc.outputs['Object'], pz.inputs['Vector'])
+    # rust patches
+    nz = n.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 9; nz.inputs['Detail'].default_value = 10; nz.inputs['Roughness'].default_value = 0.65
+    l.new(tc.outputs['Object'], nz.inputs['Vector'])
+    pr = n.new('ShaderNodeMapRange'); pr.inputs['From Min'].default_value = 0.5; pr.inputs['From Max'].default_value = 0.6
+    l.new(nz.outputs['Fac'], pr.inputs['Value'])
+    # runs: noise squashed tall, so it streaks downwards
+    mp = n.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (40, 40, 2.5)
+    l.new(tc.outputs['Object'], mp.inputs['Vector'])
+    rn = n.new('ShaderNodeTexNoise'); rn.inputs['Scale'].default_value = 3; rn.inputs['Detail'].default_value = 4
+    l.new(mp.outputs['Vector'], rn.inputs['Vector'])
+    rr = n.new('ShaderNodeMapRange'); rr.inputs['From Min'].default_value = 0.52; rr.inputs['From Max'].default_value = 0.7
+    rr.inputs['To Max'].default_value = 0.75
+    l.new(rn.outputs['Fac'], rr.inputs['Value'])
+    rust_amt = n.new('ShaderNodeMath'); rust_amt.operation = 'MAXIMUM'; rust_amt.use_clamp = True
+    l.new(pr.outputs['Result'], rust_amt.inputs[0]); l.new(rr.outputs['Result'], rust_amt.inputs[1])
+    rustc = n.new('ShaderNodeValToRGB')
+    rustc.color_ramp.elements[0].color = (0.2, 0.07, 0.03, 1); rustc.color_ramp.elements[1].color = (0.45, 0.2, 0.08, 1)
+    l.new(nz.outputs['Fac'], rustc.inputs['Fac'])
+    mix = n.new('ShaderNodeMix'); mix.data_type = 'RGBA'
+    mix.inputs['A'].default_value = (*paint, 1)
+    l.new(rust_amt.outputs['Value'], mix.inputs['Factor']); l.new(rustc.outputs['Color'], mix.inputs['B'])
+    # waterline: red oxide band, slime below it
+    band = n.new('ShaderNodeMapRange'); band.inputs['From Min'].default_value = 0.035; band.inputs['From Max'].default_value = 0.03
+    l.new(pz.outputs['Z'], band.inputs['Value'])
+    mix2 = n.new('ShaderNodeMix'); mix2.data_type = 'RGBA'; mix2.inputs['B'].default_value = (0.32, 0.07, 0.05, 1)
+    l.new(band.outputs['Result'], mix2.inputs['Factor']); l.new(mix.outputs['Result'], mix2.inputs['A'])
+    slime = n.new('ShaderNodeMapRange'); slime.inputs['From Min'].default_value = 0.012; slime.inputs['From Max'].default_value = 0.0
+    l.new(pz.outputs['Z'], slime.inputs['Value'])
+    mix3 = n.new('ShaderNodeMix'); mix3.data_type = 'RGBA'; mix3.inputs['B'].default_value = (0.07, 0.1, 0.05, 1)
+    l.new(slime.outputs['Result'], mix3.inputs['Factor']); l.new(mix2.outputs['Result'], mix3.inputs['A'])
+    l.new(mix3.outputs['Result'], b.inputs['Base Color'])
+    rg = n.new('ShaderNodeMapRange'); rg.inputs['To Min'].default_value = 0.5; rg.inputs['To Max'].default_value = 0.95
+    l.new(rust_amt.outputs['Value'], rg.inputs['Value']); l.new(rg.outputs['Result'], b.inputs['Roughness'])
+    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.5; bp.inputs['Distance'].default_value = 0.004
+    l.new(pr.outputs['Result'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
+    return m
+
+
+def barge_hull(P, L, W=0.33, deck_mat=None, mat=None):
+    """A steel barge hull lofted from cross-sections: a flat transom stern, a
+    full body, a pointed bow that sweeps up (sheer) and rakes forward, the
+    bilge rounding into a shallow keel. Returns the sheer line (each side)."""
+    import bmesh as _bm
+    N = 44
+    prof = [(1.0, 0.0), (1.0, 0.06), (0.99, 0.13), (0.96, 0.2), (0.88, 0.3), (0.65, 0.55), (0.3, 0.9), (0.0, 1.0)]
+    def half(t):
+        if t > 0.42: return W * max(0.025, math.sqrt(max(0.0, 1 - ((t - 0.42) / 0.58) ** 2)) ** 0.9)
+        if t < -0.75: return W * (1 - 0.3 * ((-t - 0.75) / 0.25) ** 2)
+        return W
+    sheer = lambda t: 0.19 + 0.1 * max(0.0, (t - 0.3) / 0.7) ** 2 + 0.03 * max(0.0, (-t - 0.6) / 0.4) ** 2
+    keel = lambda t: -0.09 + 0.08 * max(0.0, (t - 0.55) / 0.45) ** 2
+    me = bpy.data.meshes.new('hull'); bm = _bm.new()
+    rings = []
+    for i in range(N + 1):
+        t = -1 + 2 * i / N
+        a_ = t * L / 2 + (0.04 * max(0.0, (t - 0.6) / 0.4) ** 2) * L   # the bow rakes forward at the top
+        w, zs, zk = half(t), sheer(t), keel(t)
+        ring = []
+        for side in (1, -1):
+            pts = prof if side == 1 else list(reversed(prof))[:-1] if False else prof
+            seq = prof if side == 1 else list(reversed(prof))
+            for (fx, fz) in seq:
+                if side == -1 and fx == 0.0: continue
+                z = zs + (zk - zs) * fz
+                along = a_ - (0.04 * max(0.0, (t - 0.6) / 0.4) ** 2) * L * fz
+                ring.append(bm.verts.new(P(along, side * w * fx, z)))
+        rings.append(ring)
+    # ring order: right side top->keel, then left side keel->top
+    for i in range(N):
+        A, B = rings[i], rings[i + 1]
+        for k in range(len(A) - 1):
+            bm.faces.new((A[k], A[k + 1], B[k + 1], B[k]))
+        f = bm.faces.new((A[-1], A[0], B[0], B[-1])); f.material_index = 1      # deck
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    _bm.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me); bm.free()
+    o = link(bpy.data.objects.new('hull', me))
+    me.materials.append(mat); me.materials.append(deck_mat)
+    for p in me.polygons: p.use_smooth = p.material_index == 0
+    sheer_pts = {side: [P(-1 * L / 2 + (j / 30) * L + (0.04 * max(0.0, ((-1 + 2 * j / 30) - 0.6) / 0.4) ** 2) * L,
+                         side * half(-1 + 2 * j / 30), sheer(-1 + 2 * j / 30)) for j in range(31)] for side in (1, -1)}
+    return o, sheer_pts, half, sheer
+
+
 def houseboat(x, y, a, L=2.2):
     """Old timber barge: planked hull with tar and algae, tongue-and-groove
     cabin with painted trim, framed windows with curtains, a porthole door,
@@ -399,16 +548,70 @@ def houseboat(x, y, a, L=2.2):
     O = Vector((x, y, 0))
     P = lambda along, side, z: O + d * along + s_ * side + Vector((0, 0, z))
     R_ = (0, 0, a)
-    tar = varied('tar', (0.06, 0.05, 0.045), 0.1, 0.5)
-    hull_w = [wood('hull_plank%d' % k, c, 7) for k, c in enumerate([(0.24, 0.3, 0.26), (0.2, 0.26, 0.22), (0.27, 0.32, 0.27)])]
-    box('hull_core', P(0, 0, 0.05), (L - 0.05, 0.6, 0.2), tar, bevel=0.07, rot=R_)
-    for k in range(5):  # overlapping strakes on both sides
-        z = -0.02 + k * 0.045
-        for sg in (-1, 1):
-            box('strake', P(0, sg * (0.305 + k * 0.002), z), (L - 0.1 - (4 - k) * 0.04, 0.02, 0.05), hull_w[k % 3], bevel=0.004, rot=R_)
-    box('algae_line', P(0, -0.316, -0.025), (L - 0.15, 0.01, 0.03), solid('algae', (0.08, 0.14, 0.06), 0.4), bevel=0, rot=R_)
-    box('gunwale', P(0, 0, 0.17), (L + 0.02, 0.66, 0.035), wood('gunwale', (0.45, 0.16, 0.11), 6), bevel=0.01, rot=R_)
-    box('deck', P(0, 0, 0.175), (L - 0.06, 0.58, 0.02), wood('deckplanks', (0.42, 0.32, 0.22), 5), bevel=0, rot=R_)
+    steel = rusty_steel('barge_steel', (0.07, 0.13, 0.11))
+    deckm = wood('deckplanks', (0.42, 0.32, 0.22), 5)
+    hull, sheer_pts, half, sheer = barge_hull(P, L, 0.33, deckm, steel)
+    # rubbing strake and bulwark cap along the sheer, both sides
+    rail = varied('strake_iron', (0.12, 0.1, 0.09), 0.1, 0.6)
+    for side, pts in sheer_pts.items():
+        for zoff, r, m_ in ((-0.0, 0.016, wood('gunwale', (0.45, 0.16, 0.11), 6)), (-0.07, 0.014, rail)):
+            cu = bpy.data.curves.new('strake', 'CURVE'); cu.dimensions = '3D'
+            sp = cu.splines.new('POLY'); sp.points.add(len(pts) - 1)
+            for q, pt in zip(sp.points, pts):
+                q.co = (*(pt + s_ * side * 0.006 + Vector((0, 0, zoff))), 1)
+            cu.bevel_depth = r; cu.bevel_resolution = 3; cu.use_fill_caps = True
+            o_ = link(bpy.data.objects.new('strake', cu)); cu.materials.append(m_)
+    # rivets along the plating seams on the side that faces the street
+    rivet = varied('rivet', (0.16, 0.1, 0.07), 0.15, 0.7)
+    for zr in (0.11, 0.045):
+        for j in range(34):
+            t = -0.95 + 1.8 * j / 33
+            if t > 0.8: continue
+            sphere('rivet', P(t * L / 2, -(half(t) + 0.002), zr + 0.06 * max(0.0, (t - 0.3) / 0.7) ** 2), 0.0065, rivet, 6)
+    for j in range(7):   # vertical seams
+        t = -0.85 + j * 0.27
+        for k in range(4):
+            sphere('rivet', P(t * L / 2, -(half(t) + 0.002), 0.02 + k * 0.04), 0.0065, rivet, 6)
+    # hull portholes below the cabin windows
+    for k in range(3):
+        u = -0.15 - L * 0.3 + 0.25 + k * (L * 0.6 - 0.5) / 2
+        tt = 2 * u / L
+        pp = P(u, -(half(tt) + 0.004), 0.1)
+        cyl('hull_port', pp, 0.03, 0.01, glow, verts=16, rot=(math.pi / 2, 0, a))
+        cyl('hull_port_rim', pp - s_ * 0.002, 0.038, 0.008, brass_d, verts=16, rot=(math.pi / 2, 0, a))
+    # the bow: two bollards, a hawse pipe with the anchor hung off it, chain over the deck
+    for k in (0, 1):
+        bp_ = P(L * 0.36 + k * 0.07, 0.0, sheer(0.72) - 0.02)
+        cyl('bollard', bp_ + Vector((0, 0, 0.04)), 0.022, 0.08, iron, verts=12)
+        cyl('bollard_cap', bp_ + Vector((0, 0, 0.085)), 0.028, 0.012, iron, verts=12)
+    hp = P(L * 0.43, -(half(0.86) + 0.004), sheer(0.86) - 0.06)
+    cyl('hawse', hp, 0.022, 0.03, iron, verts=12, rot=(math.pi / 2, 0, a))
+    an = hp - Vector((0, 0, 0.12)) - s_ * 0.02
+    limb(hp, an + Vector((0, 0, 0.06)), 0.005, iron)
+    limb(an + Vector((0, 0, 0.06)), an - Vector((0, 0, 0.04)), 0.007, iron)            # shank
+    for sg in (-1, 1):
+        limb(an - Vector((0, 0, 0.04)), an - Vector((0, 0, 0.01)) + d * sg * 0.045, 0.006, iron)   # arms
+        cyl('fluke', an - Vector((0, 0, 0.005)) + d * sg * 0.05, 0.012, 0.02, iron, verts=3, rot=(0, 0, a))
+    box('stock', an + Vector((0, 0, 0.05)), (0.09, 0.008, 0.008), iron, bevel=0, rot=R_)
+    for k in range(8):   # chain links across the deck to the bollards
+        c_ = P(L * 0.43 - k * 0.012, -0.28 + k * 0.035, sheer(0.86) - 0.015)
+        cyl('chain', c_, 0.008, 0.004, iron, verts=8, rot=(math.pi / 2 * (k % 2), 0, a))
+    # her name, painted on the bow in chipped white
+    nm_ = bpy.data.curves.new('boat_name', 'FONT'); nm_.body = 'MARGOT'; nm_.size = 0.05; nm_.align_x = 'CENTER'; nm_.extrude = 0.0005
+    if MARKER: nm_.font = bpy.data.fonts.load(MARKER, check_existing=True)
+    nt = link(bpy.data.objects.new('boat_name', nm_))
+    nt.location = P(L * 0.3, -(half(0.6) + 0.006), 0.13); nt.rotation_euler = (math.pi / 2, 0, a)
+    nm_.materials.append(varied('name_paint', (0.85, 0.82, 0.72), 0.1, 0.7))
+    # the stern: a rudder blade, its stock and a long iron tiller
+    rp = P(-L / 2 - 0.03, 0, 0.0)
+    box('rudder', rp + Vector((0, 0, -0.02)), (0.12, 0.015, 0.2), steel, bevel=0.01, rot=R_)
+    limb(rp + Vector((0, 0, 0.08)), rp + Vector((0, 0, 0.27)), 0.01, iron)
+    limb(rp + Vector((0, 0, 0.26)), rp + Vector((0, 0, 0.29)) + d * 0.35, 0.008, iron)
+    sphere('tiller_knob', rp + Vector((0, 0, 0.29)) + d * 0.36, 0.013, wood('gunwale', (0.45, 0.16, 0.11), 6), 8)
+    # a short mast at the bow with a faded pennant
+    mp_ = P(L * 0.4, 0.0, sheer(0.8) - 0.02)
+    limb(mp_, mp_ + Vector((0, 0, 0.55)), 0.01, wood('gunwale', (0.45, 0.16, 0.11), 6))
+    pn = box('pennant', mp_ + Vector((0, 0, 0.5)) - d * 0.06, (0.12, 0.004, 0.05), varied('pennant', (0.55, 0.2, 0.15), 0.08, 0.9), bevel=0, rot=(0, 0.1, a))
     # cabin: vertical boards, cream trim, framed windows
     cl, cx = L * 0.6, -0.15
     cabin_w = wood('cabin_boards', (0.36, 0.42, 0.36), 9, axis='Z')
@@ -455,11 +658,11 @@ def houseboat(x, y, a, L=2.2):
         sphere('smoke', sp + Vector((k * 0.06, 0, 0.55 + k * 0.15)), 0.05 + k * 0.03, sm, 10)
     # tyre fenders, rope coil, ladder, bow chair and lantern
     for k in range(3):
-        ty = cyl('tyre', P(-L * 0.3 + k * L * 0.3, -0.33, 0.07), 0.07, 0.035, solid('tyre', (0.04, 0.04, 0.04), 0.7), verts=20, rot=(math.pi / 2, 0, a)); cut(ty, cyl('ty_hole', P(-L * 0.3 + k * L * 0.3, -0.33, 0.07), 0.035, 0.2, None, verts=14, rot=(math.pi / 2, 0, a)))
-        limb(P(-L * 0.3 + k * L * 0.3, -0.31, 0.14), P(-L * 0.3 + k * L * 0.3, -0.3, 0.19), 0.004, varied('rope', (0.6, 0.52, 0.38), 0.05, 0.9))
+        ty = cyl('tyre', P(-L * 0.3 + k * L * 0.3, -0.37, 0.09), 0.07, 0.035, solid('tyre', (0.04, 0.04, 0.04), 0.7), verts=20, rot=(math.pi / 2, 0, a)); cut(ty, cyl('ty_hole', P(-L * 0.3 + k * L * 0.3, -0.37, 0.09), 0.035, 0.2, None, verts=14, rot=(math.pi / 2, 0, a)))
+        limb(P(-L * 0.3 + k * L * 0.3, -0.36, 0.16), P(-L * 0.3 + k * L * 0.3, -0.34, 0.2), 0.004, varied('rope', (0.6, 0.52, 0.38), 0.05, 0.9))
     cyl('rope_coil', P(L * 0.38, 0.15, 0.2), 0.08, 0.03, varied('rope', (0.6, 0.52, 0.38), 0.05, 0.9), verts=16)
     for k in range(4):
-        box('ladder_rung', P(-L * 0.47, -0.2 + 0.0, 0.05 + k * 0.06), (0.012, 0.16, 0.012), iron, bevel=0, rot=R_)
+        box('ladder_rung', P(-L * 0.5 - 0.02, -0.15, 0.03 + k * 0.06), (0.012, 0.16, 0.012), iron, bevel=0, rot=R_)
     box('bow_chair', P(L * 0.36, -0.1, 0.24), (0.18, 0.18, 0.03), timber_h, bevel=0.005, rot=(0, 0.25, a))
     lantern(tuple(P(L * 0.47, 0, 0.32)), 0.6)
     hanging_lanterns(tuple(P(-L * 0.45, 0, 0.95)), tuple(P(cx - cl / 2, -0.1, 0.8)), 2, 0.05)
@@ -715,8 +918,9 @@ def neon_sign(W, u, z, text_w=0.6, color=(1.0, 0.35, 0.45)):
     nm = solid('neon_' + str(color), color, 0.3, emit=color, strength=14)
     box('neon_back', W.P(u, 0.03, z), W.S(text_w + 0.12, 0.02, 0.26), solid('sign', (0.12, 0.1, 0.08), 0.6), bevel=0.01)
     pts = [W.P(u - text_w / 2 + text_w * t, 0.05, z + 0.06 * math.sin(t * 14)) for t in [k / 16 for k in range(17)]]
+    gid = (abs(hash((round(u, 3), round(z, 3)))) % 997) / 997.0
     for p, q in zip(pts, pts[1:]):
-        limb(p, q, 0.008, nm)
+        limb(p, q, 0.008, nm)['glow_group'] = gid      # the whole tube lights at once
     L = bpy.data.lights.new('neon', 'POINT'); L.energy = 5; L.color = color
     link(bpy.data.objects.new('neon', L)).location = W.P(u, 0.2, z)
 
@@ -1292,6 +1496,58 @@ def pulley_basket(a, b, t=0.4):
     sphere('pulley_bell', tuple(wa + Vector((0, 0, -0.08))), 0.02, solid('brass_b', (0.75, 0.55, 0.25), 0.3, metal=1.0), 10, (1, 1, 1.2))
     limb(wa + Vector((0, 0, -0.02)), wa + Vector((0, 0, -0.065)), 0.003, iron)
 
+def wall_shrine(W, u, z):
+    """A little street shrine set into the wall: an arched niche painted sky
+    blue with gold stars, a small pale figure, votive candles burning in red
+    glass, a jam jar of flowers, a tin canopy and a stone shelf on brackets."""
+    stone = varied('shrine_stone', (0.74, 0.7, 0.62), 0.06, 0.85, bump=0.6, bump_scale=60)
+    sky = varied('shrine_sky', (0.16, 0.3, 0.55), 0.06, 0.9)
+    gold = solid('shrine_gold', (0.85, 0.65, 0.25), 0.35, metal=0.9)
+    rot_w = (math.pi / 2, 0, 0) if W.axis == 'y' else (0, math.pi / 2, 0)
+    w, h, d = 0.26, 0.34, 0.09
+    cut(W.obj, box('shrine_cut', W.P(u, 0, z + h / 2), W.S(w, d * 2, h), None, bevel=0))
+    cut(W.obj, cyl('shrine_cut', W.P(u, 0, z + h), w / 2, d * 2, None, verts=24, rot=rot_w))
+    box('shrine_back', W.P(u, -d, z + h / 2), W.S(w, 0.01, h), sky, bevel=0)
+    cyl('shrine_back', W.P(u, -d, z + h), w / 2, 0.01, sky, verts=24, rot=rot_w)
+    for k in range(7):
+        a = 0.4 + k * 0.33
+        sphere('shrine_star', W.P(u + 0.09 * math.cos(a) * (1 if k % 2 else 0.6), -d + 0.008, z + h + 0.07 * math.sin(a) - 0.02 * (k % 3)), 0.006, gold, 6)
+    # stone surround: jambs, an arched head of little blocks, a keystone
+    for sg in (-1, 1):
+        box('shrine_jamb', W.P(u + sg * (w / 2 + 0.025), 0.015, z + h / 2), W.S(0.05, 0.04, h), stone, bevel=0.006)
+    for k in range(9):
+        a = math.pi * k / 8
+        box('shrine_arch', W.P(u + (w / 2 + 0.025) * math.cos(a), 0.015, z + h + (w / 2 + 0.025) * math.sin(a)), W.S(0.045, 0.04, 0.035), stone, bevel=0.005)
+    box('shrine_key', W.P(u, 0.02, z + h + w / 2 + 0.03), W.S(0.04, 0.05, 0.06), stone, bevel=0.006)
+    # the shelf, on two brackets
+    box('shrine_shelf', W.P(u, 0.03, z - 0.015), W.S(w + 0.14, 0.13, 0.03), stone, bevel=0.006)
+    for sg in (-1, 1):
+        box('shrine_bracket', W.P(u + sg * 0.09, 0.03, z - 0.06), W.S(0.03, 0.09, 0.07), stone, bevel=0.008)
+    # the figure: robe, a veiled head, a faint halo
+    fig = varied('shrine_figure', (0.86, 0.84, 0.8), 0.03, 0.7)
+    cyl('shrine_robe', W.P(u, -d + 0.04, z + 0.1), 0.045, 0.2, fig, verts=16, r2=0.025)
+    sphere('shrine_head', W.P(u, -d + 0.04, z + 0.225), 0.022, fig, 12)
+    sphere('shrine_veil', W.P(u, -d + 0.035, z + 0.23), 0.026, varied('shrine_veil', (0.5, 0.6, 0.78), 0.04, 0.8), 12, (1, 1, 1.15))
+    cyl('shrine_halo', W.P(u, -d + 0.018, z + 0.24), 0.035, 0.004, gold, verts=20, rot=rot_w)
+    # votives in red glass on the shelf, and a jar of flowers
+    for du_ in (-0.1, -0.06, 0.07):
+        p = W.P(u + du_, 0.04, z)
+        cyl('votive', p + Vector((0, 0, 0.025)), 0.014, 0.05, solid('votive_glass', (0.7, 0.08, 0.06), 0.1, emit=(1.0, 0.25, 0.1), strength=3.0), verts=12)
+        sphere('flame', p + Vector((0, 0, 0.06)), 0.006, solid('flame', (1, 0.8, 0.4), 0.3, emit=(1.0, 0.68, 0.28), strength=60), 8, (1, 1, 2.0))
+    L = bpy.data.lights.new('candle', 'POINT'); L.energy = 2.5; L.color = (1.0, 0.55, 0.3); L.shadow_soft_size = 0.02
+    link(bpy.data.objects.new('candle', L)).location = W.P(u - 0.06, 0.08, z + 0.08)
+    jp = W.P(u + 0.11, 0.04, z)
+    cyl('shrine_jar', jp + Vector((0, 0, 0.03)), 0.018, 0.06, solid('jar_glass', (0.7, 0.8, 0.75), 0.05), verts=12)
+    for k in range(5):
+        a = k * 1.3
+        tip = jp + Vector((0.025 * math.cos(a), 0.02 * math.sin(a), 0.1 + 0.02 * (k % 2)))
+        limb(jp + Vector((0, 0, 0.05)), tip, 0.0025, solid('stem', (0.15, 0.25, 0.1), 0.6))
+        sphere('shrine_bloom', tip, 0.012, solid('shrine_bloom%d' % (k % 2), ((0.95, 0.85, 0.3), (0.9, 0.95, 0.92))[k % 2], 0.6), 8)
+    # a small tin canopy over it
+    cv_ = box('shrine_canopy', W.P(u, 0.09, z + h + w / 2 + 0.1), W.S(w + 0.16, 0.2, 0.015), solid('ch_zinc', (0.32, 0.33, 0.34), 0.45, metal=0.8), bevel=0.003)
+    cv_.rotation_euler = (0.35, 0, 0) if W.axis == 'y' else (0, -0.35, 0)
+
+
 # ------------------------------------------------------------------ stage
 GROUPS_EXTRA = {}
 endless_water()
@@ -1314,14 +1570,77 @@ gable_end(-2.85, -2.9, -0.05, topD + 0.1, 0.75, oldbrick2, 'lunette')
 # C's roof: ridge along y — build as gable on a rotated footprint by swapping: use a mansard-ish hip of boxes
 gable_roof('roofC', 3.875, 2.05, 1.55, 3.7, topC + 0.1, 0.9, slate, over=0.15)
 _b = set(bpy.data.objects.keys()); timbered_gable(4.65, 0.2, 3.9, topC, topC + 0.1, 0.9, plaster_o); GROUPS_EXTRA['gableC'] = set(bpy.data.objects.keys()) - _b
-for (x, y, z, h) in ((-4.1, 3.4, topA + 0.6, 1.2), (-2.9, 1.8, topA + 0.5, 1.0), (-0.4, 3.6, topB + 0.1, 0.8), (1.5, 3.7, topB + 0.1, 0.7),
-                     (4.3, 3.2, topC + 0.4, 0.9), (-4.2, -0.6, topD + 0.3, 0.8)):
-    box('chimney', (x, y, z + h / 2), (0.28, 0.28, h), oldbrick, bevel=0.01)
-    for k in range(2):
-        cyl('ch_pot', (x - 0.06 + k * 0.12, y, z + h + 0.08), 0.045, 0.16, varied('pot_c', (0.45, 0.25, 0.16), 0.1, 0.8), verts=10)
+def chimney(style, x, y, z, h):
+    """Six kinds of chimney, so the roofline isn't one stack repeated.
+    Returns where the smoke leaves it."""
+    potm = varied('pot_c', (0.45, 0.25, 0.16), 0.1, 0.8)
+    potm2 = varied('pot_c2', (0.55, 0.36, 0.24), 0.1, 0.8)
+    stone = varied('ch_stone', (0.55, 0.52, 0.47), 0.08, 0.9, bump=0.6, bump_scale=40)
+    render_ = varied('ch_render', (0.72, 0.66, 0.56), 0.08, 0.9, bump=0.5, bump_scale=60)
+    zinc = solid('ch_zinc', (0.32, 0.33, 0.34), 0.45, metal=0.8)
+    rust_ = varied('ch_rust', (0.36, 0.18, 0.09), 0.15, 0.85)
+    top = z + h
+    if style == 'corbel':          # tall brick stack, stepped brick cap, three mismatched pots
+        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), oldbrick, bevel=0.01)
+        box('ch_band', (x, y, top - 0.12), (0.36, 0.36, 0.05), oldbrick, bevel=0.005)
+        box('ch_band', (x, y, top - 0.04), (0.4, 0.4, 0.06), oldbrick, bevel=0.005)
+        for k, (dx, ph, pr, m) in enumerate(((-0.1, 0.2, 0.04, potm), (0.0, 0.28, 0.035, potm2), (0.1, 0.14, 0.045, potm))):
+            cyl('ch_pot', (x + dx, y, top + ph / 2), pr, ph, m, verts=12, r2=pr * 0.8)
+            cyl('ch_pot_rim', (x + dx, y, top + ph), pr * 1.15, 0.025, m, verts=12)
+        return Vector((x, y, top + 0.3))
+    if style == 'hood':            # stone stack with a slab hood on four little piers
+        box('chimney', (x, y, z + h / 2), (0.3, 0.26, h), stone, bevel=0.012)
+        for dx in (-0.11, 0.11):
+            for dy in (-0.09, 0.09):
+                box('ch_pier', (x + dx, y + dy, top + 0.07), (0.05, 0.05, 0.14), oldbrick, bevel=0.004)
+        box('ch_slab', (x, y, top + 0.16), (0.38, 0.34, 0.04), stone, bevel=0.008)
+        return Vector((x, y, top + 0.12))
+    if style == 'flue':            # tin stovepipe through a flashing collar, a conical rain cap, guy wires
+        cyl('ch_collar', (x, y, z + 0.04), 0.1, 0.08, zinc, verts=16, r2=0.06)
+        cyl('chimney', (x, y, z + h / 2), 0.055, h, zinc, verts=16)
+        for f in (0.3, 0.62): cyl('ch_joint', (x, y, z + h * f), 0.06, 0.02, rust_, verts=16)
+        cyl('ch_cap', (x, y, top + 0.1), 0.13, 0.07, zinc, verts=16, r2=0.01)
+        for a in (0.0, 2.1, 4.2):
+            limb(Vector((x + 0.05 * math.cos(a), y + 0.05 * math.sin(a), top - 0.1)),
+                 Vector((x + 0.45 * math.cos(a), y + 0.45 * math.sin(a), z + 0.01)), 0.0025, iron)
+        return Vector((x, y, top + 0.06))
+    if style == 'cowl':            # short brick stack with a turning metal cowl
+        box('chimney', (x, y, z + h / 2), (0.26, 0.26, h), oldbrick2, bevel=0.01)
+        box('ch_band', (x, y, top - 0.03), (0.31, 0.31, 0.05), oldbrick2, bevel=0.005)
+        cyl('ch_pot', (x, y, top + 0.08), 0.05, 0.16, potm2, verts=12)
+        sphere('ch_cowl', (x, y, top + 0.2), 0.08, zinc, 16, (1, 1, 0.8))
+        c = cyl('ch_cowl_mouth', (x - 0.06, y - 0.06, top + 0.2), 0.05, 0.08, zinc, verts=12)
+        c.rotation_euler = (math.pi / 2, 0, math.radians(-45))
+        cyl('ch_vane', (x, y, top + 0.31), 0.004, 0.08, iron, verts=6)
+        return Vector((x - 0.08, y - 0.08, top + 0.2))
+    if style == 'rendered':        # plastered chimney, a brick string course, two pots, a pigeon
+        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), render_, bevel=0.012)
+        box('ch_band', (x, y, top - 0.2), (0.32, 0.32, 0.06), oldbrick, bevel=0.004)
+        box('ch_cap', (x, y, top - 0.02), (0.36, 0.36, 0.04), stone, bevel=0.006)
+        for k in range(2):
+            cyl('ch_pot', (x - 0.07 + k * 0.14, y, top + 0.09), 0.045, 0.18, potm, verts=12, r2=0.035)
+        sphere('pigeon', (x + 0.13, y - 0.1, top + 0.05), 0.035, solid('pigeon_g', (0.45, 0.46, 0.5), 0.7), 10, (1.3, 0.9, 0.9))
+        sphere('pigeon', (x + 0.17, y - 0.12, top + 0.09), 0.02, solid('pigeon_g', (0.45, 0.46, 0.5), 0.7), 8)
+        return Vector((x - 0.07, y, top + 0.2))
+    # 'oven': the bakery's broad chimney, a little pitched roof over arched vents
+    box('chimney', (x, y, z + h / 2), (0.42, 0.3, h), oldbrick2, bevel=0.01)
+    box('ch_band', (x, y, top - 0.02), (0.46, 0.34, 0.04), oldbrick2, bevel=0.004)
+    for dx in (-0.17, 0.17):
+        box('ch_pier', (x + dx, y, top + 0.1), (0.07, 0.3, 0.2), oldbrick2, bevel=0.005)
+    box('ch_pier', (x, y, top + 0.1), (0.06, 0.3, 0.2), oldbrick2, bevel=0.005)
+    for sg in (-1, 1):
+        r_ = box('ch_roof', (x, y + sg * 0.09, top + 0.25), (0.5, 0.21, 0.025), tile_mat('rt_old', (0.42, 0.22, 0.15)), bevel=0.004)
+        r_.rotation_euler = (sg * 0.5, 0, 0)
+    return Vector((x, y, top + 0.18))
+
+
+for style, (x, y, z, h) in zip(('corbel', 'hood', 'flue', 'cowl', 'rendered', 'oven'),
+                               ((-4.1, 3.4, topA + 0.6, 1.2), (-2.9, 1.8, topA + 0.5, 1.0), (-0.4, 3.6, topB + 0.1, 0.8), (1.5, 3.7, topB + 0.1, 0.7),
+                                (4.3, 3.2, topC + 0.4, 0.9), (-4.2, -0.6, topD + 0.3, 0.8))):
+    sp = chimney(style, x, y, z, h)
     sm = solid('smoke_c', (0.22, 0.22, 0.24), 0.9); sm.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.4
     for k in range(4):
-        sphere('smoke', (x + k * 0.1, y + k * 0.04, z + h + 0.35 + k * 0.22), 0.09 + k * 0.045, sm, 12)
+        sphere('smoke', (sp.x + k * 0.1, sp.y + k * 0.04, sp.z + 0.27 + k * 0.22), 0.09 + k * 0.045, sm, 12)
 # B roof clutter
 box('B_roofwall', (0.6, 3.15, topB + 0.2), (3.1, 1.8, 0.3), plaster_g, bevel=0.01)
 _b = set(bpy.data.objects.keys()); water_tank(1.6, 2.9, topB + 0.35); GROUPS_EXTRA['tank'] = set(bpy.data.objects.keys()) - _b
@@ -1395,6 +1714,7 @@ rickety_bridge((-3.7, 0.25, 0), (-3.7, 0.85, 0), w=0.5)
 makeshift_corridor((-2.3, 2.75), (-0.95, 2.8), 2.6)
 makeshift_corridor((2.15, 3.1), (3.1, 3.1), 2.5, w=0.5)
 _b = set(bpy.data.objects.keys()); makeshift_corridor((-3.84, -0.05), (-3.84, 1.25), 1.64, w=0.32, h=0.5); GROUPS_EXTRA['corridor'] = set(bpy.data.objects.keys()) - _b
+_b = set(bpy.data.objects.keys()); wall_shrine(AF, -3.38, 1.72); GROUPS_EXTRA['shrine'] = set(bpy.data.objects.keys()) - _b
 # lamps of every kind
 for (x, y) in ((-2.25, 1.0), (-0.95, 1.8), (2.6, 1.85), (3.05, -0.15), (-2.7, -3.25)):
     gas_lamp(x, y, 0.28)
@@ -1430,7 +1750,7 @@ GROUPS_NEW['banners'] = set(bpy.data.objects.keys()) - _b
 _b = set(bpy.data.objects.keys()); bpy.context.view_layer.update()
 _hit = sc.ray_cast(bpy.context.evaluated_depsgraph_get(), Vector((4.42, 2.05, 20.0)), Vector((0, 0, -1)))
 _rz = _hit[1].z if _hit[0] else topC + 1.0
-EX.owl((4.42, 2.05, _rz - 0.004), -3 * math.pi / 4, s=1.05); EX.owl_pose('closed'); GROUPS_NEW['owl'] = set(bpy.data.objects.keys()) - _b
+EX.owl((4.42, 2.05, _rz - 0.004), -3 * math.pi / 4, s=0.82); EX.owl_pose('closed'); GROUPS_NEW['owl'] = set(bpy.data.objects.keys()) - _b
 _b = set(bpy.data.objects.keys())
 # boats instead of plank walkways
 rowboat(5.45, 1.7, 1.5, 0.9, None, col=(0.42, 0.3, 0.2))
@@ -1504,7 +1824,7 @@ GROUPS_NEW['lanterns'] = set(bpy.data.objects.keys()) - _b
 if os.environ.get('SPOTS'):
     # what sits on these bits of wall (to find clear spots for banners and lines)
     bpy.context.view_layer.update()
-    for label, lo_, hi_ in (('lampB', (-1.3, 1.4, 0.6), (-0.8, 1.9, 1.5)), ('lamp', (2.7, -0.5, 0.6), (3.2, 0.0, 1.5))):
+    for label, lo_, hi_ in (('Afront', (-4.4, 0.9, 1.0), (-3.0, 1.35, 2.7)),):
         print('SPOTS', label)
         for o in sc.objects:
             if o.type != 'MESH' or o.hide_render or o.name.split('.')[0] in ('A', 'B', 'C', 'D', 'quay', 'canal'): continue
@@ -1557,6 +1877,26 @@ _sun = next(o for o in sc.objects if o.type == 'LIGHT' and o.data.type == 'SUN')
 _sun.light_linking.receiver_collection = _ns
 for _co in _ns.collection_objects: _co.light_linking.link_state = 'EXCLUDE'
 cam = iso_camera(sc, (-0.1, 0.4, 2.4), 15.5, res=(int(os.environ.get('RES_X', 1400)), int(os.environ.get('RES_Y', 1050))))
+if os.environ.get('PROBE_PX'):
+    # what the street camera sees at these pixels (x,y from the top-left)
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    fr = cam.data.view_frame(scene=sc); mw = cam.matrix_world
+    W_, H_ = sc.render.resolution_x, sc.render.resolution_y
+    dv = (mw.to_3x3() @ Vector((0, 0, -1))).normalized()
+    for xy in os.environ['PROBE_PX'].split(';'):
+        px, py = map(float, xy.split(','))
+        u_, v_ = px / W_, py / H_
+        q = fr[3].lerp(fr[0], u_).lerp(fr[2].lerp(fr[1], u_), v_)
+        o_ = mw @ q - dv * 60
+        hits = []
+        for _ in range(4):
+            ok, loc, nrm, idx, ob, _m = sc.ray_cast(dg, o_, dv)
+            if not ok: break
+            o_ = loc + dv * 1e-4
+            if ob.hide_render: continue
+            hits.append('%s(%.2f,%.2f,%.2f)' % (ob.name, loc.x, loc.y, loc.z))
+        print('PX', xy, ' -> '.join(hits))
 SMOKE = []
 if os.environ.get('NO_SMOKE'):
     # The browser animates the chimney smoke, so take the baked puffs out and
@@ -1708,6 +2048,10 @@ if WEB:
     for o in geo:
         saved[o.name] = [sl.material for sl in o.material_slots]
         m_ = dm if o.name in GLOWING else mirror if o is canal else black
+        if o.name in GLOWING and o.get('glow_group') is not None:
+            # pieces of one sign share one moment, so it never comes on in bits
+            gk = 'delay_g%.4f' % o['glow_group']
+            m_ = solid(gk, (0, 0, 0), 1.0, emit=(o['glow_group'], 1.0, 0.0), strength=1.0)
         for sl in o.material_slots: sl.material = m_
         o.is_holdout = False
     lights_e = {o.name: o.data.energy for o in sc.objects if o.type == 'LIGHT'}

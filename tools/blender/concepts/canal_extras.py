@@ -231,14 +231,15 @@ def owl(p, face_yaw, s=1.5):
             sphere('owl_bar', q, 0.009 * s, pale, 10, (0.35, 1.3, 0.5))
     # eyes: big amber irises, large pupils, a catch light, lids for shut
     eyes = []
+    E = 1.32      # eyes a size up: rounder, more owlish
     for sg in (-1, 1):
-        ec = P(sg * 0.039, 0.084, 0.262)
-        eye = sphere('owl_eye', ec, 0.024 * s, iris, 32, (1, 0.42, 1)); eye.rotation_euler = R.to_euler()
-        rg = sphere('owl_eye_rim', ec - R @ Vector((0, 0.002, 0)) * s, 0.0265 * s, solid('owl_eyerim', (0.1, 0.065, 0.04), 0.7), 24, (1, 0.4, 1)); rg.rotation_euler = R.to_euler()
-        pu = sphere('owl_pupil', ec + R @ Vector((0, 0.0085, 0)) * s, 0.0155 * s, pupil, 24, (1, 0.28, 1)); pu.rotation_euler = R.to_euler()
-        gl = sphere('owl_glint', ec + R @ Vector((0.007, 0.012, 0.009)) * s, 0.0042 * s, glint, 10)
-        lid = sphere('owl_lid', ec + R @ Vector((0, 0.001, 0)) * s, 0.0255 * s, plum, 32, (1.03, 0.3, 1.03)); lid.rotation_euler = R.to_euler()
-        line = sphere('owl_lidline', ec + R @ Vector((0, 0.006, -0.004)) * s, 0.019 * s, solid('owl_crease', (0.07, 0.045, 0.03), 0.7), 16, (1, 0.35, 0.16)); line.rotation_euler = R.to_euler()
+        ec = P(sg * 0.043, 0.082, 0.262)
+        eye = sphere('owl_eye', ec, 0.024 * E * s, iris, 32, (1, 0.42, 1)); eye.rotation_euler = R.to_euler()
+        rg = sphere('owl_eye_rim', ec - R @ Vector((0, 0.002, 0)) * E * s, 0.0265 * E * s, solid('owl_eyerim', (0.1, 0.065, 0.04), 0.7), 24, (1, 0.4, 1)); rg.rotation_euler = R.to_euler()
+        pu = sphere('owl_pupil', ec + R @ Vector((0, 0.0085, 0)) * E * s, 0.0155 * E * s, pupil, 24, (1, 0.28, 1)); pu.rotation_euler = R.to_euler()
+        gl = sphere('owl_glint', ec + R @ Vector((0.007, 0.012, 0.009)) * E * s, 0.0042 * E * s, glint, 10)
+        lid = sphere('owl_lid', ec + R @ Vector((0, 0.001, 0)) * E * s, 0.0255 * E * s, plum, 32, (1.03, 0.3, 1.03)); lid.rotation_euler = R.to_euler()
+        line = sphere('owl_lidline', ec + R @ Vector((0, 0.006, -0.004)) * E * s, 0.019 * E * s, solid('owl_crease', (0.07, 0.045, 0.03), 0.7), 16, (1, 0.35, 0.16)); line.rotation_euler = R.to_euler()
         # half-open: just the lower half of the eye (iris and pupil), cut flat across the top
         cutter = box('owl_halfcut', ec + Vector((0, 0, 0.03 * s)), (0.2 * s, 0.2 * s, 0.06 * s), None, bevel=0)
         cutter.hide_render = True; cutter.hide_viewport = True
@@ -258,7 +259,7 @@ def owl(p, face_yaw, s=1.5):
             a = P(sg * 0.03 + (k - 1) * 0.011, 0.045, 0.0); b2 = P(sg * 0.03 + (k - 1) * 0.013, 0.065, -0.018)
             t = cyl('owl_talon', (a + b2) / 2, 0.003 * s, (b2 - a).length, solid('owl_talon', (0.12, 0.1, 0.09), 0.3, coat=0.5), verts=6, r2=0.0005)
             t.rotation_euler = (b2 - a).to_track_quat('Z', 'Y').to_euler()
-    OWL.update({'eyes': eyes, 'R': R, 'head': P(0, 0.01, 0.26), 's': s})
+    OWL.update({'eyes': eyes, 'R': R, 'head': P(0, 0.01, 0.26), 's': s * E})
 
 
 def owl_pose(state):
@@ -511,26 +512,25 @@ def floating_lantern(p, yaw=0.0, kind='floral', s=1.0, energy=7.0):
         box('raft_slat', P(-0.075 + k * 0.05, 0, 0.012), (0.045 * s, 0.2 * s, 0.018 * s), cedar, bevel=0.003, rot=R.to_euler())
     for sg in (-1, 1):
         box('raft_cross', P(0, sg * 0.07, 0.025), (0.2 * s, 0.02 * s, 0.012 * s), cedar, bevel=0.002, rot=R.to_euler())
-    # plain glowing paper in a soft colour, brightest low down by the candle and
-    # at the creased edges, dimmer across the middle of each panel (so it reads round)
+    # thin translucent paper in a soft colour: it doesn't glow by itself, the
+    # candle inside shines through it (so the lantern and the light it throws
+    # on the water are one colour, and it's brightest nearest the flame)
     tint = {'floral': (1.0, 0.6, 0.5), 'stars': (1.0, 0.8, 0.46), 'fan': (1.0, 0.68, 0.4), 'dots': (0.95, 0.66, 0.72)}.get(kind, (1.0, 0.72, 0.45))
     m, n, l, b = node_mat('lantern_paper_' + kind)
-    tc = n.new('ShaderNodeTexCoord'); sep = n.new('ShaderNodeSeparateXYZ'); l.new(tc.outputs['UV'], sep.inputs['Vector'])
-    up = n.new('ShaderNodeMapRange'); up.inputs['To Min'].default_value = 2.6; up.inputs['To Max'].default_value = 1.3
-    l.new(sep.outputs['Y'], up.inputs['Value'])
-    across = n.new('ShaderNodeMath'); across.operation = 'SUBTRACT'; across.inputs[0].default_value = 0.5; l.new(sep.outputs['X'], across.inputs[1])
-    ab = n.new('ShaderNodeMath'); ab.operation = 'ABSOLUTE'; l.new(across.outputs['Value'], ab.inputs[0])
-    edge = n.new('ShaderNodeMapRange'); edge.inputs['From Min'].default_value = 0.0; edge.inputs['From Max'].default_value = 0.5
-    edge.inputs['To Min'].default_value = 0.8; edge.inputs['To Max'].default_value = 1.25
-    l.new(ab.outputs['Value'], edge.inputs['Value'])
-    st = n.new('ShaderNodeMath'); st.operation = 'MULTIPLY'; l.new(up.outputs['Result'], st.inputs[0]); l.new(edge.outputs['Result'], st.inputs[1])
+    out = next(x for x in n if x.type == 'OUTPUT_MATERIAL')
+    tc = n.new('ShaderNodeTexCoord')
     fib = n.new('ShaderNodeTexNoise'); fib.inputs['Scale'].default_value = 60; fib.inputs['Detail'].default_value = 6
     l.new(tc.outputs['UV'], fib.inputs['Vector'])
-    fm_ = n.new('ShaderNodeMapRange'); fm_.inputs['To Min'].default_value = 0.92; fm_.inputs['To Max'].default_value = 1.08
+    fm_ = n.new('ShaderNodeMapRange'); fm_.inputs['To Min'].default_value = 0.85; fm_.inputs['To Max'].default_value = 1.0
     l.new(fib.outputs['Fac'], fm_.inputs['Value'])
-    st2 = n.new('ShaderNodeMath'); st2.operation = 'MULTIPLY'; l.new(st.outputs['Value'], st2.inputs[0]); l.new(fm_.outputs['Result'], st2.inputs[1])
-    b.inputs['Base Color'].default_value = (*tint, 1); b.inputs['Emission Color'].default_value = (*tint, 1)
-    l.new(st2.outputs['Value'], b.inputs['Emission Strength']); b.inputs['Roughness'].default_value = 0.9
+    col = n.new('ShaderNodeVectorMath'); col.operation = 'SCALE'; col.inputs[0].default_value = tint
+    l.new(fm_.outputs['Result'], col.inputs['Scale'])
+    tr = n.new('ShaderNodeBsdfTranslucent'); l.new(col.outputs['Vector'], tr.inputs['Color'])
+    b.inputs['Roughness'].default_value = 0.9; l.new(col.outputs['Vector'], b.inputs['Base Color'])
+    mix = n.new('ShaderNodeMixShader'); mix.inputs['Fac'].default_value = 0.25
+    l.new(tr.outputs['BSDF'], mix.inputs[1]); l.new(b.outputs['BSDF'], mix.inputs[2])
+    l.new(mix.outputs['Shader'], out.inputs['Surface'])
+    m['candlelit'] = True
     zb, zt, rb, rt = 0.035, 0.24, 0.07, 0.085
     for k in range(4):     # four tapered paper panels with UVs
         a0 = k * math.pi / 2 + math.pi / 4; a1 = a0 + math.pi / 2
@@ -549,5 +549,5 @@ def floating_lantern(p, yaw=0.0, kind='floral', s=1.0, energy=7.0):
     # the candle inside
     cyl('lantern_candle', P(0, 0, zb + 0.03), 0.015 * s, 0.06 * s, solid('wax', (0.9, 0.85, 0.75), 0.6), verts=10)
     sphere('flame', P(0, 0, zb + 0.072), 0.008 * s, solid('flame', (1, 0.8, 0.4), 0.3, emit=(1.0, 0.68, 0.28), strength=60), 8, (1, 1, 2.0))
-    L = bpy.data.lights.new('candle', 'POINT'); L.energy = energy; L.color = (1.0, 0.66, 0.32); L.shadow_soft_size = 0.05
+    L = bpy.data.lights.new('candle', 'POINT'); L.energy = energy * 1.6; L.color = (1.0, 0.72, 0.42); L.shadow_soft_size = 0.012
     link(bpy.data.objects.new('candle', L)).location = P(0, 0, zb + 0.08)

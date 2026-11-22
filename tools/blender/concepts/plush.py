@@ -52,7 +52,7 @@ def plush_fabric(name, color, pile=1.0):
     return m
 
 
-def _fuzz(o, s, density=520000, length=0.0065):
+def _fuzz(o, s, density=260000, length=0.0035):
     """Short fibres standing off the fabric, so the outline reads as fuzzy."""
     bpy.context.view_layer.update()
     area = sum(p.area for p in o.data.polygons) * max(o.scale) ** 2
@@ -147,7 +147,7 @@ def plush_squirrel(origin, yaw, s=1.0, body_col=(0.6, 0.22, 0.06)):
     for sg in (-1, 1):
         ep = P(sg * 0.033, 0.072, 0.232)
         e = sphere('plush_eye', ep, 0.013 * s, eye, 24, (1, 0.6, 1)); e.rotation_euler = rot()
-        sphere('plush_eye_hi', P(sg * 0.033 + 0.004, 0.08, 0.238), 0.0028 * s, solid('eye_hi', (1, 1, 1), 0.05, emit=(1, 1, 1), strength=2.5), 8)
+        sphere('plush_eye_hi', P(sg * 0.033 + 0.004, 0.08, 0.238), 0.0022 * s, solid('eye_hi', (0.85, 0.85, 0.85), 0.1), 8)
     # embroidered nose (a satin-stitch triangle) and a little stitched smile
     for k in range(6):
         w = 0.013 * (1 - k / 7)
