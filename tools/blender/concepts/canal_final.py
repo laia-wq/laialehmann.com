@@ -1247,8 +1247,9 @@ for p in ((-2.25, 1.55, 0.28), (2.95, 2.45, 0.28), (-3.35, 0.95, 0.28)):
     globe_post(p[0], p[1], p[2])
 hanging_lanterns((-2.3, 1.3, 3.3), (3.1, 0.25, 3.0), 6, 0.6)
 hanging_lanterns((-2.85, -0.5, 2.2), (-2.3, 1.3, 2.6), 3, 0.2)
-EX.bunting((-2.3, 1.4, 3.75), (-0.95, 2.3, 3.5), 9, ['floral', 'ticking', 'stars', 'chevron', 'dots', 'fan'])
-EX.bunting((2.15, 2.4, 3.45), (3.1, 2.2, 3.3), 6, ['stars', 'fan', 'dots', 'floral'])
+laundry((-2.3, 1.4, 3.75), (-0.95, 2.3, 3.5))
+laundry((2.15, 2.4, 3.45), (3.1, 2.2, 3.3))
+laundry((-2.86, -0.3, 2.1), (-2.45, 1.24, 2.2))
 wire((-4.6, 1.2, 4.3), (-0.95, 2.2, 3.7), 0.5)
 wire((-2.85, -2.8, 3.2), (3.1, 0.3, 3.4), 0.9)
 crates(-4.3, 0.95, 0.28); crates(3.3, -0.1, 0.28)
@@ -1272,7 +1273,7 @@ GROUPS_NEW['banners'] = set(bpy.data.objects.keys()) - _b
 _b = set(bpy.data.objects.keys()); bpy.context.view_layer.update()
 _hit = sc.ray_cast(bpy.context.evaluated_depsgraph_get(), Vector((4.42, 2.05, 20.0)), Vector((0, 0, -1)))
 _rz = _hit[1].z if _hit[0] else topC + 1.0
-EX.owl((4.42, 2.05, _rz - 0.004), -3 * math.pi / 4); EX.owl_pose('closed'); GROUPS_NEW['owl'] = set(bpy.data.objects.keys()) - _b
+EX.owl((4.42, 2.05, _rz - 0.004), -3 * math.pi / 4, s=1.05); EX.owl_pose('closed'); GROUPS_NEW['owl'] = set(bpy.data.objects.keys()) - _b
 _b = set(bpy.data.objects.keys())
 # boats instead of plank walkways
 rowboat(5.45, 1.7, 1.5, 0.9, None, col=(0.42, 0.3, 0.2))
@@ -1329,8 +1330,6 @@ def old_chair(x, y, z, a):
         limb(P(-0.08 * math.cos(t0), -0.08 * math.sin(t0) - 0.02, 0.29), P(-0.08 * math.cos(t1), -0.08 * math.sin(t1) - 0.02, 0.29), 0.012, fur)
 old_chair(-4.5, -3.12, 0.28, 0.35)
 cyl('mailbox', (1.95, 2.2, 0.62), 0.07, 0.24, solid('mailbox', (0.5, 0.12, 0.1), 0.5), verts=14, rot=(math.pi / 2, 0, 0))
-cyl('umbrella', (-0.75, 2.1, 0.5), 0.012, 0.45, iron, verts=6, rot=(0.25, 0, 0))
-cyl('umbrella_c', (-0.75, 2.06, 0.6), 0.06, 0.3, solid('umbrella', (0.1, 0.12, 0.2), 0.6), verts=8, r2=0.01, rot=(0.25, 0, 0))
 for (x, y, a) in ((-2.0, 2.6, 0.0), (2.85, 1.2, math.pi), (-2.6, -1.6, 0.0), (-4.85 + 0.0, 2.0, 0.0)):
     quay_ladder(x, y, a + math.pi / 2)
 cyl('outflow', (-2.0, 3.6, 0.15), 0.05, 0.25, rustm, verts=10, rot=(0, math.pi / 2, 0))

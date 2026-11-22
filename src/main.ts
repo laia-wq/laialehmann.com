@@ -116,11 +116,17 @@ async function bootScene() {
   const openSheet = (which: 'projects' | 'about') => {
     if (which === 'projects') {
       sheetInner.innerHTML = `<h2 class="sheet-title">Projects</h2>
-        <p class="sheet-lede">Each project lives in a room somewhere on the street. The rooms are being furnished; for now, here they all are.</p>
+        <p class="sheet-lede">Each project has a window somewhere on the street. A few can be looked into already; here they all are.</p>
         <ol class="rooms">${ROOMS.map((r) => `<li><p class="room-name">${escHtml(r.room)}<span> · ${escHtml(r.where)}</span></p>
           <ul>${r.ids.map(byId).filter(Boolean).map((p) => `<li><button type="button" data-project="${p!.id}"><strong>${escHtml(p!.title)}</strong><span>${escHtml(p!.summary)}</span></button></li>`).join('')}</ul></li>`).join('')}</ol>`;
     } else {
       sheetInner.innerHTML = `<h2 class="sheet-title">About</h2>
+        <div class="sonder">
+          <p class="sonder-word">${escHtml(person.sonder.word)} <span>(n.)</span></p>
+          <p class="sonder-def">${escHtml(person.sonder.definition)}</p>
+          <p>${escHtml(person.sonder.windows)}</p>
+          <p>${escHtml(person.sonder.projects)}</p>
+        </div>
         <p class="sheet-lede">${escHtml(person.intro)}</p>
         <dl class="facts">
           <dt>Studying</dt><dd>Honours Systems Design Engineering, University of Waterloo (2026–2031)</dd>

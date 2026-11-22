@@ -64,6 +64,45 @@ if (existsSync(`${src}/delay.png`)) {
     const r = px[i * ch] / 65535, g = px[i * ch + 1] / 65535;
     if (g > 0.04) { own[i] = Math.min(1, r / g); dist[i] = 0; frontier.push(i); }
   }
+  // One window is several glowing things (glass, a lamp inside, a candle on
+  // the sill), each with its own random moment, so it came on in clumps.
+  // Join everything that glows within a few pixels into one patch and give
+  // the whole patch one moment: the one most of its pixels already have
+  // (the glass), so a window and its reflection still agree.
+  {
+    const R = 4, lit = new Uint8Array(n), grow = new Uint8Array(n), tmp = new Uint8Array(n);
+    for (let i = 0; i < n; i++) lit[i] = own[i] >= 0 ? 1 : 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {          // dilate along x
+      let v = 0; for (let d = -R; d <= R && !v; d++) { const xx = x + d; if (xx >= 0 && xx < w && lit[y * w + xx]) v = 1; }
+      tmp[y * w + x] = v;
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {          // then along y
+      let v = 0; for (let d = -R; d <= R && !v; d++) { const yy = y + d; if (yy >= 0 && yy < h && tmp[yy * w + x]) v = 1; }
+      grow[y * w + x] = v;
+    }
+    const label = new Int32Array(n).fill(-1), stack = new Int32Array(n);
+    let patches = 0;
+    for (let s0 = 0; s0 < n; s0++) {
+      if (!grow[s0] || label[s0] >= 0) continue;
+      let sp = 0; stack[sp++] = s0; label[s0] = patches;
+      const members = [];
+      while (sp) {
+        const i = stack[--sp]; members.push(i);
+        const x = i % w, y = (i / w) | 0;
+        if (x > 0 && grow[i - 1] && label[i - 1] < 0) { label[i - 1] = patches; stack[sp++] = i - 1; }
+        if (x < w - 1 && grow[i + 1] && label[i + 1] < 0) { label[i + 1] = patches; stack[sp++] = i + 1; }
+        if (y > 0 && grow[i - w] && label[i - w] < 0) { label[i - w] = patches; stack[sp++] = i - w; }
+        if (y < h - 1 && grow[i + w] && label[i + w] < 0) { label[i + w] = patches; stack[sp++] = i + w; }
+      }
+      const votes = new Map();
+      for (const i of members) if (lit[i]) { const q = Math.round(own[i] * 255); votes.set(q, (votes.get(q) ?? 0) + 1); }
+      let best = -1, bestN = -1;
+      for (const [q, c] of votes) if (c > bestN) { best = q; bestN = c; }
+      for (const i of members) if (lit[i]) own[i] = best / 255;
+      patches++;
+    }
+    console.log('switch-on patches:', patches);
+  }
   // spread outwards ring by ring from every lit pixel (nearest light wins)
   const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [-1, 1, 1.414], [1, -1, 1.414], [-1, -1, 1.414]];
   while (frontier.length) {

@@ -511,16 +511,26 @@ def floating_lantern(p, yaw=0.0, kind='floral', s=1.0, energy=7.0):
         box('raft_slat', P(-0.075 + k * 0.05, 0, 0.012), (0.045 * s, 0.2 * s, 0.018 * s), cedar, bevel=0.003, rot=R.to_euler())
     for sg in (-1, 1):
         box('raft_cross', P(0, sg * 0.07, 0.025), (0.2 * s, 0.02 * s, 0.012 * s), cedar, bevel=0.002, rot=R.to_euler())
-    # paper: glowing warm, patterned, slightly see-through
+    # plain glowing paper in a soft colour, brightest low down by the candle and
+    # at the creased edges, dimmer across the middle of each panel (so it reads round)
+    tint = {'floral': (1.0, 0.6, 0.5), 'stars': (1.0, 0.8, 0.46), 'fan': (1.0, 0.68, 0.4), 'dots': (0.95, 0.66, 0.72)}.get(kind, (1.0, 0.72, 0.45))
     m, n, l, b = node_mat('lantern_paper_' + kind)
-    pm = pattern(kind)
-    tex = pm.node_tree.nodes['Image Texture'].image
-    t = n.new('ShaderNodeTexImage'); t.image = tex
-    warm = n.new('ShaderNodeMix'); warm.data_type = 'RGBA'; warm.blend_type = 'MULTIPLY'; warm.inputs['Factor'].default_value = 0.55
-    l.new(t.outputs['Color'], warm.inputs['A']); warm.inputs['B'].default_value = (1.0, 0.72, 0.4, 1)
-    l.new(warm.outputs['Result'], b.inputs['Base Color']); l.new(warm.outputs['Result'], b.inputs['Emission Color'])
-    b.inputs['Emission Strength'].default_value = 2.2; b.inputs['Roughness'].default_value = 0.9
-    b.inputs['Transmission Weight'].default_value = 0.35
+    tc = n.new('ShaderNodeTexCoord'); sep = n.new('ShaderNodeSeparateXYZ'); l.new(tc.outputs['UV'], sep.inputs['Vector'])
+    up = n.new('ShaderNodeMapRange'); up.inputs['To Min'].default_value = 2.6; up.inputs['To Max'].default_value = 1.3
+    l.new(sep.outputs['Y'], up.inputs['Value'])
+    across = n.new('ShaderNodeMath'); across.operation = 'SUBTRACT'; across.inputs[0].default_value = 0.5; l.new(sep.outputs['X'], across.inputs[1])
+    ab = n.new('ShaderNodeMath'); ab.operation = 'ABSOLUTE'; l.new(across.outputs['Value'], ab.inputs[0])
+    edge = n.new('ShaderNodeMapRange'); edge.inputs['From Min'].default_value = 0.0; edge.inputs['From Max'].default_value = 0.5
+    edge.inputs['To Min'].default_value = 0.8; edge.inputs['To Max'].default_value = 1.25
+    l.new(ab.outputs['Value'], edge.inputs['Value'])
+    st = n.new('ShaderNodeMath'); st.operation = 'MULTIPLY'; l.new(up.outputs['Result'], st.inputs[0]); l.new(edge.outputs['Result'], st.inputs[1])
+    fib = n.new('ShaderNodeTexNoise'); fib.inputs['Scale'].default_value = 60; fib.inputs['Detail'].default_value = 6
+    l.new(tc.outputs['UV'], fib.inputs['Vector'])
+    fm_ = n.new('ShaderNodeMapRange'); fm_.inputs['To Min'].default_value = 0.92; fm_.inputs['To Max'].default_value = 1.08
+    l.new(fib.outputs['Fac'], fm_.inputs['Value'])
+    st2 = n.new('ShaderNodeMath'); st2.operation = 'MULTIPLY'; l.new(st.outputs['Value'], st2.inputs[0]); l.new(fm_.outputs['Result'], st2.inputs[1])
+    b.inputs['Base Color'].default_value = (*tint, 1); b.inputs['Emission Color'].default_value = (*tint, 1)
+    l.new(st2.outputs['Value'], b.inputs['Emission Strength']); b.inputs['Roughness'].default_value = 0.9
     zb, zt, rb, rt = 0.035, 0.24, 0.07, 0.085
     for k in range(4):     # four tapered paper panels with UVs
         a0 = k * math.pi / 2 + math.pi / 4; a1 = a0 + math.pi / 2

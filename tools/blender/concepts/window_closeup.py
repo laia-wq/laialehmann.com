@@ -174,41 +174,15 @@ def shop_window(sc, street_cam, G):
         from kit import cut
         cut(ring, hole)
 
-    # the plush squirrel on the sill, holding a seed, wearing a tag
-    felt = SQ.fur_material('plush_felt', back=(0.55, 0.22, 0.07), belly=(0.95, 0.86, 0.7))
-    felt.node_tree.nodes['Principled BSDF'].inputs['Sheen Weight'].default_value = 1.0
-    sq_p = Vector((xc + w * 0.18, yf - 0.04, z0 - 0.005))
-    objs, f = SQ.squirrel(sq_p, math.radians(-160), 'sit', 0.6, name='plush')
-    for o in objs:
-        if o.type == 'META': o.data.materials.clear(); o.data.materials.append(felt)
-    for k in range(6):
-        sphere('stitch', f((0, 0.083, 0.08 + k * 0.022)), 0.0025, solid('stitch', (0.45, 0.2, 0.1), 0.8), 6, (1, 1, 2.2))
-    seed_p = (f((-0.025, 0.08, 0.17)) + f((0.025, 0.08, 0.17))) / 2 + Vector((0, 0, 0.01))
-    sm, sn, sl, sb = node_mat('seed_stripes')
-    stc = sn.new('ShaderNodeTexCoord'); swv = sn.new('ShaderNodeTexWave'); swv.wave_type = 'BANDS'; swv.bands_direction = 'X'
-    swv.inputs['Scale'].default_value = 3.0
-    sl.new(stc.outputs['Object'], swv.inputs['Vector'])
-    sr = sn.new('ShaderNodeValToRGB'); sr.color_ramp.elements[0].position = 0.45; sr.color_ramp.elements[1].position = 0.55
-    sr.color_ramp.elements[0].color = (0.05, 0.05, 0.05, 1); sr.color_ramp.elements[1].color = (0.85, 0.83, 0.78, 1)
-    sl.new(swv.outputs['Fac'], sr.inputs['Fac']); sl.new(sr.outputs['Color'], sb.inputs['Base Color'])
-    sb.inputs['Roughness'].default_value = 0.4; sb.inputs['Coat Weight'].default_value = 0.4
-    seed = sphere('plush_seed', seed_p, 0.022, sm, 16, (0.55, 0.32, 1.0)); seed.rotation_euler = (0.3, 0.2, math.radians(-160))
-    tag_p = f((0.05, 0.06, 0.15))
-    limb(tag_p, tag_p + Vector((0.02, -0.03, -0.05)), 0.0015, solid('tag_string', (0.8, 0.75, 0.65), 0.8))
-    box('plush_tag', tag_p + Vector((0.03, -0.045, -0.08)), (0.045, 0.003, 0.06), solid('tag_card', (0.82, 0.7, 0.5), 0.9), bevel=0.002, rot=(0, 0, math.radians(-20)))
+    # the stuffed toy squirrel on the sill, holding its felt seed
+    import plush
+    plush.plush_squirrel(Vector((xc + w * 0.2, yf - 0.05, z0 - 0.005)), math.radians(-165), 0.95)
 
-    if os.environ.get('DEBUG_NEAR'):
-        bpy.context.view_layer.update()
-        for o in sc.objects:
-            if o.type in ('MESH', 'CURVE', 'FONT') and not o.hide_render:
-                lo_, hi_ = _bb(o)
-                if lo_.x < x1 and hi_.x > x0 and lo_.z < zm and hi_.z > z0 and lo_.y < yp + 0.3 and hi_.y > yp - 0.06:
-                    print('BEHIND', o.name, tuple(round(v, 3) for v in lo_), tuple(round(v, 3) for v in hi_))
     # ---- the camera: from the street's angle round to straight on
-    T = Vector((xc, yp, (z0 + z1) / 2 - 0.06))
+    T = Vector((xc, yp, (z0 + z1) / 2 + 0.02))
     d0 = Vector((math.sin(math.radians(45)) * math.sin(math.radians(58)), -math.cos(math.radians(45)) * math.sin(math.radians(58)), math.cos(math.radians(58))))
     d1 = Vector((0.0, -1.0, 0.1)).normalized()
-    W0, W1 = 1.55, float(os.environ.get('CLOSE_W', '0.95'))
+    W0, W1 = 1.55, float(os.environ.get('CLOSE_W', '1.3'))
     cd = bpy.data.cameras.new('closecam'); cd.type = 'PERSP'; cd.sensor_width = 36; cd.clip_start = 0.05; cd.clip_end = 300
     ccam = link(bpy.data.objects.new('closecam', cd)); sc.camera = ccam
     ease = lambda t: t * t * (3 - 2 * t)

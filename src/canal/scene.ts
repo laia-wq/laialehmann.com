@@ -43,14 +43,13 @@ void main() { vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = 
 const FRAG = `
 precision highp float;
 varying vec2 vUv;
-uniform sampler2D uImg, uOff, uWater, uIds, uDelay, uOwl;
+uniform sampler2D uImg, uOff, uWater, uIds, uDelay, uOwl, uLightIdx, uLightW;
+uniform vec3 uLightRow;       // idx map: rows used by the map, then the light table's row (v), and 1/width
 uniform vec4 uOwlBox;         // where the owl's crop sits (uv)
 uniform vec3 uOwlAB;          // frame A, frame B, blend A→B (frame 0 = eyes shut)
 uniform float uOwlN;          // frames in the owl strip
 uniform vec2 uImgPx;
 uniform float uTime, uHover, uMotion, uAspect, uOn, uIntroT, uLevel;
-uniform vec4 uLights[${MAX_LIGHTS}];
-uniform int uCount;
 uniform vec4 uSmoke[${MAX_SMOKE}];
 uniform int uSmokeCount;
 uniform vec4 uSmokeBox;       // min x, min y, max x, max y of all the plumes
@@ -108,18 +107,17 @@ void main() {
   }
 
   // Candle flicker around each small flame, and a soft halo round the street
-  // lamps (w = halo * 1000 + flicker, packed).
+  // lamps. Which flame a pixel belongs to, and how close it is, were worked
+  // out once at load (uLightIdx / uLightW), so this is one lookup, not a loop.
   float f = 0.0, halo = 0.0;
-  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
-    if (i >= uCount) break;
-    vec4 L = uLights[i];
-    vec2 d = (uv - L.xy) * vec2(uAspect, 1.0);
-    float r2 = dot(d, d);
-    if (r2 > 0.006) continue;
-    float n = sin(t * 7.1 + L.z) * 0.5 + sin(t * 12.7 + L.z * 2.3) * 0.3 + sin(t * 23.0 + L.z * 4.1) * 0.2;
-    float fl = fract(L.w), hl = floor(L.w) / 1000.0;
-    f += fl * n * uMotion * exp(-r2 / 0.00022);
-    halo += hl * (1.0 + 0.25 * n * uMotion) * exp(-r2 / 0.0009);
+  float li = texture2D(uLightIdx, vec2(uv.x, uv.y * uLightRow.x)).r * 255.0;
+  if (li > 0.5) {
+    vec4 T = texture2D(uLightIdx, vec2((li - 0.5) * uLightRow.z, uLightRow.y));
+    float ph = T.r * 6.2832;
+    float n = sin(t * 7.1 + ph) * 0.5 + sin(t * 12.7 + ph * 2.3) * 0.3 + sin(t * 23.0 + ph * 4.1) * 0.2;
+    vec2 Wt = texture2D(uLightW, uv).rg;
+    f = T.g * 0.1 * n * uMotion * Wt.r;
+    halo = T.b * 0.1 * (1.0 + 0.25 * n * uMotion) * Wt.g;
   }
   c.rgb *= 1.0 + f * k;
   c.rgb += vec3(1.0, 0.66, 0.36) * halo * k;
@@ -132,14 +130,14 @@ void main() {
     vec4 S = uSmoke[i];
     vec2 rel = uv - S.xy;
     if (rel.y > S.z * 5.0 || rel.y < -0.11 - S.z * 5.0 || abs(rel.x - S.z * 2.5) > S.z * 9.0) continue;
-    for (int j = 0; j < 6; j++) {
-      float ph = fract(t * 0.055 + float(j) / 6.0 + S.w);
+    float wisp = 0.75 + 0.5 * vnoise(rel / S.z * 0.6 + vec2(S.w * 9.0, t * 0.3));
+    for (int j = 0; j < 4; j++) {
+      float ph = fract(t * 0.055 + float(j) / 4.0 + S.w);
       vec2 cen = S.xy + vec2(S.z * (4.5 * ph + 0.7 * sin(t * 0.6 + float(j) * 1.7 + S.w * 6.0)), -0.11 * ph);
       float rad = S.z * (1.2 + 3.0 * ph);
       vec2 dd = vec2(uv.x - cen.x, (uv.y - cen.y) / uAspect);
       float dist = length(dd) / rad;
-      float wisp = 0.75 + 0.5 * vnoise(dd / rad * 2.5 + vec2(float(j) * 3.1, t * 0.3));
-      a += smoothstep(1.0, 0.1, dist) * (1.0 - ph) * smoothstep(0.0, 0.1, ph) * 0.6 * wisp;
+      a += smoothstep(1.0, 0.1, dist) * (1.0 - ph) * smoothstep(0.0, 0.1, ph) * 0.75 * wisp;
     }
   }
   c.rgb = mix(c.rgb, vec3(0.5, 0.48, 0.52) * (0.55 + 0.45 * uLevel), clamp(a, 0.0, 0.8));
@@ -223,7 +221,7 @@ export class CanalScene {
     document.body.style.background = `rgb(${m})`;
     if (!off) this.intro = false;
 
-    this.gl = this.canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, alpha: false });
+    this.gl = this.canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
     if (this.gl && this.setupGL(img, off ?? img, water, ids, delay, owl)) {
       this.container.appendChild(this.canvas);
     } else {
@@ -293,16 +291,7 @@ export class CanalScene {
     gl.uniform3f(this.u.uOwlAB, 0, 0, 0);
     gl.uniform2f(gl.getUniformLocation(p, 'uImgPx'), 1 / img.naturalWidth, 1 / img.naturalHeight);
     gl.uniform1f(gl.getUniformLocation(p, 'uAspect'), img.naturalWidth / img.naturalHeight);
-    const L = this.data.lights.slice(0, MAX_LIGHTS);
-    const arr = new Float32Array(MAX_LIGHTS * 4);
-    L.forEach((l, i) => {
-      const strength = l.k === 'candle' ? 0.06 : l.k === 'pl' ? 0.035 : 0.045;
-      // street lamps and lanterns (the brighter flames) get a soft glow around them
-      const halo = l.k === 'candle' && l.e >= 5 ? Math.round(Math.min(1, l.e / 32) * 60) : 0;
-      arr.set([l.x, l.y, (i * 2.399) % 6.283, halo + strength], i * 4);
-    });
-    gl.uniform4fv(gl.getUniformLocation(p, 'uLights'), arr);
-    gl.uniform1i(gl.getUniformLocation(p, 'uCount'), L.length);
+    this.buildLightMaps(gl, p, img.naturalWidth / img.naturalHeight);
     const S = (this.data.smoke ?? []).slice(0, MAX_SMOKE);
     const sarr = new Float32Array(MAX_SMOKE * 4);
     S.forEach((s, i) => sarr.set([s.x, s.y, Math.max(s.r, 0.004), (i * 0.37) % 1], i * 4));
@@ -313,6 +302,49 @@ export class CanalScene {
       : [2, 2, -1, -1];
     gl.uniform4f(gl.getUniformLocation(p, 'uSmokeBox'), box[0], box[1], box[2], box[3]);
     return true;
+  }
+
+  /** Work out once, for every pixel, which flame it belongs to (the nearest,
+   *  if any is close) and how close: the shader then needs one lookup per
+   *  pixel instead of looping over every light each frame. */
+  private buildLightMaps(gl: WebGLRenderingContext, p: WebGLProgram, aspect: number) {
+    const L = this.data.lights.slice(0, MAX_LIGHTS);
+    const W = 700, H = Math.round(700 / aspect);
+    // the index map has one extra row at the bottom: the lights' own table
+    const idx = new Uint8Array(W * (H + 1) * 4), wt = new Uint8Array(W * H * 4), tab = idx.subarray(W * H * 4);
+    L.forEach((l, i) => {
+      const flick = l.k === 'candle' ? 0.06 : l.k === 'pl' ? 0.035 : 0.045;
+      const halo = l.k === 'candle' && l.e >= 5 ? Math.min(1, l.e / 32) * 0.06 : 0;
+      tab.set([Math.round(((i * 0.618) % 1) * 255), Math.round((flick / 0.1) * 255), Math.round((halo / 0.1) * 255), 255], i * 4);
+    });
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const u = (x + 0.5) / W, v = (y + 0.5) / H;
+      let best = -1, br2 = 0.006;
+      for (let i = 0; i < L.length; i++) {
+        const dx = (u - L[i].x) * aspect, dy = v - L[i].y, r2 = dx * dx + dy * dy;
+        if (r2 < br2) { br2 = r2; best = i; }
+      }
+      const o = (y * W + x) * 4;
+      if (best >= 0) {
+        idx[o] = best + 1;
+        wt[o] = Math.round(255 * Math.exp(-br2 / 0.00022));
+        wt[o + 1] = Math.round(255 * Math.exp(-br2 / 0.0009));
+      }
+      idx[o + 3] = wt[o + 3] = 255;
+    }
+    const up = (unit: number, data: Uint8Array, w: number, h: number, name: string, nearest: boolean) => {
+      const t = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      const f = nearest ? gl.NEAREST : gl.LINEAR;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1i(gl.getUniformLocation(p, name), unit);
+    };
+    up(6, idx, W, H + 1, 'uLightIdx', true);
+    up(7, wt, W, H, 'uLightW', false);
+    gl.uniform3f(gl.getUniformLocation(p, 'uLightRow'), H / (H + 1), (H + 0.5) / (H + 1), 1 / W);
   }
 
   private resize() {
@@ -326,9 +358,9 @@ export class CanalScene {
     el.style.height = `${ch}px`;
     this.events.onLayout?.({ left: (w - cw) / 2, top: (h - ch) / 2, width: cw, height: ch });
     if (!this.fallback) {
-      // sharp on retina, but never more than ~2.6M pixels of shader work a frame
-      let dpr = Math.min(window.devicePixelRatio || 1, 2, this.img.naturalWidth / cw);
-      dpr = Math.min(dpr, Math.sqrt(2.6e6 / (cw * ch)));
+      // sharp on retina, but never more than ~2.1M pixels of shader work a frame
+      let dpr = Math.min(window.devicePixelRatio || 1, 1.75, this.img.naturalWidth / cw);
+      dpr = Math.min(dpr, Math.sqrt(2.1e6 / (cw * ch)));
       this.canvas.width = Math.round(cw * dpr);
       this.canvas.height = Math.round(ch * dpr);
       this.gl?.viewport(0, 0, this.canvas.width, this.canvas.height);

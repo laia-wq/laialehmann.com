@@ -242,6 +242,13 @@ export const person = {
   phraseEm: 'the overlooked.',
   tagLeft: 'systems design engineering',
   tagRight: 'recently: syde @uwaterloo',
-  invite: 'some of these windows are mine. come in.',
+  invite: "each lit window is something i've built. look through them with me.",
+  /** Top of the About sheet: why the site is a street of windows. */
+  sonder: {
+    word: 'sonder',
+    definition: 'the realization that each passerby has a life as vivid and complex as your own.',
+    windows: 'Walk past lit windows at night and you feel it: behind every one is a whole world you only get to glimpse.',
+    projects: "Every project I take on is like that. It's a brand new window, a chance to see a problem from someone else's side of the glass.",
+  },
   scholarships: ["President's Scholarship of Distinction", 'Joyce A. Borrie and George W. Stevenson Memorial Scholarship'],
 };
