@@ -1404,81 +1404,8 @@ if os.environ.get('NO_SMOKE'):
             SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5)})
         o.hide_render = True
 if os.environ.get('CLOSEUP') == 'shop':
-    # A close-up of the shop's front window for the browser's zoom: a plush
-    # squirrel on a stone ledge, holding a seed, in front of frosted glass
-    # (the browser plays a shadow scene behind it). Same angle as the street.
-    import json as _json
-    from bpy_extras.object_utils import world_to_camera_view
-    import squirrel as SQ
-    wc = Vector((-0.56, 2.25, 0.85))           # the shop window: 0.75 wide, 1.0 tall, glass at y 2.33
-    bpy.context.view_layer.update()
-    def _bb(o):
-        cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
-        return Vector([min(c[i] for c in cs) for i in range(3)]), Vector([max(c[i] for c in cs) for i in range(3)])
-    near = lambda pre: min((o for o in sc.objects if o.name.startswith(pre) and o.type == 'MESH'), key=lambda o: (o.matrix_world.translation - Vector((-0.56, 2.3, 0.88))).length)
-    g_ = near('pane'); sill_ = near('sill')
-    plo, phi = _bb(g_); slo, shi = _bb(sill_)
-    # frosted glass: a soft warm glow with a little grain, nothing inside shows through
-    fm, fn, fl, fb = node_mat('frosted_glow')
-    ftc = fn.new('ShaderNodeTexCoord'); fnz = fn.new('ShaderNodeTexNoise'); fnz.inputs['Scale'].default_value = 180.0
-    fl.new(ftc.outputs['Object'], fnz.inputs['Vector'])
-    fgr = fn.new('ShaderNodeMapRange'); fgr.inputs['To Min'].default_value = 0.28; fgr.inputs['To Max'].default_value = 0.38
-    fl.new(fnz.outputs['Fac'], fgr.inputs['Value'])
-    fb.inputs['Base Color'].default_value = (0.55, 0.4, 0.26, 1); fb.inputs['Emission Color'].default_value = (1.0, 0.66, 0.36, 1)
-    fl.new(fgr.outputs['Result'], fb.inputs['Emission Strength']); fb.inputs['Roughness'].default_value = 0.35
-    g_.data = g_.data.copy(); g_.data.materials.clear(); g_.data.materials.append(fm)
-    for o in sc.objects:   # what was in this window (behind frosted glass now)
-        c_ = o.matrix_world.translation
-        if o.type == 'MESH' and o.name.split('.')[0] in ('ipot', 'ileaves', 'curtain', 'candle', 'flame', 'book', 'vase', 'bloom', 'stem', 'bowl', 'fruit', 'lamp_stem', 'lamp_shade') \
-           and plo.x - 0.05 < c_.x < phi.x + 0.05 and 2.2 < c_.y < 2.5 and plo.z - 0.1 < c_.z < phi.z + 0.1:
-            o.hide_render = True
-    # the plush squirrel: felt, button eyes, a stitched seam, a sunflower seed, a tag
-    felt = SQ.fur_material('plush_felt', back=(0.55, 0.22, 0.07), belly=(0.95, 0.86, 0.7))
-    felt.node_tree.nodes['Principled BSDF'].inputs['Sheen Weight'].default_value = 1.0
-    sq_p = Vector((-0.45, (slo.y + shi.y) / 2 - 0.01, shi.z + 0.002))
-    objs, f = SQ.squirrel(sq_p, math.radians(-135), 'sit', 0.62, name='plush')
-    for o in objs:
-        if o.type == 'META': o.data.materials.clear(); o.data.materials.append(felt)
-    for o in objs:
-        if o.name.startswith(('sq_eye', 'sq_glint')): o.scale = o.scale * 1.15
-    for k in range(6):   # stitches down the tummy
-        p_ = f((0, 0.083, 0.08 + k * 0.022))
-        sphere('stitch', p_, 0.0025, solid('stitch', (0.45, 0.2, 0.1), 0.8), 6, (1, 1, 2.2))
-    seed_p = (f((-0.025, 0.08, 0.17)) + f((0.025, 0.08, 0.17))) / 2 + Vector((0, 0, 0.01))
-    seed = sphere('plush_seed', seed_p, 0.022, None, 16, (0.55, 0.32, 1.0))
-    sm, sn, sl, sb = node_mat('seed_stripes')
-    stc = sn.new('ShaderNodeTexCoord'); swv = sn.new('ShaderNodeTexWave'); swv.wave_type = 'BANDS'; swv.bands_direction = 'X'
-    swv.inputs['Scale'].default_value = 3.0; swv.inputs['Distortion'].default_value = 0.0
-    sl.new(stc.outputs['Object'], swv.inputs['Vector'])
-    sr = sn.new('ShaderNodeValToRGB'); sr.color_ramp.elements[0].position = 0.45; sr.color_ramp.elements[1].position = 0.55
-    sr.color_ramp.elements[0].color = (0.05, 0.05, 0.05, 1); sr.color_ramp.elements[1].color = (0.85, 0.83, 0.78, 1)
-    sl.new(swv.outputs['Fac'], sr.inputs['Fac']); sl.new(sr.outputs['Color'], sb.inputs['Base Color'])
-    sb.inputs['Roughness'].default_value = 0.4; sb.inputs['Coat Weight'].default_value = 0.4
-    seed.data.materials.append(sm); seed.rotation_euler = (0.3, 0.2, math.radians(-135))
-    tag_p = f((0.05, 0.06, 0.15))
-    limb(tag_p, tag_p + Vector((0.02, -0.03, -0.05)), 0.0015, solid('tag_string', (0.8, 0.75, 0.65), 0.8))
-    box('plush_tag', tag_p + Vector((0.03, -0.045, -0.08)), (0.04, 0.003, 0.055), solid('tag_card', (0.82, 0.7, 0.5), 0.9), bevel=0.002, rot=(0, 0, math.radians(-45)))
-    # close-up camera: same angle as the street, framed on the window
-    CS_ = float(os.environ.get('CLOSE_SCALE', '1.55'))
-    tgt = Vector((-0.56, 2.22, 0.8))
-    ccam = iso_camera(sc, tuple(tgt), CS_, res=(int(os.environ.get('RES_X', 2400)), int(os.environ.get('RES_Y', 1800))))
-    bpy.context.view_layer.update()
-    corners = {'tl': Vector((plo.x, plo.y, phi.z)), 'tr': Vector((phi.x, plo.y, phi.z)), 'bl': Vector((plo.x, plo.y, plo.z))}
-    print('PANE', tuple(round(v, 3) for v in plo), tuple(round(v, 3) for v in phi))
-    meta = {'pane': {k: [round(c, 5) for c in (lambda v: (v.x, 1 - v.y))(world_to_camera_view(sc, ccam, p_))] for k, p_ in corners.items()},
-            'street_target': (lambda v: [round(v.x, 5), round(1 - v.y, 5)])(world_to_camera_view(sc, cam, tgt)),
-            'scale': CS_ / 15.5, 'aspect': round((phi.x - plo.x) / (phi.z - plo.z), 4)}
-    os.makedirs(os.environ['CLOSE_OUT'], exist_ok=True)
-    bpy.context.view_layer.update()
-    _json.dump(meta, open(os.path.join(os.environ['CLOSE_OUT'], 'closeup.json'), 'w'))
-    render(sc, os.path.join(os.environ['CLOSE_OUT'], 'shop.png'), SAMPLES)
-    # the glass alone, for masking the shadow play
-    geo_ = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT', 'META') and not o.hide_render]
-    for o in geo_: o.is_holdout = o is not g_
-    sc.render.film_transparent = True; sc.cycles.use_denoising = False
-    render(sc, os.path.join(os.environ['CLOSE_OUT'], 'pane.png'), 4)
-    print('CLOSEUP DONE', meta)
-    sys.exit(0)
+    import window_closeup as WCU
+    WCU.shop_window(sc, cam, globals())
 if os.environ.get('NO_RENDER'):
     render = lambda *a, **k: None
 # what glows, noted before the lights-off pass zeroes every emission

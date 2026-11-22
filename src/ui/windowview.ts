@@ -5,9 +5,14 @@
  * behind frosted glass a soft shadow play of someone using it. The project's
  * write-up slides in beside it; "back to the street" glides back out.
  *
- * Assets per window (public/windows/<id>/): <id>.avif/.webp (the close-up),
- * pane.png (alpha = the glass), closeup.json (where the glass is, where the
- * window sits on the street, and the zoom between the two).
+ * The angle changes on the way in: after the street zooms towards the
+ * window, pre-rendered frames swing the camera round until it faces the
+ * window straight on, then a sharp still takes over.
+ *
+ * Assets per window (public/windows/<id>/): fly_000..fly_NNN.webp (the swing),
+ * <id>.avif/.webp (the straight-on still), pane.png (alpha = the glass),
+ * closeup.json (where the glass is, where the window sits on the street, the
+ * first frame's scale, how many frames).
  */
 import { projects } from '../content/projects';
 import { projectBody } from './panel';
@@ -27,6 +32,8 @@ interface CloseJson {
   scale: number;
   /** the glass's width / height */
   aspect: number;
+  /** how many frames the camera's swing has */
+  frames?: number;
 }
 
 const byId = (id: string) => projects.find((p) => p.id === id);
@@ -49,6 +56,10 @@ export class WindowView {
 
   get isOpen() { return !this.el.hidden; }
 
+  private frames: HTMLImageElement[] = [];
+  private canvas: HTMLCanvasElement | null = null;
+  private motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   async open(spec: WindowSpec, streetRect: DOMRect) {
     const base = `${import.meta.env.BASE_URL}windows/${spec.id}/`;
     this.meta = await fetch(base + 'closeup.json').then((r) => r.json());
@@ -56,7 +67,8 @@ export class WindowView {
     this.el.innerHTML = `
       <div class="room-stage">
         <div class="room-pic window-pic" style="aspect-ratio: 4 / 3">
-          <picture><source srcset="${base}${spec.id}.avif" type="image/avif"><img class="room-img is-on" src="${base}${spec.id}.webp" alt="" decoding="async"></picture>
+          <canvas class="window-fly" width="960" height="720"></canvas>
+          <picture><source srcset="${base}${spec.id}.avif" type="image/avif"><img class="room-img window-still" src="${base}${spec.id}.webp" alt="" decoding="async"></picture>
           <div class="window-play" style="-webkit-mask-image:url(${base}pane.png);mask-image:url(${base}pane.png)">
             <svg class="window-svg" viewBox="0 0 ${this.paneW()} ${PANE_H}" width="${this.paneW()}" height="${PANE_H}" aria-hidden="true"></svg>
           </div>
@@ -67,16 +79,25 @@ export class WindowView {
         <div class="room-body">${p ? projectBody(p, 2) : ''}</div>
       </aside>`;
     this.el.querySelector('.room-back')!.addEventListener('click', () => this.close());
+    this.canvas = this.el.querySelector('.window-fly');
     const svg = this.el.querySelector('.window-svg') as SVGSVGElement;
     const step = spec.play(svg, this.paneW());
-    const t0 = performance.now();
-    const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const tick = () => { step(motion ? (performance.now() - t0) / 1000 : 4.5); if (motion) this.raf = requestAnimationFrame(tick); };
-    tick();
+    // the camera's swing round to face the window: pre-rendered frames
+    const n = this.meta.frames ?? 0;
+    this.frames = [];
+    const loaded = Promise.all(Array.from({ length: n }, (_, k) => new Promise<void>((res) => {
+      const im = new Image(); im.decoding = 'async';
+      im.onload = im.onerror = () => res();
+      im.src = `${base}fly_${String(k).padStart(3, '0')}.webp`;
+      this.frames[k] = im;
+    })));
+    const still = this.el.querySelector('.window-still') as HTMLImageElement;
+    const stillReady = still.decode ? still.decode().catch(() => {}) : Promise.resolve();
 
-    // glide in: move the street so the window lands where the close-up will
-    // show it, at the close-up's scale; then the close-up fades in over it
+    // 1) glide in: the street moves so the window lands where the first frame
+    //    will show it, at that frame's scale
     this.el.hidden = false;
+    this.el.classList.add('is-open');
     const pic = this.el.querySelector('.window-pic') as HTMLElement;
     const c = pic.getBoundingClientRect();
     const k = (c.width / streetRect.width) / this.meta.scale;
@@ -85,15 +106,45 @@ export class WindowView {
     const ty = streetRect.top - sr.top + this.meta.street_target[1] * streetRect.height;
     const cx = c.left + c.width / 2 - sr.left, cy = c.top + c.height / 2 - sr.top;
     this.stage.style.transformOrigin = '0 0';
-    this.stage.style.transition = motion ? 'transform 1.1s cubic-bezier(0.55, 0, 0.25, 1), filter 1.1s ease, opacity 0.3s ease 0.85s' : 'none';
+    this.stage.style.transition = this.motion ? 'transform 1.0s cubic-bezier(0.55, 0, 0.3, 1), opacity 0.25s ease 0.8s' : 'none';
     this.stage.style.transform = `translate(${cx - k * tx}px, ${cy - k * ty}px) scale(${k})`;
-    this.stage.style.filter = 'blur(1.5px)';
     this.stage.style.opacity = '0';
-    setTimeout(() => {
-      this.el.classList.add('is-open');
-      this.fitPane();
-      (this.el.querySelector('.room-back') as HTMLElement).focus({ preventScroll: true });
-    }, motion ? 820 : 0);
+    await Promise.all([loaded, new Promise((r) => setTimeout(r, this.motion ? 820 : 0))]);
+    // 2) the first frame takes over, then the camera swings round to face the window
+    this.draw(0);
+    this.canvas!.classList.add('is-on');
+    if (this.motion && n > 1) await this.play(0, n - 1, 1100);
+    else this.draw(n - 1);
+    // 3) settle on the sharp still; the shadow play starts behind the glass; the write-up slides in
+    await stillReady;
+    this.el.classList.add('is-settled');
+    this.fitPane();
+    const t0 = performance.now();
+    const tick = () => { step(this.motion ? (performance.now() - t0) / 1000 : 4.5); if (this.motion) this.raf = requestAnimationFrame(tick); };
+    tick();
+    (this.el.querySelector('.room-back') as HTMLElement).focus({ preventScroll: true });
+  }
+
+  private draw(i: number) {
+    const im = this.frames[Math.max(0, Math.min(this.frames.length - 1, i))];
+    const cv = this.canvas;
+    if (!cv || !im || !im.naturalWidth) return;
+    const x = cv.getContext('2d')!;
+    x.drawImage(im, 0, 0, cv.width, cv.height);
+  }
+
+  /** Step through frames a→b over ms, eased. */
+  private play(a: number, b: number, ms: number) {
+    return new Promise<void>((res) => {
+      const t0 = performance.now();
+      const go = () => {
+        const t = Math.min(1, (performance.now() - t0) / ms);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        this.draw(Math.round(a + (b - a) * e));
+        if (t < 1) requestAnimationFrame(go); else res();
+      };
+      go();
+    });
   }
 
   private paneW() { return Math.round(PANE_H * (this.meta.aspect ?? 0.75)); }
@@ -113,15 +164,23 @@ export class WindowView {
     svg.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${tl[0] * W}, ${tl[1] * H})`;
   }
 
-  close() {
+  async close() {
     cancelAnimationFrame(this.raf);
-    this.el.classList.remove('is-open');
-    this.stage.style.transition = 'transform 0.9s cubic-bezier(0.3, 0, 0.2, 1), filter 0.9s ease, opacity 0.35s ease';
-    this.stage.style.transform = '';
-    this.stage.style.filter = '';
-    this.stage.style.opacity = '';
-    setTimeout(() => { if (!this.el.classList.contains('is-open')) { this.el.hidden = true; this.el.innerHTML = ''; this.stage.style.transition = ''; } }, 900);
+    // the write-up slides away, the still and the shadow play fade, the camera swings back out
+    this.el.classList.remove('is-settled');
     this.onClose();
+    const n = this.frames.length;
+    if (this.motion && n > 1) {
+      await new Promise((r) => setTimeout(r, 250));
+      await this.play(n - 1, 0, 900);
+    }
+    // then the street glides back out from the window
+    this.canvas?.classList.remove('is-on');
+    this.stage.style.transition = this.motion ? 'transform 0.9s cubic-bezier(0.3, 0, 0.2, 1), opacity 0.2s ease' : 'none';
+    this.stage.style.transform = '';
+    this.stage.style.opacity = '';
+    this.el.classList.remove('is-open');
+    setTimeout(() => { if (!this.el.classList.contains('is-open')) { this.el.hidden = true; this.el.innerHTML = ''; this.stage.style.transition = ''; } }, 900);
   }
 }
 
