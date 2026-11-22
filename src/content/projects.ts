@@ -242,7 +242,7 @@ export const person = {
   phraseEm: 'the overlooked.',
   tagLeft: 'systems design engineering',
   tagRight: 'recently: syde @uwaterloo',
-  invite: "each lit window is something i've built. look through them with me.",
+  invite: "a few of these windows hold things i've built. look through them with me.",
   /** Top of the About sheet: why the site is a street of windows. */
   sonder: {
     word: 'sonder',

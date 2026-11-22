@@ -71,9 +71,12 @@ function updatedLabel() {
 }
 
 const ICONS = {
-  projects: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7" y="5" width="18" height="22" rx="1.5" fill="#2a2018" stroke="#c9a56b" stroke-width="1.2"/><rect x="10" y="8" width="5.5" height="7" fill="#ffb35c"/><rect x="16.5" y="8" width="5.5" height="7" fill="#ffd08a"/><rect x="10" y="16.5" width="5.5" height="7" fill="#3a3027"/><rect x="16.5" y="16.5" width="5.5" height="7" fill="#ffb35c"/></svg>',
-  about: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4c2.4 3 3 5.2 0 8.2-3-3-2.4-5.2 0-8.2z" fill="#ffc46b"/><rect x="12" y="12.5" width="8" height="14" rx="1" fill="#efe3cf"/><rect x="9" y="26" width="14" height="2.5" rx="1" fill="#c9a56b"/></svg>',
-  lights: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4a8 8 0 0 0-4.5 14.6c.8.6 1.3 1.5 1.3 2.5V23h6.4v-1.9c0-1 .5-1.9 1.3-2.5A8 8 0 0 0 16 4z" fill="var(--bulb, #ffd08a)"/><rect x="12.8" y="24" width="6.4" height="3" rx="1" fill="#9c8a72"/></svg>',
+  // a lit arched window: what the projects are
+  projects: '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><radialGradient id="ic-glass" cx="50%" cy="62%" r="62%"><stop offset="0" stop-color="#ffe0a3"/><stop offset="0.6" stop-color="#ffb35c"/><stop offset="1" stop-color="#c8692e"/></radialGradient></defs><circle cx="16" cy="17" r="13" fill="#ffb35c" opacity="0.12"/><path d="M8.5 27V13.5a7.5 7.5 0 0 1 15 0V27z" fill="url(#ic-glass)"/><path d="M12.2 7.6c-1.6 2.3-2.2 6-1.4 9.6 1.3-2.6 1.2-6.2 1.4-9.6z" fill="#8a3b2a" opacity="0.75"/><path d="M8.5 27V13.5a7.5 7.5 0 0 1 15 0V27zM16 6v21M8.5 18h15" fill="none" stroke="#e7cc9c" stroke-width="1.4" stroke-linejoin="round"/><rect x="6.5" y="26.6" width="19" height="2.4" rx="1" fill="#e7cc9c"/></svg>',
+  // an old cameo portrait in an oval frame: who I am
+  profile: '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><clipPath id="ic-oval"><ellipse cx="16" cy="17" rx="8.2" ry="10.2"/></clipPath></defs><ellipse cx="16" cy="17" rx="8.2" ry="10.2" fill="#3a2a1f"/><g clip-path="url(#ic-oval)" fill="#f2dcb5"><circle cx="16" cy="14.6" r="3.7"/><path d="M8.6 28c.6-4.8 3.6-7.6 7.4-7.6s6.8 2.8 7.4 7.6z"/></g><ellipse cx="16" cy="17" rx="9.2" ry="11.2" fill="none" stroke="#e7cc9c" stroke-width="1.5"/><path d="M13.6 4.6c.6-1.6 4.2-1.6 4.8 0" fill="none" stroke="#e7cc9c" stroke-width="1.3" stroke-linecap="round"/><circle cx="16" cy="5.6" r="1" fill="#e7cc9c"/></svg>',
+  // a street lantern, glowing or dark
+  lights: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="14.5" r="10" fill="var(--halo, #ffd08a)" opacity="0.16"/><path d="M11.6 10.4h8.8l-1.3 9h-6.2z" fill="var(--bulb, #ffd08a)"/><path d="M11.6 10.4h8.8l-1.3 9h-6.2zM16 10.4v9" fill="none" stroke="#d9b98a" stroke-width="1.2" stroke-linejoin="round"/><path d="M10.4 10.6h11.2L18.8 6.4h-5.6z" fill="#d9b98a"/><circle cx="16" cy="4.9" r="1.2" fill="#d9b98a"/><rect x="12.4" y="19.2" width="7.2" height="2" rx="0.8" fill="#d9b98a"/><rect x="15.1" y="21" width="1.8" height="6.4" fill="#a8916f"/><rect x="12.6" y="27.2" width="6.8" height="1.8" rx="0.8" fill="#a8916f"/></svg>',
 };
 
 async function bootScene() {
@@ -93,7 +96,7 @@ async function bootScene() {
       <p class="invite">${escHtml(person.invite)}</p>
       <nav class="dock" aria-label="Sections">
         <button type="button" data-open="projects">${ICONS.projects}<span>projects</span></button>
-        <button type="button" data-open="about">${ICONS.about}<span>about</span></button>
+        <button type="button" data-open="about">${ICONS.profile}<span>profile</span></button>
         <button type="button" class="lights" aria-pressed="true">${ICONS.lights}<span>lights</span></button>
       </nav>
       <p class="updated">last updated ${updatedLabel()}</p>
@@ -120,7 +123,7 @@ async function bootScene() {
         <ol class="rooms">${ROOMS.map((r) => `<li><p class="room-name">${escHtml(r.room)}<span> · ${escHtml(r.where)}</span></p>
           <ul>${r.ids.map(byId).filter(Boolean).map((p) => `<li><button type="button" data-project="${p!.id}"><strong>${escHtml(p!.title)}</strong><span>${escHtml(p!.summary)}</span></button></li>`).join('')}</ul></li>`).join('')}</ol>`;
     } else {
-      sheetInner.innerHTML = `<h2 class="sheet-title">About</h2>
+      sheetInner.innerHTML = `<h2 class="sheet-title">Profile</h2>
         <div class="sonder">
           <p class="sonder-word">${escHtml(person.sonder.word)} <span>(n.)</span></p>
           <p class="sonder-def">${escHtml(person.sonder.definition)}</p>

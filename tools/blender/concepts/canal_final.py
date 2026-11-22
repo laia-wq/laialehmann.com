@@ -193,7 +193,8 @@ def pick_glow():
     i = RG.choices(range(len(GLOWS)), GLOW_W)[0]
     return GLOWS[i], ROOM_COLS[i]
 # wall areas kept clear of windows (where the patched corridors attach)
-KEEPOUT = [ ('x', -2.3, 2.35, 3.15, 2.45, 3.45), ('x', 2.15, 2.75, 3.45, 2.35, 3.35)]
+KEEPOUT = [ ('x', -2.3, 2.35, 3.15, 2.45, 3.45), ('x', 2.15, 2.75, 3.45, 2.35, 3.35),
+            ('y', 1.25, -4.14, -3.54, 1.5, 2.45)]   # the little corridor from the bakery
 def blocked(W, u, z, w, h):
     for (ax, pl, u0, u1, z0, z1) in KEEPOUT:
         if ax == W.axis and abs(pl - W.plane) < 0.05 and u + w / 2 > u0 and u - w / 2 < u1 and z + h > z0 and z < z1:
@@ -1132,7 +1133,167 @@ def etched_glass(name, col, pattern):
     b.inputs['Emission Strength'].default_value = 4.5; b.inputs['Base Color'].default_value = (0.05, 0.05, 0.05, 1)
     return m
 
+
+# ------------------------------------------------------------------ roof and gable details
+def ring_of(c, r, z, rr, mat, n=28, name='hoop'):
+    pts = [Vector((c[0] + math.cos(k / n * 2 * math.pi) * r, c[1] + math.sin(k / n * 2 * math.pi) * r, z)) for k in range(n + 1)]
+    for p, q in zip(pts, pts[1:]): limb(p, q, rr, mat)
+
+def water_tank(tx, ty, tz):
+    """An old timber water tank on a little stand: staves of slightly different
+    wood bound with rusty hoops, a stepped shingle lid with a hatch and a
+    weathervane, a ladder up the side and a pipe down to the roof."""
+    stand = timber
+    for (dx, dy) in ((-0.22, -0.22), (0.22, -0.22), (0.22, 0.22), (-0.22, 0.22)):
+        box('tank_leg', (tx + dx, ty + dy, tz + 0.13), (0.06, 0.06, 0.26), stand, bevel=0.005)
+    for sg in (-1, 1):
+        limb(Vector((tx - 0.22, ty + sg * 0.22, tz + 0.03)), Vector((tx + 0.22, ty + sg * 0.22, tz + 0.22)), 0.012, stand)
+        limb(Vector((tx + sg * 0.22, ty - 0.22, tz + 0.22)), Vector((tx + sg * 0.22, ty + 0.22, tz + 0.03)), 0.012, stand)
+    box('tank_deck', (tx, ty, tz + 0.28), (0.66, 0.66, 0.04), timber_h, bevel=0.006)
+    R, z0, H = 0.3, tz + 0.3, 0.7
+    cyl('tank_core', (tx, ty, z0 + H / 2), R - 0.012, H, solid('tank_dark', (0.09, 0.06, 0.04), 0.9), verts=24)
+    staves = [varied('tank_stave%d' % i, c, 0.07, 0.75, bump=0.3) for i, c in enumerate(((0.36, 0.25, 0.16), (0.31, 0.21, 0.14), (0.4, 0.29, 0.19), (0.28, 0.2, 0.14)))]
+    NS = 32
+    for k in range(NS):
+        a = k / NS * 2 * math.pi
+        box('tank_stave', (tx + math.cos(a) * R, ty + math.sin(a) * R, z0 + H / 2 + RG.uniform(-0.008, 0.008)),
+            (0.024, 2 * math.pi * R / NS * 0.93, H + RG.uniform(-0.01, 0.01)), staves[RG.randrange(4)], bevel=0.003, rot=(0, 0, a))
+    rust = varied('hoop_rust', (0.3, 0.15, 0.08), 0.15, 0.6)
+    for hz in (0.1, 0.38, 0.64, 0.92):
+        ring_of((tx, ty), R + 0.014, z0 + hz * H, 0.009, rust)
+    # stepped shingle lid
+    shingle = varied('tank_shingle', (0.2, 0.15, 0.13), 0.12, 0.85, bump=0.4)
+    zt = z0 + H
+    for j in range(4):
+        rb = R + 0.07 - j * 0.085
+        cyl('tank_lid', (tx, ty, zt + 0.04 + j * 0.06), rb, 0.08, shingle, verts=28, r2=rb - 0.07)
+    cyl('tank_lid_top', (tx, ty, zt + 0.27), 0.05, 0.05, shingle, verts=16, r2=0.02)
+    box('tank_hatch', (tx + 0.12, ty - 0.12, zt + 0.12), (0.12, 0.1, 0.03), timber_h, bevel=0.004, rot=(0.35, -0.35, -0.785))
+    # weathervane
+    vp = Vector((tx, ty, zt + 0.3))
+    limb(vp, vp + Vector((0, 0, 0.2)), 0.006, iron)
+    sphere('vane_ball', vp + Vector((0, 0, 0.05)), 0.014, solid('brass_v', (0.7, 0.5, 0.25), 0.35, metal=1.0), 8)
+    box('vane_arrow', vp + Vector((0.02, 0, 0.17)), (0.16, 0.006, 0.012), iron, bevel=0, rot=(0, 0, 0.5))
+    box('vane_tail', vp + Vector((-0.04, -0.03, 0.17)), (0.04, 0.004, 0.05), iron, bevel=0, rot=(0, 0, 0.5))
+    # ladder up the side that faces the street
+    la = -0.75; d = Vector((math.cos(la), math.sin(la), 0)); tng = Vector((-d.y, d.x, 0))
+    base = Vector((tx, ty, tz + 0.3)) + d * (R + 0.05)
+    for sg in (-1, 1):
+        limb(base + tng * 0.07 * sg, base + tng * 0.07 * sg + Vector((0, 0, H + 0.12)), 0.009, iron)
+    for k in range(8):
+        limb(base - tng * 0.07 + Vector((0, 0, 0.08 + k * 0.095)), base + tng * 0.07 + Vector((0, 0, 0.08 + k * 0.095)), 0.006, iron)
+    # outlet pipe down through the stand and off across the roof
+    pa = 2.3; pd = Vector((math.cos(pa), math.sin(pa), 0))
+    p0 = Vector((tx, ty, z0 + 0.06)) + pd * (R + 0.02)
+    p1 = Vector((p0.x, p0.y, tz + 0.03)); p2 = p1 + pd * 0.5
+    for a_, b_ in ((p0, p1), (p1, p2)):
+        limb(a_, b_, 0.018, iron)
+    cyl('pipe_flange', tuple(p0), 0.03, 0.02, iron, verts=12)
+    cyl('tank_valve', tuple(p1 + Vector((0, 0, 0.1))), 0.025, 0.03, solid('valve_red', (0.5, 0.1, 0.08), 0.5, metal=0.4), verts=10)
+
+def louvre(c, w, h):
+    """A small louvred attic vent on a gable facing +x."""
+    dark = solid('vent_dark', (0.04, 0.03, 0.03), 0.9)
+    box('vent_back', c + Vector((-0.005, 0, 0)), (0.01, w, h), dark, bevel=0)
+    fr = solid('vent_frame', (0.22, 0.16, 0.12), 0.7)
+    for dz in (-h / 2, h / 2):
+        box('vent_frame', c + Vector((0.012, 0, dz)), (0.03, w + 0.03, 0.025), fr, bevel=0.003)
+    for dy in (-w / 2, w / 2):
+        box('vent_frame', c + Vector((0.012, dy, 0)), (0.03, 0.025, h), fr, bevel=0.003)
+    n = max(3, int(h / 0.035))
+    for k in range(n):
+        z = -h / 2 + (k + 0.6) * h / (n + 0.2)
+        box('vent_slat', c + Vector((0.012, 0, z)), (0.035, w, 0.01), fr, bevel=0, rot=(0, -0.6, 0))
+
+def timbered_gable(x, y0, y1, ztop, z0, rise, mat):
+    """Close the blue house's gable and make something of it: old timber framing
+    over the plaster, two louvred vents, a hoist beam with a pulley and rope
+    (as canal houses have, for getting furniture in), carved bargeboards with
+    little drops, a pendant at the apex, and a pigeon on the beam."""
+    yc = (y0 + y1) / 2; hw = (y1 - y0) / 2
+    me = bpy.data.meshes.new('gableC'); bm_ = bmesh.new()
+    vs = [bm_.verts.new(v) for v in ((x, y0, z0), (x, y1, z0), (x, yc, z0 + rise))]
+    bm_.faces.new(vs); bm_.to_mesh(me); bm_.free()
+    o = link(bpy.data.objects.new('gableC', me)); me.materials.append(mat)
+    sl = o.modifiers.new('sol', 'SOLIDIFY'); sl.thickness = 0.1; sl.offset = -1
+    box('gableC_band', (x - 0.05, yc, (ztop + z0) / 2), (0.1, y1 - y0, z0 - ztop + 0.01), mat, bevel=0)
+    oak = varied('gable_oak', (0.2, 0.14, 0.1), 0.1, 0.8, bump=0.3)
+    X = x + 0.018
+    zr = lambda y: z0 + rise * (1 - abs(y - yc) / hw)      # roof line above y
+    box('gable_tie', (X, yc, z0 + 0.04), (0.04, y1 - y0, 0.08), oak, bevel=0.006)
+    for sg in (-1, 1):
+        limb(Vector((X, yc + sg * (hw - 0.06), z0 + 0.06)), Vector((X, yc, z0 + rise - 0.05)), 0.03, oak)      # rafters' faces
+        qy = yc + sg * 0.95
+        limb(Vector((X, qy, z0 + 0.06)), Vector((X, qy, zr(qy) - 0.05)), 0.026, oak)                          # queen posts
+        oy = yc + sg * 1.4
+        limb(Vector((X, qy, z0 + 0.08)), Vector((X, oy, zr(oy) - 0.04)), 0.022, oak)                           # brace in the outer panel
+        louvre(Vector((x + 0.005, yc + sg * 0.48, z0 + 0.3)), 0.24, 0.2)
+    limb(Vector((X, yc, z0 + 0.06)), Vector((X, yc, z0 + 0.62)), 0.03, oak)                                     # king post
+    # hoist beam and pulley
+    hz = z0 + 0.72
+    box('hoist_beam', (x + 0.26, yc, hz), (0.6, 0.085, 0.1), oak, bevel=0.01)
+    box('hoist_cap', (x + 0.565, yc, hz), (0.02, 0.1, 0.12), oak, bevel=0.004)
+    pz = hz - 0.13; px = x + 0.48
+    limb(Vector((px, yc, hz - 0.05)), Vector((px, yc, pz + 0.04)), 0.006, iron)
+    cyl('hoist_pulley', (px, yc, pz), 0.04, 0.02, solid('pulley_wood', (0.35, 0.24, 0.15), 0.6), verts=20, rot=(math.pi / 2, 0, 0))
+    cyl('hoist_axle', (px, yc, pz), 0.012, 0.05, iron, verts=8, rot=(math.pi / 2, 0, 0))
+    rope = solid('hoist_rope', (0.55, 0.46, 0.34), 0.9)
+    limb(Vector((px - 0.04, yc, pz)), Vector((px - 0.045, yc, z0 - 0.15)), 0.006, rope)
+    limb(Vector((px + 0.04, yc, pz)), Vector((px + 0.045, yc, z0 - 0.42)), 0.006, rope)
+    hk = Vector((px + 0.045, yc, z0 - 0.42))
+    for k in range(5):     # an iron hook at the end
+        t0, t1 = k / 5 * math.pi, (k + 1) / 5 * math.pi
+        limb(hk + Vector((0.02 * (1 - math.cos(t0)), 0, -0.02 - 0.025 * math.sin(t0))), hk + Vector((0.02 * (1 - math.cos(t1)), 0, -0.02 - 0.025 * math.sin(t1))), 0.005, iron)
+    limb(hk, hk + Vector((0, 0, -0.02)), 0.005, iron)
+    pigeon(x + 0.36, yc, hz + 0.05, math.pi * 0.85)
+    # carved bargeboards under both rakes, with drops; a pendant at the apex
+    bx = x + 0.15 - 0.012
+    L = math.hypot(hw + 0.15, rise); th = math.atan2(rise, hw + 0.15)
+    for sg in (-1, 1):
+        mid = Vector((bx, yc + sg * (hw + 0.15) / 2, z0 + rise / 2 - 0.055))
+        box('bargeboard', mid, (0.025, L, 0.07), oak, bevel=0.005, rot=(-sg * th, 0, 0))
+        for k in range(1, 11):
+            t = k / 11
+            yy = yc + sg * (hw + 0.15) * t
+            zz = z0 + rise * (1 - t) - 0.1
+            sphere('barge_drop', (bx, yy, zz), 0.016, oak, 8, (1, 1, 1.5))
+    limb(Vector((bx, yc, z0 + rise - 0.02)), Vector((bx, yc, z0 + rise - 0.2)), 0.02, oak)
+    sphere('apex_drop', (bx, yc, z0 + rise - 0.22), 0.03, oak, 10, (1, 1, 1.4))
+
+def pulley_basket(a, b, t=0.4):
+    """A rope pulley strung between two neighbours' windows, with a wicker
+    basket clipped on: the bakery sends the bread across."""
+    a, b = Vector(a), Vector(b)
+    d = (b - a).normalized(); side = Vector((-d.y, d.x, 0)).normalized()
+    rope = solid('pulley_rope', (0.6, 0.52, 0.4), 0.9)
+    wood = solid('pulley_wood', (0.35, 0.24, 0.15), 0.6)
+    wa, wb = a + d * 0.08, b - d * 0.08
+    for wall, wc in ((a, wa), (b, wb)):
+        limb(wall - d * 0.02, wc, 0.01, iron)                           # bracket
+        c = cyl('pulley_wheel', tuple(wc), 0.045, 0.018, wood, verts=20)
+        c.rotation_euler = side.to_track_quat('Z', 'Y').to_euler()
+    def run(dz, sag):
+        pts = [wa.lerp(wb, s) + Vector((0, 0, dz - sag * 4 * s * (1 - s))) for s in [k / 12 for k in range(13)]]
+        for p, q in zip(pts, pts[1:]): limb(p, q, 0.005, rope)
+        return pts
+    top = run(0.045, 0.06); run(-0.045, 0.1)
+    hp = wa.lerp(wb, t) + Vector((0, 0, 0.045 - 0.06 * 4 * t * (1 - t)))
+    limb(hp, hp + Vector((0, 0, -0.07)), 0.004, iron)
+    bc = hp + Vector((0, 0, -0.15))
+    wick = varied('wicker', (0.58, 0.42, 0.22), 0.1, 0.9, bump=0.6, bump_scale=120.0)
+    cyl('basket', tuple(bc), 0.065, 0.1, wick, verts=20, r2=0.08)
+    ring_of((bc.x, bc.y), 0.082, bc.z + 0.05, 0.007, wick, n=20, name='basket_rim')
+    arc = [bc + side * (0.08 * math.cos(s)) + Vector((0, 0, 0.05 + 0.08 * math.sin(s))) for s in [k / 10 * math.pi for k in range(11)]]
+    for p, q in zip(arc, arc[1:]): limb(p, q, 0.005, wick)
+    sphere('basket_cloth', tuple(bc + Vector((0, 0, 0.045))), 0.07, solid('cloth_check', (0.72, 0.22, 0.2), 0.85), 12, (1, 1, 0.3))
+    for (o, tilt) in ((-0.025, 0.5), (0.02, 0.3)):
+        s_ = sphere('baguette', tuple(bc + d * o + Vector((0, 0, 0.09))), 0.018, solid('bread', (0.7, 0.45, 0.22), 0.7), 10, (1, 1, 5.5))
+        s_.rotation_euler = (tilt, 0.25, math.atan2(d.y, d.x))
+    sphere('pulley_bell', tuple(wa + Vector((0, 0, -0.08))), 0.02, solid('brass_b', (0.75, 0.55, 0.25), 0.3, metal=1.0), 10, (1, 1, 1.2))
+    limb(wa + Vector((0, 0, -0.02)), wa + Vector((0, 0, -0.065)), 0.003, iron)
+
 # ------------------------------------------------------------------ stage
+GROUPS_EXTRA = {}
 endless_water()
 oldbrick = old_bricks('old_bricks', (0.42, 0.22, 0.15), 0.45)
 oldbrick2 = old_bricks('old_bricks_y', (0.5, 0.36, 0.26), 0.35, 6.0)
@@ -1152,6 +1313,7 @@ gable_roof('roofD', -3.72, -1.47, 1.75, 2.85, topD + 0.1, 0.75, tile_mat('rt_old
 gable_end(-2.85, -2.9, -0.05, topD + 0.1, 0.75, oldbrick2, 'lunette')
 # C's roof: ridge along y — build as gable on a rotated footprint by swapping: use a mansard-ish hip of boxes
 gable_roof('roofC', 3.875, 2.05, 1.55, 3.7, topC + 0.1, 0.9, slate, over=0.15)
+_b = set(bpy.data.objects.keys()); timbered_gable(4.65, 0.2, 3.9, topC, topC + 0.1, 0.9, plaster_o); GROUPS_EXTRA['gableC'] = set(bpy.data.objects.keys()) - _b
 for (x, y, z, h) in ((-4.1, 3.4, topA + 0.6, 1.2), (-2.9, 1.8, topA + 0.5, 1.0), (-0.4, 3.6, topB + 0.1, 0.8), (1.5, 3.7, topB + 0.1, 0.7),
                      (4.3, 3.2, topC + 0.4, 0.9), (-4.2, -0.6, topD + 0.3, 0.8)):
     box('chimney', (x, y, z + h / 2), (0.28, 0.28, h), oldbrick, bevel=0.01)
@@ -1162,11 +1324,7 @@ for (x, y, z, h) in ((-4.1, 3.4, topA + 0.6, 1.2), (-2.9, 1.8, topA + 0.5, 1.0),
         sphere('smoke', (x + k * 0.1, y + k * 0.04, z + h + 0.35 + k * 0.22), 0.09 + k * 0.045, sm, 12)
 # B roof clutter
 box('B_roofwall', (0.6, 3.15, topB + 0.2), (3.1, 1.8, 0.3), plaster_g, bevel=0.01)
-cyl('water_tank', (1.6, 2.9, topB + 0.85), 0.32, 0.9, timber, verts=20)
-cyl('tank_roof', (1.6, 2.9, topB + 1.4), 0.36, 0.25, iron, verts=20, r2=0.02)
-for k in range(4):
-    a = k / 4 * 2 * math.pi + 0.5
-    limb(Vector((1.6 + math.cos(a) * 0.25, 2.9 + math.sin(a) * 0.25, topB + 0.35)), Vector((1.6 + math.cos(a) * 0.3, 2.9 + math.sin(a) * 0.3, topB + 0.05)), 0.02, iron)
+_b = set(bpy.data.objects.keys()); water_tank(1.6, 2.9, topB + 0.35); GROUPS_EXTRA['tank'] = set(bpy.data.objects.keys()) - _b
 for k in range(3):
     pot((-0.6 + k * 0.35, 2.45, topB + 0.35), 0.1, 0.18, None)
     sphere('roof_plant', (-0.6 + k * 0.35, 2.45, topB + 0.6), 0.1, solid('rleaf', (0.16, 0.3, 0.1), 0.7), 10)
@@ -1230,18 +1388,17 @@ for k in range(4):
     sphere('bread', (-4.4 + k * 0.16, -2.86, 0.5), 0.05, solid('bread', (0.7, 0.45, 0.22), 0.7), 10, (1.4, 0.8, 0.7))
 hanging_sign(CS, 1.2, 1.55, (0.25, 0.3, 0.4))
 hanging_sign(DS, -1.0, 1.5, (0.5, 0.25, 0.15))
-fire_escape(0.6, 1.8, 2.25, [1.45, 2.65])
 # bridges: curved stone ones and covered skybridges
 rickety_bridge((-2.0, 1.25, 0), (-1.15, 2.0, 0))
 rickety_bridge((2.35, 2.2, 0), (2.85, 2.2, 0), w=0.5)
 rickety_bridge((-3.7, 0.25, 0), (-3.7, 0.85, 0), w=0.5)
 makeshift_corridor((-2.3, 2.75), (-0.95, 2.8), 2.6)
 makeshift_corridor((2.15, 3.1), (3.1, 3.1), 2.5, w=0.5)
-makeshift_corridor((-3.84, -0.05), (-3.84, 1.25), 1.5, w=0.32, h=0.5)
+_b = set(bpy.data.objects.keys()); makeshift_corridor((-3.84, -0.05), (-3.84, 1.25), 1.64, w=0.32, h=0.5); GROUPS_EXTRA['corridor'] = set(bpy.data.objects.keys()) - _b
 # lamps of every kind
 for (x, y) in ((-2.25, 1.0), (-0.95, 1.8), (2.6, 1.85), (3.05, -0.15), (-2.7, -3.25)):
     gas_lamp(x, y, 0.28)
-for (W, u, z) in ((AF, -3.85, 1.5), (AF, -3.05, 2.65), (CS, 0.9, 1.4), (CS, 2.6, 2.5), (DF, -3.3, 1.35), (DS, -2.3, 2.4), (BF, 1.3, 1.45)):
+for (W, u, z) in ((AF, -3.05, 2.65), (CS, 0.9, 1.4), (CS, 2.6, 2.5), (DF, -3.3, 1.35), (DS, -2.3, 2.4), (BF, 1.3, 1.45)):
     wall_lantern(W, u, z)
 for p in ((-2.25, 1.55, 0.28), (2.95, 2.45, 0.28), (-3.35, 0.95, 0.28)):
     globe_post(p[0], p[1], p[2])
@@ -1249,7 +1406,7 @@ hanging_lanterns((-2.3, 1.3, 3.3), (3.1, 0.25, 3.0), 6, 0.6)
 hanging_lanterns((-2.85, -0.5, 2.2), (-2.3, 1.3, 2.6), 3, 0.2)
 laundry((-2.3, 1.4, 3.75), (-0.95, 2.3, 3.5))
 laundry((2.15, 2.4, 3.45), (3.1, 2.2, 3.3))
-laundry((-2.86, -0.3, 2.1), (-2.45, 1.24, 2.2))
+_b = set(bpy.data.objects.keys()); pulley_basket((-2.84, -0.12, 1.72), (-2.62, 1.24, 1.55)); GROUPS_EXTRA['pulley'] = set(bpy.data.objects.keys()) - _b
 wire((-4.6, 1.2, 4.3), (-0.95, 2.2, 3.7), 0.5)
 wire((-2.85, -2.8, 3.2), (3.1, 0.3, 3.4), 0.9)
 crates(-4.3, 0.95, 0.28); crates(3.3, -0.1, 0.28)
@@ -1265,9 +1422,9 @@ _b = set(bpy.data.objects.keys()); EX.bicycle((-2.615, -1.0, 0.341), math.pi / 2
 # washing strung low across from the bakery to the tall house
 _b = set(bpy.data.objects.keys())
 # long banners on poles off the walls
-EX.banner((4.66, 0.95, 2.55), (1, 0, 0), 'floral')
-EX.banner((-2.29, 3.55, 2.25), (1, 0, 0), 'stars')
-EX.banner((-4.0, -2.91, 2.15), (0, -1, 0), 'fan', h=0.5)
+EX.banner((3.02, -0.18, 1.16), (-1, -1, 0), 'floral', h=0.36)      # on the lamp post at C's corner
+EX.banner((-0.98, 1.77, 1.16), (-1, -1, 0), 'stars', h=0.36)       # on the lamp post at B's corner
+EX.banner((-2.84, -1.0, 2.95), (1, 0, 0), 'fan', h=0.48)          # bakery's canal side, between windows, above the hanging sign
 GROUPS_NEW['banners'] = set(bpy.data.objects.keys()) - _b
 # a small owl on the corner house's ridge, eyes shut (the browser opens them)
 _b = set(bpy.data.objects.keys()); bpy.context.view_layer.update()
@@ -1344,9 +1501,21 @@ for (x, y, yaw, kind) in ((-1.95, -1.45, 0.3, 'floral'), (1.55, -2.2, -0.4, 'sta
     EX.floating_lantern((x, y, -0.008), yaw, kind)
 GROUPS_NEW['lanterns'] = set(bpy.data.objects.keys()) - _b
 
+if os.environ.get('SPOTS'):
+    # what sits on these bits of wall (to find clear spots for banners and lines)
+    bpy.context.view_layer.update()
+    for label, lo_, hi_ in (('lampB', (-1.3, 1.4, 0.6), (-0.8, 1.9, 1.5)), ('lamp', (2.7, -0.5, 0.6), (3.2, 0.0, 1.5))):
+        print('SPOTS', label)
+        for o in sc.objects:
+            if o.type != 'MESH' or o.hide_render or o.name.split('.')[0] in ('A', 'B', 'C', 'D', 'quay', 'canal'): continue
+            cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
+            a = [min(c[i] for c in cs) for i in range(3)]; b = [max(c[i] for c in cs) for i in range(3)]
+            if all(b[i] > lo_[i] and a[i] < hi_[i] for i in range(3)) and max(b[i] - a[i] for i in range(3)) < 2.5:
+                print('   ', o.name.split('.')[0], [round(v, 2) for v in a], [round(v, 2) for v in b])
 if os.environ.get('CHECK'):
     # does anything new touch something it shouldn't? (bounding boxes, a few mm slack)
     GROUPS_NEW['bin'] = GROUPS_BIN
+    GROUPS_NEW.update(GROUPS_EXTRA)
     bpy.context.view_layer.update()
     def bb(o):
         cs = [o.matrix_world @ Vector(c) for c in o.bound_box]

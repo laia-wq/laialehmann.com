@@ -5,7 +5,7 @@
  *   - smoke drifts up out of every chimney
  *   - candles flicker
  *   - on the first visit the lights are off, then come on one by one, in an
- *     order baked per window and lamp (delay.png), a few stuttering first
+ *     order baked per window and lamp (delay.png), borders cross-fading
  * Hovering a building lifts it slightly; clicking reports which one.
  *
  * Assets (tools/blender/concepts/canal_final.py → tools/blender/package_canal.mjs):
@@ -82,14 +82,14 @@ void main() {
   // Lights switching on: each window, lamp and sign fades up as a whole at
   // its own moment (r), and the light it throws follows it (g = how near a
   // light). Away from any light everything shares one moment, so no edge
-  // ever sweeps across the street. A few lights waver before they settle.
+  // ever sweeps across the street.
+  // Where two lights' areas meet, the neighbour's moment is mixed in
+  // (water.png g = its moment, b = how much), so borders cross-fade.
   vec4 D = texture2D(uDelay, uv);
-  float own = D.r;
-  float delay = 1.6 * mix(0.45, own, smoothstep(0.0, 0.5, D.g));
-  float lt = uIntroT - delay;
-  float k = smoothstep(0.0, 0.55, lt);
-  float sid = fract(own * 53.7);
-  if (sid > 0.82 && D.g > 0.3) k *= 1.0 - 0.45 * smoothstep(0.0, 0.1, lt) * (1.0 - smoothstep(0.5, 0.9, lt)) * (0.5 + 0.5 * sin(lt * 26.0 + sid * 9.0));
+  vec3 X = texture2D(uWater, uv).rgb;
+  float near = smoothstep(0.0, 0.5, D.g);
+  float k = mix(smoothstep(0.0, 0.55, uIntroT - 1.6 * mix(0.45, D.r, near)),
+                smoothstep(0.0, 0.55, uIntroT - 1.6 * mix(0.45, X.g, near)), X.b);
   k *= uOn;
   vec4 c = mix(dark, on, k);
 
@@ -313,7 +313,7 @@ export class CanalScene {
     // the index map has one extra row at the bottom: the lights' own table
     const idx = new Uint8Array(W * (H + 1) * 4), wt = new Uint8Array(W * H * 4), tab = idx.subarray(W * H * 4);
     L.forEach((l, i) => {
-      const flick = l.k === 'candle' ? 0.06 : l.k === 'pl' ? 0.035 : 0.045;
+      const flick = l.k === 'candle' ? 0.06 : l.k === 'pl' ? 0.035 : l.k === 'gp' ? 0.0 : 0.045;   // globes are steady
       const halo = l.k === 'candle' && l.e >= 5 ? Math.min(1, l.e / 32) * 0.06 : 0;
       tab.set([Math.round(((i * 0.618) % 1) * 255), Math.round((flick / 0.1) * 255), Math.round((halo / 0.1) * 255), 255], i * 4);
     });

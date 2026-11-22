@@ -36,8 +36,11 @@ const alpha = async (f) => {
   return a;
 };
 
+// water.png: red = how much canal shows; green/blue are filled in by the
+// switch-on below (the neighbouring light's moment, and how much of it to mix).
 const water = await alpha(`${src}/mask_water.png`);
-await sharp(Buffer.from(water), { raw: { width: W, height: H, channels: 1 } }).png({ compressionLevel: 9 }).toFile(`${out}/water.png`);
+const waterRGB = Buffer.alloc(W * H * 3);
+for (let i = 0; i < W * H; i++) waterRGB[i * 3] = water[i];
 
 const ids = new Uint8Array(W * H);
 const best = new Uint8Array(W * H);
@@ -118,6 +121,47 @@ if (existsSync(`${src}/delay.png`)) {
     }
     frontier = next;
   }
+  // Where two lights' areas meet, cross-fade instead of meeting on a hard edge:
+  // beside each border note the other side's moment, and mix it in by up to
+  // half (exactly half on the border itself, so both sides agree), fading out
+  // over XF pixels. Glowing pixels keep their own moment untouched.
+  {
+    const XF = 26 * (w / 1400);
+    const own2 = new Float32Array(n).fill(-1), db = new Float32Array(n).fill(1e9);
+    let fr = [];
+    for (let i = 0; i < n; i++) {
+      if (dist[i] === 0) continue;
+      const x = i % w, y = (i / w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const j = ny * w + nx;
+        if (Math.abs(own[j] - own[i]) > 0.5 / 255 && db[i] > 0.5) { db[i] = 0.5; own2[i] = own[j]; }
+      }
+      if (db[i] === 0.5) fr.push(i);
+    }
+    while (fr.length) {
+      const next = [];
+      for (const i of fr) {
+        const x = i % w, y = (i / w) | 0;
+        for (const [dx, dy, c] of steps) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const j = ny * w + nx, d = db[i] + c;
+          if (dist[j] === 0 || d > XF || Math.abs(own[j] - own[i]) > 0.5 / 255) continue;
+          if (d < db[j]) { if (db[j] === 1e9) next.push(j); db[j] = d; own2[j] = own2[i]; }
+        }
+      }
+      fr = next;
+    }
+    if (w === W && h === H) for (let i = 0; i < n; i++) {
+      if (own2[i] < 0) continue;
+      const t = Math.min(1, db[i] / XF), s = t * t * (3 - 2 * t);
+      waterRGB[i * 3 + 1] = Math.round(own2[i] * 255);
+      waterRGB[i * 3 + 2] = Math.round(255 * 0.5 * (1 - s));
+    }
+    else console.warn('delay map size differs from the render; no cross-fades');
+  }
   const outb = Buffer.alloc(n * 3);
   for (let i = 0; i < n; i++) {
     outb[i * 3] = Math.round(Math.max(0, own[i]) * 255);
@@ -125,6 +169,7 @@ if (existsSync(`${src}/delay.png`)) {
   }
   await sharp(outb, { raw: { width: w, height: h, channels: 3 } }).png({ compressionLevel: 9 }).toFile(`${out}/delay.png`);
 }
+await sharp(waterRGB, { raw: { width: W, height: H, channels: 3 } }).png({ compressionLevel: 9 }).toFile(`${out}/water.png`);
 // Extras (canal_final.py EXTRAS_OUT): the owl's eye states as same-sized
 // crops of the full render, and the koi's jump frames (fish only, alpha).
 const ex = `${src}/extras`;
