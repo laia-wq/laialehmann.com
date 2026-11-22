@@ -116,6 +116,11 @@ def shop_window(sc, street_cam, G):
         if x0 - 0.12 < c.x < x1 + 0.12 and 2.1 < c.y < 2.5 and z0 - 0.15 < c.z < z1 + 0.2:
             if o.name.split('.')[0] in ('shop_glass', 'shop_jar', 'pane', 'mull', 'sill', 'lintel', 'ipot', 'ileaves', 'curtain', 'candle', 'flame', 'book', 'vase', 'bloom', 'stem', 'bowl', 'fruit', 'lamp_stem', 'lamp_shade', 'cat_body', 'cat_head'):
                 o.hide_render = True
+    # the next window's left shutter overlaps this one's right shutter: drop it here
+    for o in sc.objects:
+        if o.type == 'MESH' and o.name.split('.')[0] in ('shutter', 'louvre'):
+            lo, hi = _bb(o)
+            if x1 + 0.06 < lo.x < x1 + 0.5 and hi.y < 2.26 and hi.z > z0 and lo.z < z1: o.hide_render = True
     for o in sc.objects:     # the umbrella leaning by the door would poke into the close-up
         if o.name.startswith('umbrella'): o.hide_render = True
     paint = painted_wood('sash_paint', (0.86, 0.82, 0.72))
@@ -128,7 +133,7 @@ def shop_window(sc, street_cam, G):
     box('window_backing', (xc, yp + 0.07, (z0 + z1) / 2), (w + 0.9, 0.03, h + 0.6), G['plaster_g'], bevel=0)
     # box frame lining the opening, from the wall face back to the glass
     d = yp - yf + 0.02
-    for (cx, cz, sx, sz) in ((x0 - 0.02, (z0 + z1) / 2, 0.045, h + 0.08), (x1 + 0.02, (z0 + z1) / 2, 0.045, h + 0.08), (xc, z1 + 0.02, w + 0.08, 0.045)):
+    for (cx, cz, sx, sz) in ((x0 - 0.02, (z0 + z1) / 2, 0.045, h), (x1 + 0.02, (z0 + z1) / 2, 0.045, h), (xc, z1 + 0.02, w + 0.085, 0.045)):
         box('box_frame', (cx, yf + d / 2, cz), (sx, d, sz), frame_paint, bevel=0.004)
     # stone sill: chamfered, weathered, sticking out a little
     box('sill_stone', (xc, yf - 0.035, z0 - 0.03), (w + 0.16, 0.16, 0.05), stone, bevel=0.01)
@@ -142,12 +147,12 @@ def shop_window(sc, street_cam, G):
         top_rail = rail if sz1 >= z1 - 1e-6 else mr
         bot_rail = rail + 0.012 if sz0 <= z0 + 1e-6 else mr
         for (cx, cz, sx, sz) in ((x0 + st / 2, (sz0 + sz1) / 2, st, sz1 - sz0), (x1 - st / 2, (sz0 + sz1) / 2, st, sz1 - sz0),
-                                 (xc, sz1 - top_rail / 2, w, top_rail), (xc, sz0 + bot_rail / 2, w, bot_rail)):
+                                 (xc, sz1 - top_rail / 2, w - 2 * st, top_rail), (xc, sz0 + bot_rail / 2, w - 2 * st, bot_rail)):
             box('sash', (cx, yb, cz), (sx, 0.035, sz), paint, bevel=0.005)
         # inner ovolo moulding round the glass
         gz0, gz1 = sz0 + bot_rail, sz1 - top_rail
         for (cx, cz, sx, sz) in ((x0 + st + 0.004, (gz0 + gz1) / 2, 0.008, gz1 - gz0), (x1 - st - 0.004, (gz0 + gz1) / 2, 0.008, gz1 - gz0),
-                                 (xc, gz1 - 0.004, w - 2 * st, 0.008), (xc, gz0 + 0.004, w - 2 * st, 0.008)):
+                                 (xc, gz1 - 0.004, w - 2 * st - 0.016, 0.008), (xc, gz0 + 0.004, w - 2 * st - 0.016, 0.008)):
             box('sash_mould', (cx, yb - 0.02, cz), (sx, 0.01, sz), paint, bevel=0.003)
         box('glazing_bar', (xc, yb - 0.006, (gz0 + gz1) / 2), (bar, 0.024, gz1 - gz0), paint, bevel=0.003)
         # glass, then frosted glass glowing just behind it
@@ -222,6 +227,30 @@ def shop_window(sc, street_cam, G):
     meta['pane'] = {k: (lambda v: [round(v.x, 5), round(1 - v.y, 5)])(world_to_camera_view(sc, ccam, p)) for k, p in corners.items()}
     meta['aspect'] = round((gx1 - gx0) / (gzt - gzb), 4)
     json.dump(meta, open(os.path.join(out, 'closeup.json'), 'w'))
+    if os.environ.get('PROBE'):
+        dg = bpy.context.evaluated_depsgraph_get()
+        fr = ccam.data.view_frame(scene=sc)
+        mw = ccam.matrix_world
+        for uv in os.environ['PROBE'].split(';'):
+            u, v = map(float, uv.split(','))
+            # view_frame: 0 top-right, 1 bottom-right, 2 bottom-left, 3 top-left
+            top = fr[3].lerp(fr[0], u); bot = fr[2].lerp(fr[1], u); q = top.lerp(bot, v)
+            o = mw.translation.copy(); d = ((mw @ q) - o).normalized()
+            hits = []
+            for _ in range(12):
+                ok, loc, nrm, idx, ob, _m = sc.ray_cast(dg, o, d)
+                if not ok: hits.append('NONE'); break
+                o = loc + d * 1e-4
+                if ob.hide_render: continue
+                hits.append('%s@(%.3f,%.3f,%.3f)' % (ob.name, loc.x, loc.y, loc.z))
+            print('PROBE', u, v, ' -> '.join(hits))
+        for ob in sc.objects:
+            if ob.type == 'MESH' and not ob.hide_render and ob.name.split('.')[0] in ('shutter', 'louvre', 'curtain', 'mull', 'pane', 'sash'):
+                lo, hi = _bb(ob)
+                if hi.x > x0 - 0.8 and lo.x < x1 + 0.8 and lo.y < 2.6 and hi.y > 2.0 and hi.z > z0 - 0.3 and lo.z < z1 + 0.3:
+                    print('BB', ob.name, tuple(round(c, 3) for c in lo), tuple(round(c, 3) for c in hi))
+        print('WIN', x0, x1, z0, z1, yp)
+        sys.exit(0)
     if not os.environ.get('SKIP_STILL'):
         render(sc, os.path.join(out, 'shop.png'), SAMPLES)
     # the frosted glass alone, for masking the shadow play
