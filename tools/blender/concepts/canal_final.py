@@ -1198,7 +1198,32 @@ box('shop_glass', (-0.56, 2.33, 0.85), (0.75, 0.01, 1.0), glow, bevel=0)
 for k in range(5):
     cyl('shop_jar', (-0.85 + k * 0.14, 2.3, 0.45), 0.035, 0.1, solid('jar%d' % (k % 3), [(0.8, 0.5, 0.3), (0.5, 0.6, 0.4), (0.8, 0.75, 0.5)][k % 3], 0.3), verts=10)
 neon_sign(BF, -0.56, 1.5, 0.6, (1.0, 0.35, 0.45))
-box('awning_d', (-3.72 + 0.43, -3.15, 1.45), (0.9, 0.5, 0.03), varied('awning_d2', (0.25, 0.35, 0.3), 0.05, 0.9), bevel=0, rot=(0.4, 0, 0))
+_aw_green, _aw_cream = (0.2, 0.33, 0.27), (0.9, 0.84, 0.7)
+_aw_img = EX._img('awning_stripes', 64, 32, lambda x, y: _aw_green if (x // 8) % 2 == 0 else _aw_cream)
+_aw_m, _n, _l, _bsdf = node_mat('awning_cloth')
+_t = _n.new('ShaderNodeTexImage'); _t.image = _aw_img; _t.interpolation = 'Closest'
+_l.new(_t.outputs['Color'], _bsdf.inputs['Base Color']); _bsdf.inputs['Roughness'].default_value = 0.85; _bsdf.inputs['Sheen Weight'].default_value = 0.3
+_ac = Vector((-3.72 + 0.43, -3.15, 1.45)); _ar = Matrix.Rotation(0.4, 3, 'X')
+_aw = [(_ac + _ar @ Vector((sx * 0.45, sy * 0.25, 0))) for (sx, sy) in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+EX._quad('awning_d', _aw, [(0, 0), (1, 0), (1, 1), (0, 1)], _aw_m)
+_front = (_aw[0] + _aw[1]) / 2
+_val_m = solid('awning_valance', _aw_green, 0.8)
+box('awning_valance', _front + Vector((0, -0.003, -0.05)), (0.9, 0.008, 0.1), _val_m, bevel=0)
+for k in range(9):     # scallops along the bottom, alternating colours
+    c = cyl('awning_scallop', _front + Vector((-0.4 + k * 0.1, -0.004, -0.1)), 0.05, 0.008, solid('awning_cream', _aw_cream, 0.8) if k % 2 else _val_m, verts=20, rot=(math.pi / 2, 0, 0))
+    cut(c, box('scallop_cut', _front + Vector((-0.4 + k * 0.1, -0.004, -0.05)), (0.12, 0.05, 0.1), None, bevel=0))
+cu = bpy.data.curves.new('awning_word', 'FONT'); cu.body = 'boulangerie'
+if MARKER: cu.font = bpy.data.fonts.load(MARKER, check_existing=True)
+cu.size = 0.062; cu.align_x = 'CENTER'; cu.align_y = 'CENTER'; cu.extrude = 0.001
+_w = link(bpy.data.objects.new('awning_word', cu)); _w.location = _front + Vector((0.03, -0.009, -0.048)); _w.rotation_euler = (math.pi / 2, 0, 0)
+cu.materials.append(solid('awning_paint', (0.94, 0.86, 0.66), 0.6))
+for sg in (-1, 1):     # a painted wheat sprig either side of the word
+    base_ = _front + Vector((sg * 0.37 + 0.03 * sg, -0.009, -0.075))
+    limb(base_, base_ + Vector((-sg * 0.02, 0, 0.055)), 0.0025, solid('awning_paint', (0.94, 0.86, 0.66), 0.6))
+    for j in range(4):
+        q = base_ + Vector((-sg * 0.005 * j, 0, 0.018 + j * 0.011))
+        for side in (-1, 1):
+            sphere('wheat_grain', q + Vector((side * 0.006, 0, 0)), 0.0055, solid('awning_paint', (0.94, 0.86, 0.66), 0.6), 6, (0.6, 0.3, 1.2)).rotation_euler = (0, side * 0.5, 0)
 cut(D, box('shopd', (-4.16, -2.9, 0.85), (0.7, 0.6, 1.0), None, bevel=0))
 box('shopd_glass', (-4.16, -2.82, 0.85), (0.7, 0.01, 1.0), glow, bevel=0)
 for k in range(4):
@@ -1222,8 +1247,8 @@ for p in ((-2.25, 1.55, 0.28), (2.95, 2.45, 0.28), (-3.35, 0.95, 0.28)):
     globe_post(p[0], p[1], p[2])
 hanging_lanterns((-2.3, 1.3, 3.3), (3.1, 0.25, 3.0), 6, 0.6)
 hanging_lanterns((-2.85, -0.5, 2.2), (-2.3, 1.3, 2.6), 3, 0.2)
-laundry((-2.3, 1.4, 3.75), (-0.95, 2.3, 3.5))
-laundry((2.15, 2.4, 3.45), (3.1, 2.2, 3.3))
+EX.bunting((-2.3, 1.4, 3.75), (-0.95, 2.3, 3.5), 9, ['floral', 'ticking', 'stars', 'chevron', 'dots', 'fan'])
+EX.bunting((2.15, 2.4, 3.45), (3.1, 2.2, 3.3), 6, ['stars', 'fan', 'dots', 'floral'])
 wire((-4.6, 1.2, 4.3), (-0.95, 2.2, 3.7), 0.5)
 wire((-2.85, -2.8, 3.2), (3.1, 0.3, 3.4), 0.9)
 crates(-4.3, 0.95, 0.28); crates(3.3, -0.1, 0.28)
@@ -1237,7 +1262,12 @@ limb(bw + Vector((0.0, 0, 0.18)), bw + Vector((0.2, 0, 0.3)), 0.01, varied('bike
 # an old town bike leaning on the bakery's canal side, baguettes in the basket
 _b = set(bpy.data.objects.keys()); EX.bicycle((-2.615, -1.0, 0.341), math.pi / 2, -0.12, iron); GROUPS_NEW = {'bike': set(bpy.data.objects.keys()) - _b}
 # washing strung low across from the bakery to the tall house
-laundry((-2.86, -0.3, 2.1), (-2.45, 1.24, 2.2))
+_b = set(bpy.data.objects.keys())
+# long banners on poles off the walls
+EX.banner((4.66, 0.95, 2.55), (1, 0, 0), 'floral')
+EX.banner((-2.29, 3.55, 2.25), (1, 0, 0), 'stars')
+EX.banner((-4.0, -2.91, 2.15), (0, -1, 0), 'fan', h=0.5)
+GROUPS_NEW['banners'] = set(bpy.data.objects.keys()) - _b
 # a small owl on the corner house's ridge, eyes shut (the browser opens them)
 _b = set(bpy.data.objects.keys()); bpy.context.view_layer.update()
 _hit = sc.ray_cast(bpy.context.evaluated_depsgraph_get(), Vector((4.42, 2.05, 20.0)), Vector((0, 0, -1)))
@@ -1309,22 +1339,11 @@ for k in range(4):
 limb(Vector((-2.35, 1.25, 1.75)), Vector((-1.3, 0.2, 2.1)), 0.004, timber_h)          # a fishing rod out of a window
 limb(Vector((-1.3, 0.2, 2.1)), Vector((-1.25, 0.15, 0.0)), 0.0015, solid('line', (0.8, 0.8, 0.8), 0.3))
 sphere('bobber', (-1.25, 0.15, 0.01), 0.015, solid('bobber', (0.85, 0.15, 0.1), 0.4), 8)
-# waterlilies across the whole canal, thinning with distance
-placed = 0
-quays = [(-4.85, -2.0, 0.85, 4.15), (-1.15, 2.35, 1.6, 4.15), (2.85, 4.85, -0.3, 4.15), (-4.85, -2.55, -3.4, 0.25)]
-while placed < 110:
-    x, y = RG.uniform(-14, 14), RG.uniform(-14, 14)
-    r = math.hypot(x - 0.2, y - 0.5)
-    if RG.random() > math.exp(-max(0.0, r - 4.0) / 2.2): continue
-    if any(x0 - 0.15 < x < x1 + 0.15 and y0 - 0.15 < y < y1 + 0.15 for (x0, x1, y0, y1) in quays): continue
-    rr = RG.uniform(0.05, 0.1)
-    cyl('pad', (x, y, 0.005), rr, 0.006, varied('pad_d', (0.12, 0.24, 0.08), 0.3, 0.4), verts=14)
-    if RG.random() < 0.12:
-        fc = RG.choice([(0.95, 0.9, 0.88), (0.9, 0.6, 0.68)])
-        for k in range(6):
-            a = k / 6 * 6.28
-            sphere('lpetal', (x + math.cos(a) * 0.02, y + math.sin(a) * 0.02, 0.025), 0.02, solid('lp%.2f' % fc[1], fc, 0.5), 8, (1, 0.4, 0.2)).rotation_euler = (0, -0.5, a)
-    placed += 1
+# a few paper lanterns let float on the canal
+_b = set(bpy.data.objects.keys())
+for (x, y, yaw, kind) in ((-1.95, -1.45, 0.3, 'floral'), (1.55, -2.2, -0.4, 'stars'), (-0.5, -2.4, 0.9, 'fan'), (3.05, -2.75, 0.1, 'dots')):
+    EX.floating_lantern((x, y, -0.008), yaw, kind)
+GROUPS_NEW['lanterns'] = set(bpy.data.objects.keys()) - _b
 
 if os.environ.get('CHECK'):
     # does anything new touch something it shouldn't? (bounding boxes, a few mm slack)
@@ -1345,7 +1364,7 @@ if os.environ.get('CHECK'):
             for o, (a, b) in others_bb:
                 depth = min(min(qb[i], b[i]) - max(qa[i], a[i]) for i in range(3))
                 if depth > 0.006:
-                    hits.append('%s~%s(%.3f)' % (q.name.split('.')[0], o.name.split('.')[0], depth))
+                    hits.append('%s~%s(%.3f)@%s' % (q.name.split('.')[0], o.name.split('.')[0], depth, tuple(round(v, 2) for v in (qa + qb) / 2)))
         for o in objs:
             pass
         if g == 'bike':
@@ -1415,7 +1434,7 @@ if EXTRAS:
     EX.owl_pose('closed')
     W_, H_ = sc.render.resolution_x, sc.render.resolution_y
     others = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and not o.hide_render]
-    koi = [] if os.environ.get('NO_KOI') else EX.koi_frames(sc, cam, EXTRAS, [((-1.75, -1.35, 0.0), 0.75), ((2.35, -2.15, 0.0), 0.8)], others, samples=int(os.environ.get('KOI_SAMPLES', 64)))
+    koi = [] if True else EX.koi_frames(sc, cam, EXTRAS, [((-1.75, -1.35, 0.0), 0.75), ((2.35, -2.15, 0.0), 0.8)], others, samples=int(os.environ.get('KOI_SAMPLES', 64)))
     _json.dump({'owl': {'box': [obox[0] / W_, 1 - obox[3] / H_, obox[2] / W_, 1 - obox[1] / H_], 'states': ['closed', 'open', 'left', 'right', 'half']}, 'koi': koi},
                open(os.path.join(EXTRAS, 'extras.json'), 'w'))
 if os.environ.get('OFF_OUT') and not WEB_ONLY:
@@ -1480,21 +1499,35 @@ if WEB:
         mask(g, lambda o, f=f: f(centres[o.name]) and o is not canal)
     # 3) switch-on order: every glowing thing (window panes, flames, signs) gets
     # its own random grey; the browser spreads it to the light around it.
+    # Each glowing thing emits (its random grey, 1, 0); everything else is
+    # matt black, the water a mirror, no lamps, no sky. So a pixel's red/green
+    # is the switch-on moment of whatever lights it, directly or in reflection.
     dm, dn, dl, db = node_mat('delay_id')
-    oi = dn.new('ShaderNodeObjectInfo'); dem = dn.new('ShaderNodeEmission')
-    dl.new(oi.outputs['Random'], dem.inputs['Color'])
+    oi = dn.new('ShaderNodeObjectInfo'); comb = dn.new('ShaderNodeCombineColor'); dem = dn.new('ShaderNodeEmission')
+    dl.new(oi.outputs['Random'], comb.inputs['Red']); comb.inputs['Green'].default_value = 1.0; comb.inputs['Blue'].default_value = 0.0
+    dl.new(comb.outputs['Color'], dem.inputs['Color'])
     dl.new(dem.outputs['Emission'], next(x for x in dn if x.type == 'OUTPUT_MATERIAL').inputs['Surface'])
+    black = solid('delay_black', (0, 0, 0), 1.0)
+    mirror = solid('delay_mirror', (0, 0, 0), 0.03, metal=1.0)
+    mirror.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (1, 1, 1, 1)
     saved = {}
     for o in geo:
-        if o.name in GLOWING:
-            saved[o.name] = [sl.material for sl in o.material_slots]
-            for sl in o.material_slots: sl.material = dm
-            o.is_holdout = False
-        else:
-            o.is_holdout = True
-    vt = sc.view_settings.view_transform; sc.view_settings.view_transform = 'Standard'
-    render(sc, os.path.join(WEB, 'delay.png'), 6)
-    sc.view_settings.view_transform = vt
+        saved[o.name] = [sl.material for sl in o.material_slots]
+        m_ = dm if o.name in GLOWING else mirror if o is canal else black
+        for sl in o.material_slots: sl.material = m_
+        o.is_holdout = False
+    lights_e = {o.name: o.data.energy for o in sc.objects if o.type == 'LIGHT'}
+    for o in sc.objects:
+        if o.type == 'LIGHT': o.data.energy = 0.0
+    world = sc.world; sc.world = None
+    sc.render.film_transparent = False
+    vt = sc.view_settings.view_transform; sc.view_settings.view_transform = 'Raw'
+    depth = sc.render.image_settings.color_depth; sc.render.image_settings.color_depth = '16'
+    render(sc, os.path.join(WEB, 'delay.png'), 16)
+    sc.view_settings.view_transform = vt; sc.render.image_settings.color_depth = depth
+    sc.world = world
+    for o in sc.objects:
+        if o.type == 'LIGHT': o.data.energy = lights_e[o.name]
     for name, mats in saved.items():
         for sl, m in zip(bpy.data.objects[name].material_slots, mats): sl.material = m
     print('DELAY objects', len(saved))

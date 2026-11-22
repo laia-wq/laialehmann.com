@@ -27,7 +27,6 @@ interface SceneJson {
   lights: { x: number; y: number; k: string; c: [number, number, number]; e: number }[];
   smoke?: { x: number; y: number; r: number }[];
   owl?: { box: [number, number, number, number]; states: string[] };
-  koi?: { cell: [number, number]; n: number; spots: { box: [number, number, number, number]; n: number; from: [number, number]; to: [number, number]; size: [number, number] }[] };
   bg?: [number, number, number][];
 }
 
@@ -44,14 +43,10 @@ void main() { vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = 
 const FRAG = `
 precision highp float;
 varying vec2 vUv;
-uniform sampler2D uImg, uOff, uWater, uIds, uDelay, uOwl, uKoi;
+uniform sampler2D uImg, uOff, uWater, uIds, uDelay, uOwl;
 uniform vec4 uOwlBox;         // where the owl's crop sits (uv)
 uniform vec3 uOwlAB;          // frame A, frame B, blend A→B (frame 0 = eyes shut)
 uniform float uOwlN;          // frames in the owl strip
-uniform vec4 uKoiBox;         // the jumping koi's crop (uv)
-uniform vec4 uKoiCell;        // atlas: cell w, cell h, crop w, crop h (all as atlas fractions)
-uniform vec2 uKoiFrame;       // frame (−1 = none), row (which spot)
-uniform vec4 uRing[2];        // rings on the water: x, y, age (s), strength
 uniform vec2 uImgPx;
 uniform float uTime, uHover, uMotion, uAspect, uOn, uIntroT, uLevel;
 uniform vec4 uLights[${MAX_LIGHTS}];
@@ -80,28 +75,6 @@ void main() {
   vec2 off = vec2(ripple * 2.6, (n1 - 0.5) * 1.4) * uImgPx * uMotion;
   // only open water moves, and only ever borrows from open water: nothing
   // standing in it (walls, lamps, boats, lily pads) gets smeared
-  // Rings where the koi leaves and re-enters the water: a few thin wave
-  // fronts spreading out (as ellipses: the water is seen at an angle),
-  // bending the reflections and catching a little light on their crests.
-  float crest = 0.0;
-  for (int i = 0; i < 2; i++) {
-    vec4 R = uRing[i];
-    if (R.w <= 0.0) continue;
-    vec2 d = (uv - R.xy) * vec2(uAspect, 1.0 / 0.53);
-    float r = length(d);
-    if (r > 0.09) continue;
-    vec2 dir = vec2(d.x / uAspect, d.y * 0.53) / (r + 1e-4);
-    for (int j = 0; j < 4; j++) {
-      float aj = R.z - float(j) * 0.2;
-      if (aj <= 0.0) continue;
-      float front = 0.004 + aj * (0.018 - 0.002 * float(j));
-      float x = (r - front) / (0.0022 + 0.0012 * aj);
-      float env = exp(-x * x * 0.5) * exp(-aj * 1.25) * (1.0 - 0.2 * float(j)) * R.w;
-      float wv = sin(x * 2.4) * env;
-      off += dir * wv * 3.0 * uImgPx * uAspect;
-      crest += max(wv, 0.0);
-    }
-  }
   off *= smoothstep(0.85, 1.0, w) * smoothstep(0.85, 1.0, texture2D(uWater, uv + off).r);
   vec4 on = texture2D(uImg, uv + off);
   vec4 dark = texture2D(uOff, uv + off);
@@ -120,7 +93,6 @@ void main() {
   if (sid > 0.82 && D.g > 0.3) k *= 1.0 - 0.45 * smoothstep(0.0, 0.1, lt) * (1.0 - smoothstep(0.5, 0.9, lt)) * (0.5 + 0.5 * sin(lt * 26.0 + sid * 9.0));
   k *= uOn;
   vec4 c = mix(dark, on, k);
-  c.rgb += vec3(0.55, 0.6, 0.7) * crest * 0.05 * w;
 
   // The owl: its crops are the render itself with the eyes in other states;
   // add only what differs from eyes-shut (frame 0), feathered at the edges.
@@ -132,15 +104,6 @@ void main() {
       vec3 st = mix(texture2D(uOwl, vec2((uOwlAB.x + l.x) * fw, l.y)).rgb, texture2D(uOwl, vec2((uOwlAB.y + l.x) * fw, l.y)).rgb, uOwlAB.z);
       float feather = smoothstep(0.0, 0.12, l.x) * smoothstep(0.0, 0.12, 1.0 - l.x) * smoothstep(0.0, 0.12, l.y) * smoothstep(0.0, 0.12, 1.0 - l.y);
       c.rgb += (st - shut) * feather * k;
-    }
-  }
-
-  // The koi mid-jump (fish only; everything in front of it already cut out).
-  if (uKoiFrame.x >= 0.0) {
-    vec2 l = (uv - uKoiBox.xy) / (uKoiBox.zw - uKoiBox.xy);
-    if (l.x > 0.0 && l.y > 0.0 && l.x < 1.0 && l.y < 1.0) {
-      vec4 f = texture2D(uKoi, vec2(uKoiFrame.x * uKoiCell.x + l.x * uKoiCell.z, uKoiFrame.y * uKoiCell.y + l.y * uKoiCell.w));
-      c.rgb = mix(c.rgb, f.rgb, f.a);
     }
   }
 
@@ -239,7 +202,7 @@ export class CanalScene {
   private async init() {
     const big = Math.min(window.devicePixelRatio || 1, 2) * Math.max(innerWidth, innerHeight * 4 / 3) > 1500;
     const sfx = big ? '' : '-1400';
-    const [data, img, off, water, ids, delay, owl, koi] = await Promise.all([
+    const [data, img, off, water, ids, delay, owl] = await Promise.all([
       fetch(BASE + 'scene.json').then((r) => r.json() as Promise<SceneJson>),
       loadRender('canal' + sfx),
       loadRender('canal-off' + sfx).catch(() => null),
@@ -247,7 +210,6 @@ export class CanalScene {
       loadImage(BASE + 'ids.png'),
       loadImage(BASE + 'delay.png').catch(() => null),
       loadImage(BASE + 'owl.png').catch(() => null),
-      loadImage(BASE + 'koi.png').catch(() => null),
     ]);
     this.data = data;
     this.img = img;
@@ -262,7 +224,7 @@ export class CanalScene {
     if (!off) this.intro = false;
 
     this.gl = this.canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, alpha: false });
-    if (this.gl && this.setupGL(img, off ?? img, water, ids, delay, owl, koi)) {
+    if (this.gl && this.setupGL(img, off ?? img, water, ids, delay, owl)) {
       this.container.appendChild(this.canvas);
     } else {
       this.fallback = img;
@@ -279,7 +241,7 @@ export class CanalScene {
     this.loop();
   }
 
-  private setupGL(img: HTMLImageElement, off: HTMLImageElement, water: HTMLImageElement, ids: HTMLImageElement, delay: HTMLImageElement | null, owl: HTMLImageElement | null, koi: HTMLImageElement | null) {
+  private setupGL(img: HTMLImageElement, off: HTMLImageElement, water: HTMLImageElement, ids: HTMLImageElement, delay: HTMLImageElement | null, owl: HTMLImageElement | null) {
     const gl = this.gl!;
     const sh = (type: number, src: string) => {
       const s = gl.createShader(type)!;
@@ -295,7 +257,7 @@ export class CanalScene {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return false;
     gl.useProgram(p);
     this.prog = p;
-    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uIntroT', 'uLevel', 'uOwlAB', 'uKoiBox', 'uKoiFrame', 'uRing']) this.u[n] = gl.getUniformLocation(p, n);
+    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uIntroT', 'uLevel', 'uOwlAB']) this.u[n] = gl.getUniformLocation(p, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -322,19 +284,12 @@ export class CanalScene {
     const blank = document.createElement('canvas'); blank.width = blank.height = 1;
     if (!delay) tex(4, blank as unknown as HTMLImageElement, 'uDelay');
     tex(5, owl ?? (blank as unknown as HTMLImageElement), 'uOwl');
-    tex(6, koi ?? (blank as unknown as HTMLImageElement), 'uKoi');
     if (owl && this.data.owl) {
       const b = this.data.owl.box;
       gl.uniform4f(gl.getUniformLocation(p, 'uOwlBox'), b[0], b[1], b[2], b[3]);
       gl.uniform1f(gl.getUniformLocation(p, 'uOwlN'), this.data.owl.states.length);
       this.owl = new OwlEyes(this.data.owl.states);
     }
-    if (koi && this.data.koi) {
-      const K = this.data.koi, aw = koi.naturalWidth, ah = koi.naturalHeight;
-      this.koi = new KoiJumps(K.spots.length);
-      this.koiAtlas = [K.cell[0] / aw, K.cell[1] / ah, aw, ah];
-    }
-    gl.uniform2f(this.u.uKoiFrame, -1, 0);
     gl.uniform3f(this.u.uOwlAB, 0, 0, 0);
     gl.uniform2f(gl.getUniformLocation(p, 'uImgPx'), 1 / img.naturalWidth, 1 / img.naturalHeight);
     gl.uniform1f(gl.getUniformLocation(p, 'uAspect'), img.naturalWidth / img.naturalHeight);
@@ -446,11 +401,10 @@ export class CanalScene {
     gl.uniform1f(this.u.uMotion, this.motion);
     gl.uniform1f(this.u.uOn, this.lightsOff ? fade : 1);
     gl.uniform1f(this.u.uIntroT, intro ? s - this.dark : 100);
-    // the owl and the koi only stir once the street is lit and settled
+    // the owl only stirs once the street is lit and settled
     const awake = this.motion === 1 && !intro && !this.lightsOff;
     const ow = this.owl ? this.owl.at(now / 1000, awake) : [0, 0, 0];
     gl.uniform3f(this.u.uOwlAB, ow[0], ow[1], ow[2]);
-    this.drawKoi(gl, now / 1000, awake);
     const idx = this.hover ? this.data.groups.indexOf(this.hover) + 1 : 0;
     gl.uniform1f(this.u.uHover, idx ? (idx * 40) / 255 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -463,33 +417,6 @@ export class CanalScene {
   };
 
   private owl: OwlEyes | null = null;
-  private koi: KoiJumps | null = null;
-  private koiAtlas = [0, 0, 1, 1];
-
-  private drawKoi(gl: WebGLRenderingContext, t: number, awake: boolean) {
-    const K = this.data.koi;
-    const rings = new Float32Array(8);
-    let frame = -1, row = 0;
-    if (K && this.koi) {
-      const ev = this.koi.at(t, awake);
-      if (ev) {
-        const sp = K.spots[ev.spot], fps = 16, age = t - ev.t0;
-        const f = Math.floor(age * fps);
-        if (f >= 0 && f < K.n) {
-          frame = f; row = ev.spot;
-          const [cw, ch, aw, ah] = this.koiAtlas;
-          gl.uniform4f(this.u.uKoiBox, sp.box[0], sp.box[1], sp.box[2], sp.box[3]);
-          gl.uniform4f(gl.getUniformLocation(this.prog!, 'uKoiCell'), cw, ch, sp.size[0] / aw, sp.size[1] / ah);
-        }
-        const landed = age - (K.n / fps) * 0.9;
-        rings.set([sp.from[0], sp.from[1], Math.max(0, age), age > 0 && age < 4 ? 0.55 : 0], 0);
-        rings.set([sp.to[0], sp.to[1], Math.max(0, landed), landed > 0 && landed < 4.5 ? 1 : 0], 4);
-      }
-    }
-    gl.uniform2f(this.u.uKoiFrame, frame, row);
-    gl.uniform4fv(this.u.uRing, rings);
-  }
-
   private lightsOff = false;
   private born = performance.now();
   private dark = 0.9;           // seconds of darkness before the first light
@@ -556,21 +483,5 @@ class OwlEyes {
     }
     const k = Math.min(1, (t - this.t0) / 0.06);
     return [this.from, this.to, k];
-  }
-}
-
-/** Every so often a koi jumps at one of the baked spots. */
-class KoiJumps {
-  private ev: { spot: number; t0: number } | null = null;
-  private next = -1;
-  constructor(private spots: number) {}
-  at(t: number, awake: boolean) {
-    if (this.next < 0) this.next = t + 6 + Math.random() * 8;
-    if (this.ev && t - this.ev.t0 > 6) this.ev = null;
-    if (!this.ev && awake && t >= this.next) {
-      this.ev = { spot: Math.floor(Math.random() * this.spots), t0: t };
-      this.next = t + 16 + Math.random() * 22;
-    }
-    return this.ev;
   }
 }

@@ -48,30 +48,43 @@ for (const [gi, g] of scene.groups.entries()) {
   }
 }
 await sharp(Buffer.from(ids), { raw: { width: W, height: H, channels: 1 } }).png({ compressionLevel: 9 }).toFile(`${out}/ids.png`);
-// Switch-on order: delay.png has one random grey per glowing thing (alpha =
-// where it is). Spread each grey into the light around it with a wide blur
-// (premultiplied, then divided back out) → r = when, g = how near a light.
+// Switch-on order. delay.png (16-bit, linear) has every glowing thing emit
+// (its random moment, 1, 0), the water a mirror, everything else black, so
+// red/green is the moment of whatever lights that pixel, directly or in the
+// canal's reflection. Every other pixel takes the moment of its nearest light
+// (so a window, its glow on the wall and its reflection all come on together);
+// green says how near a light it is.
 if (existsSync(`${src}/delay.png`)) {
-  const { data, info } = await sharp(`${src}/delay.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const n = info.width * info.height;
-  const pre = Buffer.alloc(n * 2);
-  for (let i = 0; i < n; i++) { const a = data[i * 4 + 3]; pre[i * 2] = Math.round(Math.pow(data[i * 4] / 255, 2.2) * a); pre[i * 2 + 1] = a; }   // pow: back to an even 0..1 spread
-  const blur = async (ch, sigma) => {
-    const one = Buffer.alloc(n); for (let i = 0; i < n; i++) one[i] = pre[i * 2 + ch];
-    return sharp(one, { raw: { width: info.width, height: info.height, channels: 1 } }).blur(sigma).extractChannel(0).raw().toBuffer();
-  };
-  const [ra, aa] = [await blur(0, 16), await blur(1, 16)];
-  const [rs, as] = [await blur(0, 3), await blur(1, 3)];
+  const { data, info } = await sharp(`${src}/delay.png`).toColourspace('rgb16').raw({ depth: 'ushort' }).toBuffer({ resolveWithObject: true });
+  const px = new Uint16Array(data.buffer, data.byteOffset, data.length / 2);
+  const w = info.width, h = info.height, ch = info.channels, n = w * h;
+  const own = new Float32Array(n).fill(-1), dist = new Float32Array(n).fill(1e9);
+  let frontier = [];
+  for (let i = 0; i < n; i++) {
+    const r = px[i * ch] / 65535, g = px[i * ch + 1] / 65535;
+    if (g > 0.04) { own[i] = Math.min(1, r / g); dist[i] = 0; frontier.push(i); }
+  }
+  // spread outwards ring by ring from every lit pixel (nearest light wins)
+  const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [-1, 1, 1.414], [1, -1, 1.414], [-1, -1, 1.414]];
+  while (frontier.length) {
+    const next = [];
+    for (const i of frontier) {
+      const x = i % w, y = (i / w) | 0;
+      for (const [dx, dy, c] of steps) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const j = ny * w + nx, d = dist[i] + c;
+        if (d < dist[j]) { if (dist[j] === 1e9) next.push(j); dist[j] = d; own[j] = own[i]; }
+      }
+    }
+    frontier = next;
+  }
   const outb = Buffer.alloc(n * 3);
   for (let i = 0; i < n; i++) {
-    // near a light: its own grey (tight blur); further out: the wide blend
-    const wide = aa[i] > 0 ? ra[i] / aa[i] : 0, tight = as[i] > 0 ? rs[i] / as[i] : wide;
-    const wn = Math.min(1, Math.max(0, (as[i] - 10) / 60));
-    const r = wide + (tight - wide) * wn;
-    outb[i * 3] = Math.round(Math.min(1, r) * 255);
-    outb[i * 3 + 1] = Math.min(255, Math.max(as[i], aa[i] * 6));
+    outb[i * 3] = Math.round(Math.max(0, own[i]) * 255);
+    outb[i * 3 + 1] = Math.round(255 * Math.max(dist[i] === 0 ? 1 : 0, Math.exp(-dist[i] / 28)));
   }
-  await sharp(outb, { raw: { width: info.width, height: info.height, channels: 3 } }).resize(700, 525).png({ compressionLevel: 9 }).toFile(`${out}/delay.png`);
+  await sharp(outb, { raw: { width: w, height: h, channels: 3 } }).png({ compressionLevel: 9 }).toFile(`${out}/delay.png`);
 }
 // Extras (canal_final.py EXTRAS_OUT): the owl's eye states as same-sized
 // crops of the full render, and the koi's jump frames (fish only, alpha).

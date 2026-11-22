@@ -97,63 +97,186 @@ def bicycle(origin, yaw, lean, iron, frame_col=(0.18, 0.3, 0.32), basket=True):
 # ---------------------------------------------------------------- the owl
 OWL = {}
 
-def owl(p, face_yaw):
-    """A small tawny owl, perched. Eyes shut in the main render; the browser
-    swaps in crops with them open / glancing left / right / half shut."""
-    P, R = _frame(p, face_yaw)
-    feath = varied('owl_feather', (0.36, 0.26, 0.17), 0.06, 0.9, bump=0.5, bump_scale=160.0)
-    pale = varied('owl_pale', (0.62, 0.52, 0.4), 0.05, 0.9, bump=0.4, bump_scale=200.0)
-    dark = solid('owl_dark', (0.16, 0.11, 0.08), 0.85)
-    beak = solid('owl_beak', (0.42, 0.38, 0.3), 0.4)
-    iris = solid('owl_iris', (0.95, 0.62, 0.12), 0.25, emit=(0.95, 0.55, 0.1), strength=1.6)
-    pupil = solid('owl_pupil', (0.01, 0.01, 0.01), 0.1, coat=1.0)
-    glint = solid('owl_glint', (1, 1, 1), 0.1, emit=(1, 0.95, 0.9), strength=3.0)
-    # local frame: +y = where the owl looks (towards the camera), z up
-    sphere('owl_body', P(0, 0, 0.12), 0.1, feath, 24, (0.95, 0.85, 1.25))
-    sphere('owl_belly', P(0, 0.035, 0.1), 0.075, pale, 20, (0.9, 0.7, 1.15))
-    for k in range(7):  # chest streaks
-        sphere('owl_streak', P(-0.04 + (k % 4) * 0.027, 0.1, 0.06 + (k // 4) * 0.05 + (k % 2) * 0.02), 0.009, dark, 8, (0.6, 0.4, 1.8))
+def _feather_material():
+    """Tawny owl plumage: warm brown, darker mottling and streaks, paler
+    underneath (by which way the surface faces), soft sheen."""
+    name = 'owl_plumage'
+    if name in bpy.data.materials: return bpy.data.materials[name]
+    m, n, l, b = node_mat(name)
+    tc = n.new('ShaderNodeTexCoord')
+    sep = n.new('ShaderNodeSeparateXYZ'); l.new(tc.outputs['Normal'], sep.inputs['Vector'])
+    sepo = n.new('ShaderNodeSeparateXYZ'); l.new(tc.outputs['Object'], sepo.inputs['Vector'])
+    under = n.new('ShaderNodeMapRange'); under.inputs['From Min'].default_value = 0.0; under.inputs['From Max'].default_value = 0.07
+    l.new(sepo.outputs['Y'], under.inputs['Value'])
+    base = n.new('ShaderNodeMix'); base.data_type = 'RGBA'
+    base.inputs['A'].default_value = (0.5, 0.34, 0.2, 1); base.inputs['B'].default_value = (0.72, 0.6, 0.45, 1)
+    l.new(under.outputs['Result'], base.inputs['Factor'])
+    # streaks down the chest (stretched noise) and blotchy mottling
+    mp = n.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (90, 90, 18)
+    l.new(tc.outputs['Object'], mp.inputs['Vector'])
+    st = n.new('ShaderNodeTexNoise'); st.inputs['Detail'].default_value = 4
+    l.new(mp.outputs['Vector'], st.inputs['Vector'])
+    stc = n.new('ShaderNodeMapRange'); stc.inputs['From Min'].default_value = 0.55; stc.inputs['From Max'].default_value = 0.7
+    l.new(st.outputs['Fac'], stc.inputs['Value'])
+    streak = n.new('ShaderNodeMix'); streak.data_type = 'RGBA'
+    l.new(stc.outputs['Result'], streak.inputs['Factor']); l.new(base.outputs['Result'], streak.inputs['A'])
+    streak.inputs['B'].default_value = (0.16, 0.1, 0.06, 1)
+    mot = n.new('ShaderNodeTexVoronoi'); mot.inputs['Scale'].default_value = 70
+    l.new(tc.outputs['Object'], mot.inputs['Vector'])
+    mc = n.new('ShaderNodeMapRange'); mc.inputs['From Min'].default_value = 0.0; mc.inputs['From Max'].default_value = 0.35
+    mc.inputs['To Min'].default_value = 0.35; mc.inputs['To Max'].default_value = 0.0
+    l.new(mot.outputs['Distance'], mc.inputs['Value'])
+    mott = n.new('ShaderNodeMix'); mott.data_type = 'RGBA'
+    l.new(mc.outputs['Result'], mott.inputs['Factor']); l.new(streak.outputs['Result'], mott.inputs['A'])
+    mott.inputs['B'].default_value = (0.75, 0.66, 0.52, 1)
+    headz = n.new('ShaderNodeMapRange'); headz.inputs['From Min'].default_value = 0.19; headz.inputs['From Max'].default_value = 0.22
+    l.new(sepo.outputs['Z'], headz.inputs['Value'])
+    facing = n.new('ShaderNodeMapRange'); facing.inputs['From Min'].default_value = 0.07; facing.inputs['From Max'].default_value = 0.09
+    l.new(sepo.outputs['Y'], facing.inputs['Value'])
+    disc = n.new('ShaderNodeMath'); disc.operation = 'MULTIPLY'
+    l.new(headz.outputs['Result'], disc.inputs[0]); l.new(facing.outputs['Result'], disc.inputs[1])
+    ringf = n.new('ShaderNodeMapRange'); ringf.inputs['From Min'].default_value = 0.05; ringf.inputs['From Max'].default_value = 0.068
+    l.new(sepo.outputs['Y'], ringf.inputs['Value'])
+    ringb = n.new('ShaderNodeMath'); ringb.operation = 'SUBTRACT'
+    l.new(ringf.outputs['Result'], ringb.inputs[0]); l.new(facing.outputs['Result'], ringb.inputs[1])
+    ring = n.new('ShaderNodeMath'); ring.operation = 'MULTIPLY'
+    l.new(ringb.outputs['Value'], ring.inputs[0]); l.new(headz.outputs['Result'], ring.inputs[1])
+    withring = n.new('ShaderNodeMix'); withring.data_type = 'RGBA'
+    l.new(ring.outputs['Value'], withring.inputs['Factor']); l.new(mott.outputs['Result'], withring.inputs['A'])
+    withring.inputs['B'].default_value = (0.22, 0.14, 0.08, 1)
+    face = n.new('ShaderNodeMix'); face.data_type = 'RGBA'
+    l.new(disc.outputs['Value'], face.inputs['Factor']); l.new(withring.outputs['Result'], face.inputs['A'])
+    face.inputs['B'].default_value = (0.8, 0.7, 0.56, 1)
+    l.new(face.outputs['Result'], b.inputs['Base Color'])
+    fz = n.new('ShaderNodeTexNoise'); fz.inputs['Scale'].default_value = 600; fz.inputs['Detail'].default_value = 3
+    l.new(tc.outputs['Object'], fz.inputs['Vector'])
+    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.35; bp.inputs['Distance'].default_value = 0.002
+    l.new(fz.outputs['Fac'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
+    b.inputs['Roughness'].default_value = 0.8
+    b.inputs['Sheen Weight'].default_value = 0.9; b.inputs['Sheen Roughness'].default_value = 0.35
+    return m
+
+
+def _metaball_mesh(name, mb, loc, rot, mat):
+    """Build a metaball object, then bake it to a real mesh (hair needs one)."""
+    tmp = link(bpy.data.objects.new(name + '_mb', mb))
+    tmp.location = loc; tmp.rotation_euler = rot
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(tmp.evaluated_get(dg))
+    bpy.data.objects.remove(tmp)
+    o = link(bpy.data.objects.new(name, me)); o.location = loc; o.rotation_euler = rot
+    for p in me.polygons: p.use_smooth = True
+    me.materials.clear(); me.materials.append(mat)
+    return o
+
+
+def _fluff(o, count, length, mat, seed=0):
+    """Short soft hair over a mesh: fluffy down and feather edges."""
+    ps = o.modifiers.new('fluff', 'PARTICLE_SYSTEM').particle_system
+    st = ps.settings
+    st.type = 'HAIR'; st.count = count; st.hair_length = length
+    # the same short down everywhere, lying back and down like feathers
+    st.use_advanced_hair = True
+    st.normal_factor = length * 0.8; st.object_align_factor = (0, -length * 0.25, -length * 0.55)
+    st.tangent_factor = 0.0; st.factor_random = length * 0.12
+    st.child_type = 'INTERPOLATED'; st.rendered_child_count = 9; st.child_percent = 9
+    st.child_radius = 0.12; st.clump_factor = 0.25; st.clump_shape = -0.3
+    st.roughness_1 = length * 0.18; st.roughness_endpoint = length * 0.12
+    st.root_radius = 0.0007; st.tip_radius = 0.0; st.radius_scale = 1.0
+    st.use_hair_bspline = True
+    ps.seed = seed
+    return ps
+
+
+OWL = {}
+
+def owl(p, face_yaw, s=1.5):
+    """A small tawny owl, perched: a soft feathered body (metaballs baked to
+    a mesh, then a coat of short fluff), a pale heart-shaped facial disc with a
+    dark rim, big amber eyes with large pupils and a catch light, a hooked
+    beak, ear tufts, barred wings and talons over the ridge. Eyes shut in the
+    main render; the browser swaps in crops with them open."""
+    R = Matrix.Rotation(face_yaw, 3, 'Z'); O = Vector(p)
+    P = lambda x, y, z: O + R @ (Vector((x, y, z)) * s)
+    plum = _feather_material()
+    pale = varied('owl_pale', (0.6, 0.48, 0.35), 0.04, 0.9, bump=0.5, bump_scale=300)
+    rim = varied('owl_rim', (0.3, 0.2, 0.12), 0.04, 0.85, bump=0.4, bump_scale=300)
+    beak = solid('owl_beak', (0.45, 0.4, 0.3), 0.35, coat=0.4)
+    iris = solid('owl_iris', (0.98, 0.62, 0.08), 0.2, emit=(0.95, 0.5, 0.05), strength=0.35, coat=1.0)
+    pupil = solid('owl_pupil', (0.004, 0.004, 0.004), 0.05, coat=1.0)
+    glint = solid('owl_glint', (1, 1, 1), 0.05, emit=(1, 0.97, 0.92), strength=5.0)
+    # body: one soft shape (local frame: +y = where it looks, z up)
+    mb = bpy.data.metaballs.new('owlbody'); mb.resolution = 0.004; mb.render_resolution = 0.004; mb.threshold = 0.6
+    def ball(c, r, size=None, stiff=2.0):
+        e = mb.elements.new(); e.co = Vector(c); e.radius = r; e.stiffness = stiff
+        if size: e.type = 'ELLIPSOID'; e.size_x, e.size_y, e.size_z = size
+    ball((0, 0.0, 0.11), 0.11, (0.9, 0.85, 1.15))          # body
+    ball((0, 0.03, 0.08), 0.085, (0.85, 0.7, 1.0))         # belly
+    ball((0, 0.005, 0.255), 0.1, (1.12, 0.95, 0.9), 2.4)   # head, big and round
     for sg in (-1, 1):
-        w = sphere('owl_wing', P(sg * 0.085, -0.01, 0.12), 0.075, feath, 20, (0.35, 0.8, 1.35))
-        w.rotation_euler = (R @ Matrix.Rotation(sg * -0.12, 3, 'Y')).to_euler()
-        for k in range(3):
-            sphere('owl_bar', P(sg * 0.105, 0.01 - k * 0.03, 0.08 + k * 0.035), 0.008, pale, 8, (0.5, 1.5, 0.5))
-        for k in range(3):   # talons over the ridge
-            limb(P(sg * 0.03 + (k - 1) * 0.012, 0.03, 0.005), P(sg * 0.03 + (k - 1) * 0.014, 0.055, -0.012), 0.005, beak)
-    sphere('owl_tail', P(0, -0.07, 0.03), 0.04, feath, 12, (0.8, 1.4, 0.4))
-    hc = P(0, 0.01, 0.255)
-    sphere('owl_head', hc, 0.09, feath, 24, (1.12, 0.95, 0.9))
+        ball((sg * 0.07, -0.015, 0.12), 0.075, (0.4, 0.85, 1.25), 1.6)   # folded wings
+        ball((sg * 0.03, 0.03, 0.01), 0.03, (0.9, 1.0, 0.6), 1.4)       # feathered feet
+    ball((0, -0.07, 0.03), 0.045, (0.6, 1.2, 0.4), 1.4)                  # tail
     for sg in (-1, 1):
-        cyl('owl_tuft', P(sg * 0.06, 0.0, 0.325), 0.022, 0.065, feath, verts=8, r2=0.002, rot=(R @ Matrix.Rotation(sg * -0.35, 3, 'Y')).to_euler())
-    face = sphere('owl_face', P(0, 0.07, 0.252), 0.075, pale, 24, (1.2, 0.32, 0.85)); face.rotation_euler = R.to_euler()
+        ball((sg * 0.058, -0.005, 0.33), 0.03, (0.75, 0.6, 1.3), 1.4)   # soft ear tufts
+    body = _metaball_mesh('owl_body', mb, O, (0, 0, face_yaw), plum)
+    body.scale = (s, s, s)
+    bpy.data.metaballs.remove(mb)
+    _fluff(body, 4200, 0.0085 * s, plum, seed=3)
+    # a few pale bars across each folded wing
+    for sg in (-1, 1):
+        for k in range(4):
+            q = P(sg * 0.085, 0.0 - 0.006 * k, 0.16 - k * 0.03)
+            sphere('owl_bar', q, 0.009 * s, pale, 10, (0.35, 1.3, 0.5))
+    # eyes: big amber irises, large pupils, a catch light, lids for shut
     eyes = []
     for sg in (-1, 1):
-        ec = P(sg * 0.04, 0.086, 0.26)
-        ring = sphere('owl_ring', P(sg * 0.04, 0.084, 0.26), 0.034, dark, 20, (1, 0.32, 1)); ring.rotation_euler = R.to_euler()
-        sphere('owl_eye', ec, 0.026, iris, 24)
-        pu = sphere('owl_pupil', ec + R @ Vector((0, 0.02, 0)), 0.014, pupil, 16, (1, 0.45, 1)); pu.rotation_euler = R.to_euler()
-        gl = sphere('owl_glint', ec + R @ Vector((0.008, 0.025, 0.01)), 0.004, glint, 8)
-        lid = sphere('owl_lid', ec, 0.0285, feath, 24)
-        lid_line = sphere('owl_lidline', ec + R @ Vector((0, 0.027, -0.002)), 0.021, dark, 16, (1, 0.25, 0.1)); lid_line.rotation_euler = R.to_euler()
-        eyes.append({'c': ec, 'pupil': pu, 'glint': gl, 'lid': lid, 'line': lid_line, 'sg': sg})
-    cyl('owl_beak', P(0, 0.112, 0.232), 0.012, 0.032, beak, verts=8, r2=0.0, rot=(R @ Matrix.Rotation(math.radians(150), 3, 'X')).to_euler())
-    OWL.update({'eyes': eyes, 'R': R, 'head': hc})
+        ec = P(sg * 0.039, 0.084, 0.262)
+        eye = sphere('owl_eye', ec, 0.024 * s, iris, 32, (1, 0.42, 1)); eye.rotation_euler = R.to_euler()
+        rg = sphere('owl_eye_rim', ec - R @ Vector((0, 0.002, 0)) * s, 0.0265 * s, solid('owl_eyerim', (0.1, 0.065, 0.04), 0.7), 24, (1, 0.4, 1)); rg.rotation_euler = R.to_euler()
+        pu = sphere('owl_pupil', ec + R @ Vector((0, 0.0085, 0)) * s, 0.0155 * s, pupil, 24, (1, 0.28, 1)); pu.rotation_euler = R.to_euler()
+        gl = sphere('owl_glint', ec + R @ Vector((0.007, 0.012, 0.009)) * s, 0.0042 * s, glint, 10)
+        lid = sphere('owl_lid', ec + R @ Vector((0, 0.001, 0)) * s, 0.0255 * s, plum, 32, (1.03, 0.3, 1.03)); lid.rotation_euler = R.to_euler()
+        line = sphere('owl_lidline', ec + R @ Vector((0, 0.006, -0.004)) * s, 0.019 * s, solid('owl_crease', (0.07, 0.045, 0.03), 0.7), 16, (1, 0.35, 0.16)); line.rotation_euler = R.to_euler()
+        # half-open: just the lower half of the eye (iris and pupil), cut flat across the top
+        cutter = box('owl_halfcut', ec + Vector((0, 0, 0.03 * s)), (0.2 * s, 0.2 * s, 0.06 * s), None, bevel=0)
+        cutter.hide_render = True; cutter.hide_viewport = True
+        halves = []
+        for src, nm in ((eye, 'owl_eye_low'), (pu, 'owl_pupil_low'), (rg, 'owl_rim_low')):
+            hv = src.copy(); hv.data = src.data.copy(); hv.name = nm; link(hv)
+            bo = hv.modifiers.new('half', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = cutter
+            hv.hide_render = True; halves.append(hv)
+        eyes.append({'c': ec, 'pupil': pu, 'glint': gl, 'lid': lid, 'line': line, 'eye': eye, 'rim': rg, 'halves': halves, 'sg': sg})
+    # hooked beak
+    bk0 = P(0, 0.1, 0.245)
+    b_ = cyl('owl_beak', bk0 + R @ Vector((0, 0.008, -0.01)) * s, 0.009 * s, 0.03 * s, beak, verts=10, r2=0.0)
+    b_.rotation_euler = (R @ Matrix.Rotation(math.radians(155), 3, 'X')).to_euler()
+    # talons over the ridge
+    for sg in (-1, 1):
+        for k in range(3):
+            a = P(sg * 0.03 + (k - 1) * 0.011, 0.045, 0.0); b2 = P(sg * 0.03 + (k - 1) * 0.013, 0.065, -0.018)
+            t = cyl('owl_talon', (a + b2) / 2, 0.003 * s, (b2 - a).length, solid('owl_talon', (0.12, 0.1, 0.09), 0.3, coat=0.5), verts=6, r2=0.0005)
+            t.rotation_euler = (b2 - a).to_track_quat('Z', 'Y').to_euler()
+    OWL.update({'eyes': eyes, 'R': R, 'head': P(0, 0.01, 0.26), 's': s})
 
 
 def owl_pose(state):
     """closed | open | left | right | half"""
-    R = OWL['R']
+    R, s = OWL['R'], OWL['s']
     for e in OWL['eyes']:
         side = {'left': -1, 'right': 1}.get(state, 0)
-        look = R @ Vector((0.012 * side, 0.02 - 0.003 * abs(side), 0))
-        e['pupil'].location = e['c'] + look
-        e['glint'].location = e['c'] + R @ Vector((0.008, 0.025, 0.01))
+        e['pupil'].location = e['c'] + R @ Vector((0.009 * side, 0.0085 - 0.001 * abs(side), 0)) * s
+        e['glint'].location = e['c'] + R @ Vector((0.007, 0.012, 0.009)) * s
         shut = state == 'closed'
-        e['lid'].hide_render = not (shut or state == 'half')
+        half = state == 'half'
+        e['lid'].hide_render = True
+        e['eye'].hide_render = shut or half; e['rim'].hide_render = shut or half
+        for hv in e['halves']: hv.hide_render = not half
         e['line'].hide_render = not shut
-        e['glint'].hide_render = shut
-        e['pupil'].hide_render = shut
-        e['lid'].location = e['c'] + R @ Vector((0, 0, 0.015 if state == 'half' else 0))
+        e['glint'].hide_render = shut or half
+        e['pupil'].hide_render = shut or half
+        e['lid'].location = e['c'] + R @ Vector((0, 0.001, 0.013 if state == 'half' else 0)) * s
 
 
 def crop_border(sc, cam, pts, pad_px=6):
@@ -260,3 +383,161 @@ def koi_frames(sc, cam, out_dir, spots, others, samples=48, n=12):
     for o in others: o.is_holdout = False
     for o in parts + [root]: bpy.data.objects.remove(o)
     return meta
+
+
+# ---------------------------------------------------------------- patterned cloth
+def _img(name, w, h, fn):
+    """A small texture drawn pixel by pixel: fn(x, y) -> (r, g, b), y from the top."""
+    img = bpy.data.images.new(name, w, h)
+    px = [0.0] * (w * h * 4)
+    for y in range(h):
+        for x in range(w):
+            c = fn(x, h - 1 - y)
+            i = (y * w + x) * 4
+            px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 1.0
+    img.pixels = px
+    return img
+
+
+def _lerp(a, b, t):
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
+
+
+def _soft(d, r, w=0.9):
+    """1 inside a radius, 0 outside, with a soft pixel edge."""
+    return max(0.0, min(1.0, (r - d) / w + 0.5))
+
+
+PATTERNS = {}
+def pattern(kind, w=64, h=128):
+    """Cloth patterns for bunting and banners: florals, stars, chevrons,
+    dots, ticking stripes, a scalloped fan."""
+    if kind in PATTERNS: return PATTERNS[kind]
+    cream, navy, gold, rose, sage, rust, ink = (0.92, 0.86, 0.72), (0.1, 0.14, 0.28), (0.85, 0.65, 0.25), (0.75, 0.35, 0.38), (0.45, 0.58, 0.45), (0.65, 0.28, 0.15), (0.12, 0.1, 0.1)
+    def floral(x, y):
+        cx, cy = (x % 32) - 16, (y % 32) - 16
+        ox, oy = ((x + 16) % 32) - 16, ((y + 16) % 32) - 16
+        d = math.hypot(cx, cy); a = math.atan2(cy, cx)
+        petal = _soft(d, 7 + 3 * math.cos(a * 5), 1.2)
+        c = _lerp(navy, rose, petal); c = _lerp(c, gold, _soft(d, 2.6))
+        leaf = _soft(math.hypot(ox * 0.6, oy * 1.4), 3.5)
+        return _lerp(c, sage, leaf * (1 - petal))
+    def stars(x, y):
+        cx, cy = (x % 24) - 12, (y % 24) - 12
+        d = math.hypot(cx, cy); a = math.atan2(cy, cx)
+        star = _soft(d, 3.0 + 2.2 * (0.5 + 0.5 * math.cos(a * 5)) ** 3, 0.8)
+        moon = _soft(math.hypot(((x + 12) % 48) - 24, ((y + 30) % 48) - 24), 6) * (1 - _soft(math.hypot(((x + 14) % 48) - 24 + 3, ((y + 30) % 48) - 24 - 2), 6))
+        return _lerp(_lerp(navy, gold, star), cream, moon)
+    def chevron(x, y):
+        v = (y + abs((x % 16) - 8)) % 16
+        return rust if v < 5 else cream if v < 8 else gold if v < 10 else cream
+    def dots(x, y):
+        cx, cy = (x % 14) - 7, (y % 14) - 7
+        ox, oy = ((x + 7) % 14) - 7, ((y + 7) % 14) - 7
+        return _lerp(sage, cream, max(_soft(math.hypot(cx, cy), 2.6), _soft(math.hypot(ox, oy), 1.4)))
+    def ticking(x, y):
+        m = x % 16
+        return navy if m in (2, 3) else rust if m == 9 else cream
+    def fan(x, y):
+        cx, cy = (x % 20) - 10, (y % 14)
+        r = math.hypot(cx, cy + 4)
+        band = int(r / 3) % 2
+        return _lerp(rose if band else cream, gold, _soft(abs(r - 13), 0.8))
+    fn = {'floral': floral, 'stars': stars, 'chevron': chevron, 'dots': dots, 'ticking': ticking, 'fan': fan}[kind]
+    img = _img('pat_' + kind, w, h, fn)
+    m, n, l, b = node_mat('cloth_' + kind)
+    t = n.new('ShaderNodeTexImage'); t.image = img; t.interpolation = 'Linear'
+    l.new(t.outputs['Color'], b.inputs['Base Color'])
+    b.inputs['Roughness'].default_value = 0.85; b.inputs['Sheen Weight'].default_value = 0.4
+    b.inputs['Subsurface Weight'].default_value = 0.15     # cloth glows a little when lamps are behind it
+    PATTERNS[kind] = m
+    return m
+
+
+def _quad(name, pts, uvs, mat):
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([tuple(p) for p in pts], [], [tuple(range(len(pts)))])
+    uv = me.uv_layers.new()
+    for i, c in enumerate(uvs): uv.data[i].uv = c
+    o = link(bpy.data.objects.new(name, me)); me.materials.append(mat)
+    sol = o.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.003
+    return o
+
+
+def bunting(a, b, n, kinds, sag=0.18, drop=0.13, string=None):
+    """A string of pennants across a gap, each flag a different pattern."""
+    a, b = Vector(a), Vector(b)
+    pts = [a.lerp(b, k / 40) + Vector((0, 0, -sag * 4 * (k / 40) * (1 - k / 40))) for k in range(41)]
+    sm = string or solid('bunting_string', (0.85, 0.8, 0.7), 0.8)
+    for p, q in zip(pts, pts[1:]):
+        d = q - p
+        c = cyl('bunting_string', (p + q) / 2, 0.0025, d.length, sm, verts=5)
+        c.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
+    for k in range(n):
+        t0 = (k + 0.15) / n; t1 = (k + 0.85) / n
+        p0 = a.lerp(b, t0) + Vector((0, 0, -sag * 4 * t0 * (1 - t0)))
+        p1 = a.lerp(b, t1) + Vector((0, 0, -sag * 4 * t1 * (1 - t1)))
+        tip = (p0 + p1) / 2 + Vector((0, 0, -drop))
+        _quad('pennant', [p0, p1, tip], [(0, 1), (1, 1), (0.5, 0)], pattern(kinds[k % len(kinds)]))
+
+
+def banner(top, along, kind, w=0.22, h=0.6, pole=None):
+    """A long cloth banner hung from a short pole sticking out of a wall:
+    `top` is where the pole meets the wall, `along` the way it sticks out."""
+    top = Vector(top); along = Vector(along).normalized()
+    pm = pole or solid('banner_pole', (0.2, 0.16, 0.1), 0.5, metal=0.4)
+    end = top + along * (w + 0.06)
+    c = cyl('banner_pole', (top + end) / 2, 0.008, (end - top).length, pm, verts=8)
+    c.rotation_euler = (end - top).to_track_quat('Z', 'Y').to_euler()
+    sphere('banner_finial', end, 0.016, solid('brass_f', (0.8, 0.6, 0.3), 0.3, metal=1.0), 8)
+    p0 = top + along * 0.04; p1 = p0 + along * w
+    dn = Vector((0, 0, -h))
+    # swallowtail bottom
+    _quad('banner', [p0, p1, p1 + dn, (p0 + p1) / 2 + dn * 0.86, p0 + dn], [(0, 1), (1, 1), (1, 0), (0.5, 0.14), (0, 0)], pattern(kind))
+    box('banner_hem', (p0 + p1) / 2 + Vector((0, 0, -0.008)), (max(abs(p1.x - p0.x), 0.01), max(abs(p1.y - p0.y), 0.01), 0.016), solid('hem', (0.75, 0.6, 0.3), 0.6), bevel=0)
+
+
+# ---------------------------------------------------------------- floating lanterns
+def floating_lantern(p, yaw=0.0, kind='floral', s=1.0, energy=7.0):
+    """A paper lantern let float on the canal: a little cedar raft, a tapered
+    paper body on a light wooden frame with a pattern pressed into the paper,
+    a candle inside. Warm and soft."""
+    p = Vector(p); R = Matrix.Rotation(yaw, 3, 'Z')
+    P = lambda x, y, z: p + R @ (Vector((x, y, z)) * s)
+    cedar = solid('lantern_raft', (0.45, 0.28, 0.16), 0.6)
+    frame = solid('lantern_frame', (0.32, 0.2, 0.12), 0.5)
+    # raft of four slats with cross-pieces
+    for k in range(4):
+        box('raft_slat', P(-0.075 + k * 0.05, 0, 0.012), (0.045 * s, 0.2 * s, 0.018 * s), cedar, bevel=0.003, rot=R.to_euler())
+    for sg in (-1, 1):
+        box('raft_cross', P(0, sg * 0.07, 0.025), (0.2 * s, 0.02 * s, 0.012 * s), cedar, bevel=0.002, rot=R.to_euler())
+    # paper: glowing warm, patterned, slightly see-through
+    m, n, l, b = node_mat('lantern_paper_' + kind)
+    pm = pattern(kind)
+    tex = pm.node_tree.nodes['Image Texture'].image
+    t = n.new('ShaderNodeTexImage'); t.image = tex
+    warm = n.new('ShaderNodeMix'); warm.data_type = 'RGBA'; warm.blend_type = 'MULTIPLY'; warm.inputs['Factor'].default_value = 0.55
+    l.new(t.outputs['Color'], warm.inputs['A']); warm.inputs['B'].default_value = (1.0, 0.72, 0.4, 1)
+    l.new(warm.outputs['Result'], b.inputs['Base Color']); l.new(warm.outputs['Result'], b.inputs['Emission Color'])
+    b.inputs['Emission Strength'].default_value = 2.2; b.inputs['Roughness'].default_value = 0.9
+    b.inputs['Transmission Weight'].default_value = 0.35
+    zb, zt, rb, rt = 0.035, 0.24, 0.07, 0.085
+    for k in range(4):     # four tapered paper panels with UVs
+        a0 = k * math.pi / 2 + math.pi / 4; a1 = a0 + math.pi / 2
+        c0b = P(math.cos(a0) * rb, math.sin(a0) * rb, zb); c1b = P(math.cos(a1) * rb, math.sin(a1) * rb, zb)
+        c1t = P(math.cos(a1) * rt, math.sin(a1) * rt, zt); c0t = P(math.cos(a0) * rt, math.sin(a0) * rt, zt)
+        _quad('lantern_paper', [c0b, c1b, c1t, c0t], [(0, 0), (1, 0), (1, 1), (0, 1)], m)
+        # frame: corner posts and rims
+        cyl('lantern_post', (c0b + c0t) / 2, 0.004 * s, (c0t - c0b).length, frame, verts=6).rotation_euler = (c0t - c0b).to_track_quat('Z', 'Y').to_euler()
+        for (u, v) in ((c0b, c1b), (c0t, c1t)):
+            cyl('lantern_rim', (u + v) / 2, 0.004 * s, (v - u).length, frame, verts=6).rotation_euler = (v - u).to_track_quat('Z', 'Y').to_euler()
+    # a little paper cap and a loop of string to lift it by
+    cyl('lantern_cap', P(0, 0, zt + 0.012), rt * 1.05 * s, 0.02 * s, frame, verts=4, r2=rt * 0.6 * s, rot=(0, 0, yaw + math.pi / 4))
+    for sg in (-1, 1):
+        a = P(sg * 0.03, 0, zt + 0.02); bb = P(0, 0, zt + 0.07)
+        cyl('lantern_loop', (a + bb) / 2, 0.0015 * s, (bb - a).length, frame, verts=4).rotation_euler = (bb - a).to_track_quat('Z', 'Y').to_euler()
+    # the candle inside
+    cyl('lantern_candle', P(0, 0, zb + 0.03), 0.015 * s, 0.06 * s, solid('wax', (0.9, 0.85, 0.75), 0.6), verts=10)
+    sphere('flame', P(0, 0, zb + 0.072), 0.008 * s, solid('flame', (1, 0.8, 0.4), 0.3, emit=(1.0, 0.68, 0.28), strength=60), 8, (1, 1, 2.0))
+    L = bpy.data.lights.new('candle', 'POINT'); L.energy = energy; L.color = (1.0, 0.66, 0.32); L.shadow_soft_size = 0.05
+    link(bpy.data.objects.new('candle', L)).location = P(0, 0, zb + 0.08)
