@@ -166,7 +166,7 @@ async function bootScene() {
         label.classList.remove('is-on');
         app.classList.add('is-looking');
         const canvas = stage.querySelector('.canal-canvas') as HTMLElement;
-        windowView.open(win, canvas.getBoundingClientRect()).catch((err) => { console.error(err); app.classList.remove('is-looking'); });
+        windowView.open(win, canvas.getBoundingClientRect()).catch(() => { app.classList.remove('is-looking'); windowView.close(); openSheet('projects'); });
         live.textContent = 'Looking in at the corner shop.';
         return;
       }
