@@ -55,7 +55,7 @@ if (existsSync(`${src}/delay.png`)) {
   const { data, info } = await sharp(`${src}/delay.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const n = info.width * info.height;
   const pre = Buffer.alloc(n * 2);
-  for (let i = 0; i < n; i++) { const a = data[i * 4 + 3]; pre[i * 2] = Math.round(Math.pow(data[i * 4] / 255, 2.2) * a);   // back to an even 0..1 spread pre[i * 2 + 1] = a; }
+  for (let i = 0; i < n; i++) { const a = data[i * 4 + 3]; pre[i * 2] = Math.round(Math.pow(data[i * 4] / 255, 2.2) * a); pre[i * 2 + 1] = a; }   // pow: back to an even 0..1 spread
   const blur = async (ch, sigma) => {
     const one = Buffer.alloc(n); for (let i = 0; i < n; i++) one[i] = pre[i * 2 + ch];
     return sharp(one, { raw: { width: info.width, height: info.height, channels: 1 } }).blur(sigma).extractChannel(0).raw().toBuffer();

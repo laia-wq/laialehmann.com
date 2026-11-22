@@ -148,7 +148,7 @@ async function bootScene() {
 
   const sigCanvas = app.querySelector('.sig-canvas') as SVGSVGElement;
   const firstVisit = (() => { try { return localStorage.getItem('canal-lights-seen') !== '1'; } catch { return true; } })();
-  const sigWidth = () => Math.min(290, Math.max(170, innerWidth * 0.18));
+  const sigWidth = () => Math.min(320, Math.max(190, innerWidth * 0.2));
   drawSignature(sigCanvas, { color: '#efe3cf', animate: firstVisit && !matchMedia('(prefers-reduced-motion: reduce)').matches, width: sigWidth() });
   addEventListener('resize', () => drawSignature(sigCanvas, { color: '#efe3cf', animate: false, width: sigWidth() }));
   const { CanalScene } = await import('./canal/scene');

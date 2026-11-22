@@ -67,8 +67,8 @@ void main() {
   vec2 q = vec2(uv.x * uAspect, uv.y) * 90.0;
   float n1 = vnoise(q * vec2(0.6, 2.2) + vec2(t * 0.35, t * 0.9));
   float n2 = vnoise(q * vec2(1.3, 4.5) - vec2(t * 0.5, t * 1.4));
-  float ripple = sin(uv.y * 2600.0 + t * 2.2 + n1 * 6.0) * 0.6 + (n2 - 0.5) * 1.6;
-  vec2 off = vec2(ripple * 4.0, (n1 - 0.5) * 2.0) * uImgPx * uMotion;
+  float ripple = sin(uv.y * 1300.0 + t * 1.8 + n1 * 5.0) * 0.6 + (n2 - 0.5) * 1.2;
+  vec2 off = vec2(ripple * 2.6, (n1 - 0.5) * 1.4) * uImgPx * uMotion;
   // only open water moves, and only ever borrows from open water: nothing
   // standing in it (walls, lamps, boats, lily pads) gets smeared
   off *= smoothstep(0.85, 1.0, w) * smoothstep(0.85, 1.0, texture2D(uWater, uv + off).r);

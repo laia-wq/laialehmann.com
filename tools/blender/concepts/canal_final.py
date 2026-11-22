@@ -1360,13 +1360,24 @@ if os.environ.get('NO_SMOKE'):
         o.hide_render = True
 if os.environ.get('NO_RENDER'):
     render = lambda *a, **k: None
-render(sc, OUT, SAMPLES)
-if os.environ.get('OFF_OUT'):
+# what glows, noted before the lights-off pass zeroes every emission
+def glows(m):
+    if m is None or not m.use_nodes: return False
+    for nd in m.node_tree.nodes:
+        if nd.type == 'BSDF_PRINCIPLED' and (nd.inputs['Emission Strength'].default_value > 0 or nd.inputs['Emission Strength'].links): return True
+        if nd.type == 'EMISSION' and nd.inputs['Strength'].default_value > 0: return True
+    return False
+GLOWING = {o.name for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and o.name != 'canal' and any(glows(sl.material) for sl in o.material_slots)}
+WEB_ONLY = bool(os.environ.get('WEB_ONLY'))
+if not WEB_ONLY and not os.environ.get('OFF_ONLY'):
+    render(sc, OUT, SAMPLES)
+if os.environ.get('OFF_OUT') and not WEB_ONLY:
     # Same scene with every lamp, candle, window and sign switched off.
     for o in sc.objects:
         if o.type == 'LIGHT' and o.data.type != 'SUN':
             o.data.energy = 0.0
     for m in bpy.data.materials:
+        if m.name == 'endless_canal': continue   # the far haze isn't a lamp
         if m.use_nodes and m.node_tree:
             for n in m.node_tree.nodes:
                 if n.type == 'BSDF_PRINCIPLED':
@@ -1422,19 +1433,13 @@ if WEB:
         mask(g, lambda o, f=f: f(centres[o.name]) and o is not canal)
     # 3) switch-on order: every glowing thing (window panes, flames, signs) gets
     # its own random grey; the browser spreads it to the light around it.
-    def glows(m):
-        if m is None or not m.use_nodes: return False
-        for nd in m.node_tree.nodes:
-            if nd.type == 'BSDF_PRINCIPLED' and (nd.inputs['Emission Strength'].default_value > 0 or nd.inputs['Emission Strength'].links): return True
-            if nd.type == 'EMISSION' and nd.inputs['Strength'].default_value > 0: return True
-        return False
     dm, dn, dl, db = node_mat('delay_id')
     oi = dn.new('ShaderNodeObjectInfo'); dem = dn.new('ShaderNodeEmission')
     dl.new(oi.outputs['Random'], dem.inputs['Color'])
     dl.new(dem.outputs['Emission'], next(x for x in dn if x.type == 'OUTPUT_MATERIAL').inputs['Surface'])
     saved = {}
     for o in geo:
-        if o is not canal and any(glows(sl.material) for sl in o.material_slots):
+        if o.name in GLOWING:
             saved[o.name] = [sl.material for sl in o.material_slots]
             for sl in o.material_slots: sl.material = dm
             o.is_holdout = False
