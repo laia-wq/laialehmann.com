@@ -73,5 +73,30 @@ if (existsSync(`${src}/delay.png`)) {
   }
   await sharp(outb, { raw: { width: info.width, height: info.height, channels: 3 } }).resize(700, 525).png({ compressionLevel: 9 }).toFile(`${out}/delay.png`);
 }
+// Extras (canal_final.py EXTRAS_OUT): the owl's eye states as same-sized
+// crops of the full render, and the koi's jump frames (fish only, alpha).
+const ex = `${src}/extras`;
+if (existsSync(`${ex}/extras.json`)) {
+  const meta = JSON.parse(readFileSync(`${ex}/extras.json`, 'utf8'));
+  const st = meta.owl.states;
+  const m0 = await sharp(`${ex}/owl_${st[0]}.png`).metadata();
+  const ow = m0.width, oh = m0.height;
+  await sharp({ create: { width: ow * st.length, height: oh, channels: 3, background: '#000' } })
+    .composite(await Promise.all(st.map(async (s, i) => ({ input: await sharp(`${ex}/owl_${s}.png`).removeAlpha().png().toBuffer(), left: i * ow, top: 0 }))))
+    .png({ compressionLevel: 9 }).toFile(`${out}/owl.png`);
+  scene.owl = { box: meta.owl.box, states: st };
+  if (meta.koi.length) {
+    const sizes = await Promise.all(meta.koi.map((_, si) => sharp(`${ex}/koi_${si}_00.png`).metadata()));
+    const cw = Math.max(...sizes.map((m) => m.width)), ch = Math.max(...sizes.map((m) => m.height));
+    const n = meta.koi[0].n;
+    const parts = [];
+    for (const [si, k] of meta.koi.entries())
+      for (let fi = 0; fi < n; fi++)
+        parts.push({ input: `${ex}/koi_${si}_${String(fi).padStart(2, '0')}.png`, left: fi * cw, top: si * ch });
+    await sharp({ create: { width: cw * n, height: ch * meta.koi.length, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite(parts).png({ compressionLevel: 9 }).toFile(`${out}/koi.png`);
+    scene.koi = { cell: [cw, ch], n, spots: meta.koi.map((k, si) => ({ ...k, size: [sizes[si].width, sizes[si].height] })) };
+  }
+}
 writeFileSync(`${out}/scene.json`, JSON.stringify(scene));
 console.log('packaged canal to', out, scene.lights.length, 'lights');

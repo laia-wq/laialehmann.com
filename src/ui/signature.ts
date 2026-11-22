@@ -26,6 +26,8 @@ export const SIGNATURE_STROKES: { d: string; w: number }[] = [
   { w: 0.9, d: 'M 349 127 C 371 124, 369 146, 319 154 C 259 163, 159 160, 89 152 C 69 150, 71 146, 99 148 C 219 156, 419 150, 570 140' },
 ];
 export const SIGNATURE_DOT = { x: 586, y: 139, r: 2.8 };
+/** the dot on the i of Laia: a quick slanted tick of the pen */
+export const I_DOT = { x: 166, y: 108, r: 2.3 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VB_W = 600, VB_H = 190;
@@ -93,7 +95,9 @@ export function drawSignature(svg: SVGSVGElement, opts: { color: string; animate
   if (svg.dataset.built) return;   // resize: the vector just scales
   svg.dataset.built = '1';
   const id = `sig-mask-${uid++}`;
-  const ink = cache.map((s) => s.fill).join('') + (() => { const { x, y, r } = SIGNATURE_DOT; return `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`; })();
+  const dot = ({ x, y, r }: { x: number; y: number; r: number }) => `M${x - r} ${y}a${r} ${r * 0.8} 0 1 0 ${2 * r} 0a${r} ${r * 0.8} 0 1 0 ${-2 * r} 0Z`;
+  const dots = dot(I_DOT) + dot(SIGNATURE_DOT);
+  const ink = cache.map((s) => s.fill).join('') + dots;
   if (!opts.animate) {
     svg.innerHTML = `<path fill="${opts.color}" d="${ink}"/>`;
     return;
@@ -101,7 +105,8 @@ export function drawSignature(svg: SVGSVGElement, opts: { color: string; animate
   // one mask per stroke, so a stroke only uncovers its own ink
   svg.innerHTML = '<defs>' + cache.map((s, i) => `<mask id="${id}-${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="${VB_W}" height="${VB_H}">`
     + `<path d="${s.d}" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="${s.width.toFixed(1)}" stroke-dasharray="${s.length.toFixed(1)} ${(s.length + 10).toFixed(1)}" stroke-dashoffset="${s.length.toFixed(1)}"/></mask>`).join('')
-    + '</defs>' + cache.map((s, i) => `<path fill="${opts.color}" d="${s.fill}" mask="url(#${id}-${i})"/>`).join('');
+    + '</defs>' + cache.map((s, i) => `<path fill="${opts.color}" d="${s.fill}" mask="url(#${id}-${i})"/>`).join('')
+    + `<path class="sig-dots" fill="${opts.color}" d="${dots}" opacity="0"/>`;
   const strokes = Array.from(svg.querySelectorAll('mask path')) as SVGPathElement[];
   const total = cache.reduce((a, s) => a + s.length, 0);
   const dur = 1900, t0 = performance.now();
@@ -114,6 +119,8 @@ export function drawSignature(svg: SVGSVGElement, opts: { color: string; animate
       strokes[i].setAttribute('stroke-dashoffset', (s.length - drawn).toFixed(1));
       left -= s.length;
     });
+    // the dots go on last, once the pen has finished
+    svg.querySelector('.sig-dots')?.setAttribute('opacity', String(Math.min(1, Math.max(0, (k - 0.93) / 0.05))));
     if (k < 1) requestAnimationFrame(step);
     else svg.innerHTML = `<path fill="${opts.color}" d="${ink}"/>`;
   };

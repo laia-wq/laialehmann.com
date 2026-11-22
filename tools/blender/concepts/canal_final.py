@@ -14,6 +14,7 @@ GRAFFITI = os.environ.get('GRAFFITI_FONT', '')
 sc = reset()
 from garden import *
 from canal_kit import *
+import canal_extras as EX
 
 RG = random.Random(52)
 brass_d = solid('brass_d', (0.6, 0.45, 0.22), 0.35, metal=1)
@@ -1233,7 +1234,19 @@ for dx in (-0.22, 0.22):
 limb(bw + Vector((-0.22, 0, 0)), bw + Vector((0.0, 0, 0.18)), 0.01, varied('bikeframe', (0.5, 0.15, 0.12), 0.05, 0.4))
 limb(bw + Vector((0.22, 0, 0)), bw + Vector((0.0, 0, 0.18)), 0.01, varied('bikeframe', (0.5, 0.15, 0.12), 0.05, 0.4))
 limb(bw + Vector((0.0, 0, 0.18)), bw + Vector((0.2, 0, 0.3)), 0.01, varied('bikeframe', (0.5, 0.15, 0.12), 0.05, 0.4))
+# an old town bike leaning on the bakery's canal side, baguettes in the basket
+_b = set(bpy.data.objects.keys()); EX.bicycle((-2.615, -1.0, 0.341), math.pi / 2, -0.12, iron); GROUPS_NEW = {'bike': set(bpy.data.objects.keys()) - _b}
+# washing strung low across from the bakery to the tall house
+laundry((-2.86, -0.3, 2.1), (-2.45, 1.24, 2.2))
+# a small owl on the corner house's ridge, eyes shut (the browser opens them)
+_b = set(bpy.data.objects.keys()); bpy.context.view_layer.update()
+_hit = sc.ray_cast(bpy.context.evaluated_depsgraph_get(), Vector((4.42, 2.05, 20.0)), Vector((0, 0, -1)))
+_rz = _hit[1].z if _hit[0] else topC + 1.0
+EX.owl((4.42, 2.05, _rz - 0.004), -3 * math.pi / 4); EX.owl_pose('closed'); GROUPS_NEW['owl'] = set(bpy.data.objects.keys()) - _b
+_b = set(bpy.data.objects.keys())
 # boats instead of plank walkways
+rowboat(5.45, 1.7, 1.5, 0.9, None, col=(0.42, 0.3, 0.2))
+GROUPS_NEW['side_boat'] = set(bpy.data.objects.keys()) - _b
 HB = houseboat(0.6, -1.0, 0.35, 2.3)
 rowboat(-1.3, -2.7, 0.6, 1.0, 'flowers', col=(0.2, 0.3, 0.35))
 rowboat(3.7, -1.6, -0.4, 1.0, 'crates')
@@ -1259,7 +1272,7 @@ graffiti(CS, 3.3, 0.52, 'K!', (0.3, 0.42, 0.55), 0.2, 0.0)
 graffiti(BF, 0.95, 0.5, 'mira', (0.62, 0.52, 0.28), 0.14, 0.06)
 for (x, y, z, a) in ((-3.0, 3.2, topA + 1.25, 0.4), (-3.25, 3.0, topA + 1.22, 2.0), (0.3, 2.3, topB + 0.36, 1.0), (0.9, 2.3, topB + 0.36, 3.0), (3.6, 0.15, topC + 0.12, 1.5)):
     pigeon(x, y, z, a)
-trash(-3.15, -3.2, 0.28)
+_b = set(bpy.data.objects.keys()); trash(-4.4, -3.13, 0.28); GROUPS_BIN = set(bpy.data.objects.keys()) - _b   # bin at x -3.95: clear of the chair, the lavender and the lamp
 # an old kitchen chair someone carried out to sit by the water, a cat asleep on it
 def old_chair(x, y, z, a):
     R = Matrix.Rotation(a, 3, 'Z'); O = Vector((x, y, z))
@@ -1296,21 +1309,6 @@ for k in range(4):
 limb(Vector((-2.35, 1.25, 1.75)), Vector((-1.3, 0.2, 2.1)), 0.004, timber_h)          # a fishing rod out of a window
 limb(Vector((-1.3, 0.2, 2.1)), Vector((-1.25, 0.15, 0.0)), 0.0015, solid('line', (0.8, 0.8, 0.8), 0.3))
 sphere('bobber', (-1.25, 0.15, 0.01), 0.015, solid('bobber', (0.85, 0.15, 0.1), 0.4), 8)
-# a scatter of far-off waterlilies, out where the water fades
-far = 0
-while far < 26:
-    x, y = RG.uniform(-17, 17), RG.uniform(-17, 17)
-    r = math.hypot(x - 0.2, y - 0.5)
-    if r < 7.0 or r > 16.5 or RG.random() > math.exp(-(r - 7.0) / 4.0): continue
-    if any(x0 - 0.15 < x < x1 + 0.15 and y0 - 0.15 < y < y1 + 0.15 for (x0, x1, y0, y1) in QUAYS): continue
-    rr = RG.uniform(0.06, 0.11)
-    cyl('pad', (x, y, 0.005), rr, 0.006, varied('pad_d', (0.12, 0.24, 0.08), 0.3, 0.4), verts=14)
-    if RG.random() < 0.32:
-        fc = RG.choice([(0.95, 0.9, 0.88), (0.9, 0.6, 0.68)])
-        for k in range(6):
-            a = k / 6 * 6.28
-            sphere('lpetal', (x + math.cos(a) * 0.02, y + math.sin(a) * 0.02, 0.025), 0.02, solid('lp%.2f' % fc[1], fc, 0.5), 8, (1, 0.4, 0.2)).rotation_euler = (0, -0.5, a)
-    far += 1
 # waterlilies across the whole canal, thinning with distance
 placed = 0
 quays = [(-4.85, -2.0, 0.85, 4.15), (-1.15, 2.35, 1.6, 4.15), (2.85, 4.85, -0.3, 4.15), (-4.85, -2.55, -3.4, 0.25)]
@@ -1328,6 +1326,34 @@ while placed < 110:
             sphere('lpetal', (x + math.cos(a) * 0.02, y + math.sin(a) * 0.02, 0.025), 0.02, solid('lp%.2f' % fc[1], fc, 0.5), 8, (1, 0.4, 0.2)).rotation_euler = (0, -0.5, a)
     placed += 1
 
+if os.environ.get('CHECK'):
+    # does anything new touch something it shouldn't? (bounding boxes, a few mm slack)
+    GROUPS_NEW['bin'] = GROUPS_BIN
+    bpy.context.view_layer.update()
+    def bb(o):
+        cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
+        return Vector([min(c[i] for c in cs) for i in range(3)]), Vector([max(c[i] for c in cs) for i in range(3)])
+    ignore = ('quay', 'canal', 'canal_bed', 'cobble', 'kerb', 'roofC', 'C', 'D', 'gable')
+    for g, names in GROUPS_NEW.items():
+        objs = [bpy.data.objects[n] for n in names if n in bpy.data.objects and bpy.data.objects[n].type == 'MESH' and not bpy.data.objects[n].hide_render]
+        if not objs: continue
+        lo = Vector([min(bb(o)[0][i] for o in objs) for i in range(3)]); hi = Vector([max(bb(o)[1][i] for o in objs) for i in range(3)])
+        hits = []
+        others_bb = [(o, bb(o)) for o in sc.objects if not (o.name in names or o.type != 'MESH' or o.hide_render or o.name.split('.')[0] in ignore or o.name.startswith(ignore))]
+        for q in objs:
+            qa, qb = bb(q)
+            for o, (a, b) in others_bb:
+                depth = min(min(qb[i], b[i]) - max(qa[i], a[i]) for i in range(3))
+                if depth > 0.006:
+                    hits.append('%s~%s(%.3f)' % (q.name.split('.')[0], o.name.split('.')[0], depth))
+        for o in objs:
+            pass
+        if g == 'bike':
+            for o in sc.objects:
+                if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] in ('sill', 'wc', 'door', 'shopd', 'poster', 'pane', 'ladder', 'rung'):
+                    a, b = bb(o)
+                    if b.x > -2.95 and a.x < -2.5 and a.z < 1.3 and -3.0 < a.y < 0.3: print('  near', o.name, [round(v, 2) for v in a], [round(v, 2) for v in b])
+        print('CHECK', g, [round(v, 2) for v in lo], [round(v, 2) for v in hi], 'touches:', sorted(set(hits)))
 lighting(sc, sun_rot=(math.radians(76), 0, math.radians(-40)), sun_energy=1.9, sun_color=(1.0, 0.64, 0.42),
          bg_top=(0.05, 0.07, 0.13), bg_bottom=(0.35, 0.24, 0.24), hdri_strength=0.13)
 # The canal mirrors the sky: keep what it reflects at the old, darker dusk level,
@@ -1371,6 +1397,27 @@ GLOWING = {o.name for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and
 WEB_ONLY = bool(os.environ.get('WEB_ONLY'))
 if not WEB_ONLY and not os.environ.get('OFF_ONLY'):
     render(sc, OUT, SAMPLES)
+if os.environ.get('CROPS'):
+    # close-up test crops (full resolution) of the newest details
+    for nm, (c, r) in {'bike': ((-2.7, -1.0, 0.7), 0.7), 'bin': ((-4.1, -3.1, 0.5), 0.6), 'wash': ((-2.65, 0.5, 2.0), 0.9),
+                       'boat': ((5.45, 1.7, 0.2), 0.7), 'owl': (tuple(EX.OWL['head']), 0.3)}.items():
+        c = Vector(c)
+        EX.render_crop(sc, os.path.join(os.environ['CROPS'], nm + '.png'), EX.crop_border(sc, cam, [c + Vector((dx, dy, dz)) for dx in (-r, r) for dy in (-r, r) for dz in (-r, r)]), SAMPLES)
+EXTRAS = os.environ.get('EXTRAS_OUT', '')
+if EXTRAS:
+    os.makedirs(EXTRAS, exist_ok=True)
+    import json as _json
+    hc = EX.OWL['head']
+    obox = EX.crop_border(sc, cam, [hc + Vector((dx, dy, dz)) for dx in (-0.1, 0.1) for dy in (-0.1, 0.1) for dz in (-0.06, 0.08)], 4)
+    for st in os.environ.get('OWL_STATES', 'closed,open,left,right,half').split(','):
+        EX.owl_pose(st)
+        EX.render_crop(sc, os.path.join(EXTRAS, 'owl_' + st + '.png'), obox, SAMPLES)
+    EX.owl_pose('closed')
+    W_, H_ = sc.render.resolution_x, sc.render.resolution_y
+    others = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and not o.hide_render]
+    koi = [] if os.environ.get('NO_KOI') else EX.koi_frames(sc, cam, EXTRAS, [((-1.75, -1.35, 0.0), 0.75), ((2.35, -2.15, 0.0), 0.8)], others, samples=int(os.environ.get('KOI_SAMPLES', 64)))
+    _json.dump({'owl': {'box': [obox[0] / W_, 1 - obox[3] / H_, obox[2] / W_, 1 - obox[1] / H_], 'states': ['closed', 'open', 'left', 'right', 'half']}, 'koi': koi},
+               open(os.path.join(EXTRAS, 'extras.json'), 'w'))
 if os.environ.get('OFF_OUT') and not WEB_ONLY:
     # Same scene with every lamp, candle, window and sign switched off.
     for o in sc.objects:
