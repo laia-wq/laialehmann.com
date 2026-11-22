@@ -5,6 +5,8 @@ import './styles.css';
 import { person, projects } from './content/projects';
 import { Panel, projectBody } from './ui/panel';
 import { drawSignature } from './ui/signature';
+import { RoomView } from './ui/room';
+import { roomForBuilding } from './content/rooms';
 
 type Mode = 'scene' | '2d';
 
@@ -51,14 +53,13 @@ const GROUP_NAMES: Record<string, string> = {
 /** Rooms in the canal scene and the projects each one holds (rooms open later). */
 const ROOMS: { room: string; where: string; ids: string[] }[] = [
   { room: 'Squirrels and Seeds', where: 'the corner shop', ids: ['squirrels-and-seeds'] },
-  { room: 'Lilies & Rain, Lilies & Fire', where: 'the blue-shuttered house', ids: ['lily-and-rain', 'lily-and-fire'] },
-  { room: 'Forest Loss', where: 'upstairs, the blue-shuttered house', ids: ['forest-loss'] },
+  { room: 'Lilies & Rain, Lilies & Fire', where: 'the greenhouse, the blue-shuttered house', ids: ['lily-and-rain', 'lily-and-fire'] },
   { room: 'Waterloo API & WatIf', where: 'upstairs, the corner shop', ids: ['watif'] },
   { room: 'The workshop', where: 'the tall brick house', ids: ['brita-robot'] },
   { room: 'Design teams', where: 'the tall brick house', ids: ['wrl', 'warg', 'medtechresolve'] },
   { room: 'Hackathons & competitions', where: 'the attic', ids: ['bridgeway', 'physics-olympics'] },
-  { room: 'Community', where: 'above the bakery', ids: ['donation-drives', 'youth-council'] },
-  { room: 'Late night projects', where: 'the houseboat', ids: ['physics-engine', 'signwise', 'saas'] },
+  { room: 'Community', where: 'the bakery', ids: ['donation-drives', 'youth-council'] },
+  { room: 'Late night projects', where: 'the houseboat', ids: ['forest-loss', 'physics-engine', 'signwise', 'saas'] },
 ];
 
 const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -159,11 +160,20 @@ async function bootScene() {
       label.classList.toggle('is-on', !!g);
     },
     onSelect(g) {
-      live.textContent = `${GROUP_NAMES[g] ?? g}: rooms coming soon.`;
-      openSheet('projects');
+      const room = roomForBuilding(g);
+      if (!room) { live.textContent = `${GROUP_NAMES[g] ?? g}: this room is still being built.`; openSheet('projects'); return; }
+      // lean in towards the building, then the room opens
+      const c = scene.groupCenter(g);
+      if (c) { const r = stage.getBoundingClientRect(); stage.style.transformOrigin = `${c.x - r.left}px ${c.y - r.top}px`; }
+      app.classList.add('is-entering');
+      label.classList.remove('is-on');
+      setTimeout(() => { roomView.open(room).catch((err) => { console.error(err); app.classList.remove('is-entering'); }); }, 380);
+      live.textContent = `${room.name}.`;
     },
     onLayout() {    },
   });
+  const roomView = new RoomView(app);
+  roomView.onClose = () => app.classList.remove('is-entering');
   const lightsBtn = app.querySelector('.lights') as HTMLButtonElement;
   lightsBtn.addEventListener('click', () => {
     const on = !scene.lightsOn;

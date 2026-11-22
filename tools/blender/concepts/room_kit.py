@@ -6,6 +6,7 @@ like the street."""
 import os, math, json
 import bpy
 from mathutils import Vector
+from mathutils import Matrix
 from kit import solid, varied, wood, box, cyl, sphere, cut, node_mat, link, iso_camera, render
 
 MARKER = os.environ.get('MARKER_FONT', '')
@@ -103,3 +104,49 @@ def export_web(sc, cam, out, size=(1400, 1050)):
     for o in geo: o.is_holdout = False
     json.dump({'size': list(size), 'lights': lights, 'groups': names}, open(os.path.join(out, 'scene.json'), 'w'), separators=(',', ':'))
     print('ROOM EXPORT', names, len(lights), 'lights')
+
+
+def _limb(a, b, r, mat):
+    from canal_extras import limb
+    return limb(a, b, r, mat)
+
+
+LEAF = None
+def lily(base, stem_h, col, open_=1.0, name='lily', lean=(0.0, 0.0), scale=1.0):
+    """A lily: stem with a few strap leaves, six curled petals, stamens."""
+    _b = set(bpy.data.objects.keys())
+    top = base + Vector((lean[0], lean[1], stem_h))
+    _limb(base, top, 0.012, LEAF_M())
+    for k in range(4):
+        a = k * 1.7; z = 0.15 + k * stem_h * 0.18
+        p = base + Vector((lean[0] * z / stem_h, lean[1] * z / stem_h, z))
+        lf = sphere(name + '_leaf', p + Vector((math.cos(a) * 0.08, math.sin(a) * 0.08, 0.03)), 0.12, LEAF_M(), 12, (0.12, 0.9, 0.05))
+        lf.rotation_euler = (0.9, 0, a + math.pi / 2)
+    pm = solid(name + '_petal', col, 0.55, coat=0.3)
+    for k in range(6):
+        a = k / 6 * 2 * math.pi
+        d = Vector((math.cos(a), math.sin(a), 0))
+        out = 0.06 + 0.04 * open_
+        p = top + d * out + Vector((0, 0, 0.06 - 0.03 * open_))
+        pe = sphere(name + '_petal', p, 0.075, pm, 14, (0.32, 1.0, 0.06))
+        pe.rotation_euler = (0, 0, 0)
+        pe.rotation_euler = (Matrix.Rotation(a + math.pi / 2, 3, 'Z') @ Matrix.Rotation(-(0.5 + 0.5 * open_), 3, 'X')).to_euler()
+        # curled tip
+        tip = top + d * (out + 0.07) + Vector((0, 0, 0.09 - 0.07 * open_))
+        sphere(name + '_tip', tip, 0.03, pm, 10, (0.35, 1.0, 0.12)).rotation_euler = (Matrix.Rotation(a + math.pi / 2, 3, 'Z') @ Matrix.Rotation(0.6, 3, 'X')).to_euler()
+    for k in range(6):
+        a = k / 6 * 2 * math.pi + 0.3
+        e = top + Vector((math.cos(a) * 0.04, math.sin(a) * 0.04, 0.1))
+        _limb(top + Vector((0, 0, 0.02)), e, 0.002, solid('stamen', (0.85, 0.85, 0.6), 0.6))
+        sphere('anther', e, 0.008, solid('anther', (0.6, 0.25, 0.08), 0.6), 6, (1, 1, 1.8))
+    if scale != 1.0:   # grow the flower head (not the stem) about its centre
+        for n_ in set(bpy.data.objects.keys()) - _b:
+            o = bpy.data.objects[n_]
+            if (o.location - top).length < 0.25 and 'leaf' not in o.name:
+                o.location = top + (o.location - top) * scale; o.scale = o.scale * scale
+    return top
+
+
+
+def LEAF_M():
+    return varied('lily_leaf', (0.18, 0.36, 0.14), 0.08, 0.5)

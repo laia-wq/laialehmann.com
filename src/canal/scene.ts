@@ -392,6 +392,20 @@ export class CanalScene {
     return id > 0 ? this.data.groups[id - 1] ?? null : null;
   }
 
+  /** Where a building's middle is on screen (client px), for zooming into it. */
+  groupCenter(g: string): { x: number; y: number } | null {
+    const gi = this.data.groups.indexOf(g) + 1;
+    if (!gi) return null;
+    const { width: W, height: H, data } = this.ids;
+    let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < H; y += 4) for (let x = 0; x < W; x += 4) {
+      if (Math.round(data[(y * W + x) * 4] / 40) === gi) { sx += x; sy += y; n++; }
+    }
+    if (!n) return null;
+    const r = ((this.fallback ?? this.canvas) as HTMLElement).getBoundingClientRect();
+    return { x: r.left + (sx / n / W) * r.width, y: r.top + (sy / n / H) * r.height };
+  }
+
   private bind() {
     const el = (this.fallback ?? this.canvas) as HTMLElement;
     el.addEventListener('pointermove', (e) => this.setHover(this.groupAt(e.clientX, e.clientY)));
