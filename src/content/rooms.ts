@@ -60,4 +60,6 @@ export const rooms: Room[] = [
   },
 ];
 
-export const roomForBuilding = (g: string) => rooms.find((r) => r.building === g) ?? null;
+/** Rooms stay hidden until one of them is good enough to show (?rooms to preview). */
+export const ROOMS_ENABLED = typeof location !== 'undefined' && new URLSearchParams(location.search).has('rooms');
+export const roomForBuilding = (g: string) => (ROOMS_ENABLED ? rooms.find((r) => r.building === g) ?? null : null);

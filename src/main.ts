@@ -161,7 +161,7 @@ async function bootScene() {
     },
     onSelect(g) {
       const room = roomForBuilding(g);
-      if (!room) { live.textContent = `${GROUP_NAMES[g] ?? g}: this room is still being built.`; openSheet('projects'); return; }
+      if (!room) { openSheet('projects'); return; }
       // lean in towards the building, then the room opens
       const c = scene.groupCenter(g);
       if (c) { const r = stage.getBoundingClientRect(); stage.style.transformOrigin = `${c.x - r.left}px ${c.y - r.top}px`; }
