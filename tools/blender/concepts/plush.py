@@ -28,17 +28,17 @@ def plush_fabric(name, color, pile=1.0):
     fib.inputs['Roughness'].default_value = 0.7
     l.new(mp.outputs['Vector'], fib.inputs['Vector'])
     # matted patches where the pile lies a different way
-    mat_ = n.new('ShaderNodeTexNoise'); mat_.inputs['Scale'].default_value = 140; mat_.inputs['Detail'].default_value = 3
+    mat_ = n.new('ShaderNodeTexNoise'); mat_.inputs['Scale'].default_value = 420; mat_.inputs['Detail'].default_value = 5; mat_.inputs['Roughness'].default_value = 0.65
     l.new(tc.outputs['Object'], mat_.inputs['Vector'])
     h = n.new('ShaderNodeMath'); h.operation = 'MULTIPLY_ADD'
-    l.new(mat_.outputs['Fac'], h.inputs[0]); h.inputs[1].default_value = 0.35; l.new(fib.outputs['Fac'], h.inputs[2])
-    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.75 * pile; bp.inputs['Distance'].default_value = 0.0025
+    l.new(mat_.outputs['Fac'], h.inputs[0]); h.inputs[1].default_value = 0.9; l.new(fib.outputs['Fac'], h.inputs[2])
+    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.9 * pile; bp.inputs['Distance'].default_value = 0.004
     l.new(h.outputs['Value'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
     # colour: fibre tips lighter, matted patches a little darker
     cr = n.new('ShaderNodeMapRange'); cr.inputs['From Min'].default_value = 0.35; cr.inputs['From Max'].default_value = 0.65
     cr.inputs['To Min'].default_value = 0.78; cr.inputs['To Max'].default_value = 1.12
     l.new(fib.outputs['Fac'], cr.inputs['Value'])
-    cm = n.new('ShaderNodeMapRange'); cm.inputs['To Min'].default_value = 0.85; cm.inputs['To Max'].default_value = 1.05
+    cm = n.new('ShaderNodeMapRange'); cm.inputs['From Min'].default_value = 0.3; cm.inputs['From Max'].default_value = 0.7; cm.inputs['To Min'].default_value = 0.72; cm.inputs['To Max'].default_value = 1.12
     l.new(mat_.outputs['Fac'], cm.inputs['Value'])
     k = n.new('ShaderNodeMath'); k.operation = 'MULTIPLY'
     l.new(cr.outputs['Result'], k.inputs[0]); l.new(cm.outputs['Result'], k.inputs[1])
@@ -52,7 +52,7 @@ def plush_fabric(name, color, pile=1.0):
     return m
 
 
-def _fuzz(o, s, density=260000, length=0.0035):
+def _fuzz(o, s, density=520000, length=0.0065):
     """Short fibres standing off the fabric, so the outline reads as fuzzy."""
     bpy.context.view_layer.update()
     area = sum(p.area for p in o.data.polygons) * max(o.scale) ** 2
@@ -141,7 +141,8 @@ def plush_squirrel(origin, yaw, s=1.0, body_col=(0.6, 0.22, 0.06)):
         furry.append(_soft('plush_ear', ec + R @ (tilt @ Vector((0, 0, 0.012))) * s, 0.03 * s, fur, (0.85, 0.32, 1.55), rot(tilt)))
         _soft('plush_ear_in', ec + R @ (tilt @ Vector((0, 0.008, 0.006))) * s, 0.02 * s, pink, (0.8, 0.25, 1.35), rot(tilt))
         tip = ec + R @ (tilt @ Vector((0, 0, 0.06))) * s
-        c = cyl('plush_tuft', tip, 0.009 * s, 0.03 * s, fur, verts=10, r2=0.0015 * s); c.rotation_euler = rot(tilt)
+        tip = ec + R @ (tilt @ Vector((0, 0, 0.05))) * s
+        furry.append(_soft('plush_tuft', tip, 0.012 * s, fur, (0.9, 0.6, 1.4), rot(tilt)))
     # plastic safety eyes, set into the head, each with a highlight
     for sg in (-1, 1):
         ep = P(sg * 0.033, 0.072, 0.232)
