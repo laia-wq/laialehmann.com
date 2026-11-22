@@ -123,6 +123,9 @@ def shop_window(sc, street_cam, G):
     brass = solid('sash_brass', (0.8, 0.6, 0.3), 0.25, metal=1.0)
     putty = varied('putty', (0.7, 0.66, 0.58), 0.04, 0.85, bump=0.6, bump_scale=400)
     stone = varied('sill_stone', (0.62, 0.58, 0.52), 0.06, 0.9, bump=0.8, bump_scale=60)
+    # the street's shop opening was cut wider than this window: wall it up behind
+    # the glass so nothing shows through gaps (shutter leaves, frame corners)
+    box('window_backing', (xc, yp + 0.07, (z0 + z1) / 2), (w + 0.9, 0.03, h + 0.6), G['plaster_g'], bevel=0)
     # box frame lining the opening, from the wall face back to the glass
     d = yp - yf + 0.02
     for (cx, cz, sx, sz) in ((x0 - 0.02, (z0 + z1) / 2, 0.045, h + 0.08), (x1 + 0.02, (z0 + z1) / 2, 0.045, h + 0.08), (xc, z1 + 0.02, w + 0.08, 0.045)):
