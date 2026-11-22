@@ -596,12 +596,6 @@ def houseboat(x, y, a, L=2.2):
     for k in range(8):   # chain links across the deck to the bollards
         c_ = P(L * 0.43 - k * 0.012, -0.28 + k * 0.035, sheer(0.86) - 0.015)
         cyl('chain', c_, 0.008, 0.004, iron, verts=8, rot=(math.pi / 2 * (k % 2), 0, a))
-    # her name, painted on the bow in chipped white
-    nm_ = bpy.data.curves.new('boat_name', 'FONT'); nm_.body = 'MARGOT'; nm_.size = 0.05; nm_.align_x = 'CENTER'; nm_.extrude = 0.0005
-    if MARKER: nm_.font = bpy.data.fonts.load(MARKER, check_existing=True)
-    nt = link(bpy.data.objects.new('boat_name', nm_))
-    nt.location = P(L * 0.3, -(half(0.6) + 0.006), 0.13); nt.rotation_euler = (math.pi / 2, 0, a)
-    nm_.materials.append(varied('name_paint', (0.85, 0.82, 0.72), 0.1, 0.7))
     # the stern: a rudder blade, its stock and a long iron tiller
     rp = P(-L / 2 - 0.03, 0, 0.0)
     box('rudder', rp + Vector((0, 0, -0.02)), (0.12, 0.015, 0.2), steel, bevel=0.01, rot=R_)
