@@ -7,6 +7,7 @@ import { Panel, projectBody } from './ui/panel';
 import { drawSignature } from './ui/signature';
 import { RoomView } from './ui/room';
 import { roomForBuilding } from './content/rooms';
+import { WindowView, windowForBuilding } from './ui/windowview';
 
 type Mode = 'scene' | '2d';
 
@@ -160,6 +161,15 @@ async function bootScene() {
       label.classList.toggle('is-on', !!g);
     },
     onSelect(g) {
+      const win = windowForBuilding(g);
+      if (win) {
+        label.classList.remove('is-on');
+        app.classList.add('is-looking');
+        const canvas = stage.querySelector('.canal-canvas') as HTMLElement;
+        windowView.open(win, canvas.getBoundingClientRect()).catch((err) => { console.error(err); app.classList.remove('is-looking'); });
+        live.textContent = 'Looking in at the corner shop.';
+        return;
+      }
       const room = roomForBuilding(g);
       if (!room) { openSheet('projects'); return; }
       // lean in towards the building, then the room opens
@@ -173,6 +183,8 @@ async function bootScene() {
     onLayout() {    },
   });
   const roomView = new RoomView(app);
+  const windowView = new WindowView(app, stage);
+  windowView.onClose = () => app.classList.remove('is-looking');
   roomView.onClose = () => app.classList.remove('is-entering');
   const lightsBtn = app.querySelector('.lights') as HTMLButtonElement;
   lightsBtn.addEventListener('click', () => {

@@ -563,3 +563,11 @@ html[data-mode='scene'] .panel { z-index: 8; }
 @media (prefers-reduced-motion: reduce) {
   .canal-stage, .room, .room-pic, .room-panel, .room-img { transition: none; }
 }
+
+/* ---- looking in at a window */
+.is-looking .top-links, .is-looking .sig-block, .is-looking .dock, .is-looking .invite, .is-looking .updated { opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+.window-view { background: transparent; }
+.window-view.is-open { background: radial-gradient(ellipse at 40% 50%, #191a22 0%, #0b0c10 75%); }
+.window-view .room-pic { transform: none; }
+.window-play { position: absolute; inset: 0; overflow: hidden; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; pointer-events: none; }
+.window-svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: visible; }
