@@ -98,6 +98,29 @@ def frosted_glow():
     return m
 
 
+def _shop_pane(sc):
+    near = lambda pre: min((o for o in sc.objects if o.name.startswith(pre) and o.type == 'MESH'),
+                           key=lambda o: (o.matrix_world.translation - Vector((-0.56, 2.3, 0.88))).length)
+    return _bb(near('pane'))
+
+
+def shop_squirrel(sc):
+    """The plush squirrel on the shop window's sill, off to the right, its tail
+    curling up into the window. Called for the street render and the close-up
+    alike, so the zoom never makes it appear. The pot plants that sat inside
+    this window go (the squirrel replaces them)."""
+    bpy.context.view_layer.update()
+    plo, phi = _shop_pane(sc)
+    x0, x1, z0, z1 = plo.x, phi.x, plo.z, phi.z
+    w = x1 - x0; xc = (x0 + x1) / 2; yf = 2.25
+    for o in sc.objects:
+        if o.type != 'MESH' or o.name.split('.')[0] not in ('ipot', 'ileaves'): continue
+        c = o.matrix_world.translation
+        if x0 - 0.12 < c.x < x1 + 0.12 and 2.1 < c.y < 2.6 and z0 - 0.15 < c.z < z1: o.hide_render = True
+    import plush
+    plush.plush_squirrel(Vector((xc + w * 0.3, yf - 0.078, z0 - 0.005)), math.radians(-170), 0.68)
+
+
 def shop_window(sc, street_cam, G):
     out = os.environ['CLOSE_OUT']; os.makedirs(out, exist_ok=True)
     SAMPLES = G['SAMPLES']; quay = G['quay']
@@ -182,9 +205,8 @@ def shop_window(sc, street_cam, G):
         from kit import cut
         cut(ring, hole)
 
-    # the stuffed toy squirrel on the sill, holding its felt seed
-    import plush
-    plush.plush_squirrel(Vector((xc + w * 0.2, yf - 0.05, z0 - 0.005)), math.radians(-165), 0.95)
+    # the stuffed toy squirrel on the sill (built with the street, so it's
+    # there the whole way in)
 
     # ---- the camera: from the street's angle round to straight on
     T = Vector((xc, yp, (z0 + z1) / 2 + 0.02))

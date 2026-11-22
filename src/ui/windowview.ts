@@ -56,9 +56,23 @@ export class WindowView {
 
   get isOpen() { return !this.el.hidden; }
 
-  private frames: HTMLImageElement[] = [];
+  private frames: (ImageBitmap | HTMLImageElement | undefined)[] = [];
   private canvas: HTMLCanvasElement | null = null;
   private motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** the zoom's geometry, measured once at the start */
+  private geo: { k: number; tx: number; ty: number; cx: number; cy: number } | null = null;
+  private ready = false;
+  private u = 0;
+
+  /** Fetch a window's frames ahead of time (compressed, into the HTTP cache),
+   *  so a click starts moving straight away. */
+  static prefetch(id: string) {
+    const base = `${import.meta.env.BASE_URL}windows/${id}/`;
+    fetch(base + 'closeup.json').then((r) => r.json()).then((m: CloseJson) => {
+      for (let k = 0; k < (m.frames ?? 0); k++) fetch(`${base}fly_${String(k).padStart(3, '0')}.webp`).catch(() => {});
+      fetch(`${base}${id}.webp`).catch(() => {});
+    }).catch(() => {});
+  }
 
   async open(spec: WindowSpec, streetRect: DOMRect) {
     const base = `${import.meta.env.BASE_URL}windows/${spec.id}/`;
@@ -82,40 +96,46 @@ export class WindowView {
     this.canvas = this.el.querySelector('.window-fly');
     const svg = this.el.querySelector('.window-svg') as SVGSVGElement;
     const step = spec.play(svg, this.paneW());
-    // the camera's swing round to face the window: pre-rendered frames
+    // the camera's swing round to face the window: pre-rendered frames,
+    // decoded off the main thread so drawing them never stalls
     const n = this.meta.frames ?? 0;
-    this.frames = [];
-    const loaded = Promise.all(Array.from({ length: n }, (_, k) => new Promise<void>((res) => {
-      const im = new Image(); im.decoding = 'async';
-      im.onload = im.onerror = () => res();
-      im.src = `${base}fly_${String(k).padStart(3, '0')}.webp`;
-      this.frames[k] = im;
-    })));
+    this.frames = new Array(n);
+    this.ready = false;
+    const decode = async (k: number) => {
+      const url = `${base}fly_${String(k).padStart(3, '0')}.webp`;
+      try {
+        const blob = await fetch(url).then((r) => r.blob());
+        this.frames[k] = await createImageBitmap(blob);
+      } catch {
+        const im = new Image(); im.src = url;
+        await im.decode().catch(() => {});
+        this.frames[k] = im;
+      }
+    };
+    const loaded = Promise.all(Array.from({ length: n }, (_, k) => decode(k))).then(() => { this.ready = true; });
     const still = this.el.querySelector('.window-still') as HTMLImageElement;
     const stillReady = still.decode ? still.decode().catch(() => {}) : Promise.resolve();
 
-    // 1) glide in: the street moves so the window lands where the first frame
-    //    will show it, at that frame's scale
     this.el.hidden = false;
     this.el.classList.add('is-open');
     const pic = this.el.querySelector('.window-pic') as HTMLElement;
     const c = pic.getBoundingClientRect();
-    const k = (c.width / streetRect.width) / this.meta.scale;
     const sr = this.stage.getBoundingClientRect();
-    const tx = streetRect.left - sr.left + this.meta.street_target[0] * streetRect.width;
-    const ty = streetRect.top - sr.top + this.meta.street_target[1] * streetRect.height;
-    const cx = c.left + c.width / 2 - sr.left, cy = c.top + c.height / 2 - sr.top;
+    this.geo = {
+      k: (c.width / streetRect.width) / this.meta.scale,
+      tx: streetRect.left - sr.left + this.meta.street_target[0] * streetRect.width,
+      ty: streetRect.top - sr.top + this.meta.street_target[1] * streetRect.height,
+      cx: c.left + c.width / 2 - sr.left, cy: c.top + c.height / 2 - sr.top,
+    };
     this.stage.style.transformOrigin = '0 0';
-    this.stage.style.transition = this.motion ? 'transform 1.0s cubic-bezier(0.55, 0, 0.3, 1), opacity 0.25s ease 0.8s' : 'none';
-    this.stage.style.transform = `translate(${cx - k * tx}px, ${cy - k * ty}px) scale(${k})`;
-    this.stage.style.opacity = '0';
-    await Promise.all([loaded, new Promise((r) => setTimeout(r, this.motion ? 820 : 0))]);
-    // 2) the first frame takes over, then the camera swings round to face the window
-    this.draw(0);
-    this.canvas!.classList.add('is-on');
-    if (this.motion && n > 1) await this.play(0, n - 1, 1100);
-    else this.draw(n - 1);
-    // 3) settle on the sharp still; the shadow play starts behind the glass; the write-up slides in
+    this.stage.style.transition = 'none';
+    if (this.motion && n > 1) {
+      await this.run(0, 1, 2300);
+    } else {
+      await loaded;
+      this.at(1);
+    }
+    // settle on the sharp still; the shadow play starts behind the glass; the write-up slides in
     await stillReady;
     this.el.classList.add('is-settled');
     this.fitPane();
@@ -125,25 +145,70 @@ export class WindowView {
     (this.el.querySelector('.room-back') as HTMLElement).focus({ preventScroll: true });
   }
 
-  private draw(i: number) {
-    const im = this.frames[Math.max(0, Math.min(this.frames.length - 1, i))];
-    const cv = this.canvas;
-    if (!cv || !im || !im.naturalWidth) return;
-    const x = cv.getContext('2d')!;
-    x.drawImage(im, 0, 0, cv.width, cv.height);
+  /* One continuous move, u = 0 (the street) .. 1 (facing the window):
+   *  - the street zooms in towards the window (log-scale, so it feels even)
+   *  - part way in, the first rendered frame fades in over the street, laid
+   *    exactly where the window is on the zooming street, so the detailed
+   *    version sharpens in place rather than cutting
+   *  - the camera then swings round through the frames, each blended into the
+   *    next so the motion has no steps */
+  private static SPLIT = 0.46;      // street zoom ends, frames start
+  private static FADE0 = 0.26;      // frames start fading in over the street
+  private static OUT0 = 0.46;       // street starts fading out under them
+  private static OUT1 = 0.6;
+
+  private at(u: number) {
+    this.u = u;
+    const g = this.geo, cv = this.canvas;
+    if (!g || !cv) return;
+    const S = WindowView.SPLIT;
+    const z = Math.min(1, u / S);
+    const s = Math.exp(Math.log(g.k) * z);                 // street scale
+    const w = g.k > 1 ? (s - 1) / (g.k - 1) : 1;            // how far the window has come to the centre
+    const px = g.tx + (g.cx - g.tx) * w, py = g.ty + (g.cy - g.ty) * w;
+    this.stage.style.transform = `translate(${px - s * g.tx}px, ${py - s * g.ty}px) scale(${s})`;
+    const sm = (a: number, b: number) => { const t = Math.min(1, Math.max(0, (u - a) / (b - a))); return t * t * (3 - 2 * t); };
+    this.stage.style.opacity = String(1 - sm(WindowView.OUT0, WindowView.OUT1));
+    // the frames' canvas rides along with the street until the zoom is done
+    const r = s / g.k;
+    cv.style.transform = r < 0.9999 ? `translate(${px - g.cx}px, ${py - g.cy}px) scale(${r})` : '';
+    cv.style.opacity = String(sm(WindowView.FADE0, S));
+    const n = this.frames.length;
+    this.draw(u <= S ? 0 : ((u - S) / (1 - S)) * (n - 1));
   }
 
-  /** Step through frames a→b over ms, eased. */
-  private play(a: number, b: number, ms: number) {
+  private draw(f: number) {
+    const cv = this.canvas;
+    const n = this.frames.length;
+    if (!cv || !n) return;
+    f = Math.max(0, Math.min(n - 1, f));
+    const i = Math.floor(f), t = f - i;
+    const a = this.frames[i], b = this.frames[Math.min(n - 1, i + 1)];
+    if (!a) return;
+    const x = cv.getContext('2d')!;
+    x.globalAlpha = 1;
+    x.drawImage(a, 0, 0, cv.width, cv.height);
+    if (b && t > 0.01) { x.globalAlpha = t; x.drawImage(b, 0, 0, cv.width, cv.height); x.globalAlpha = 1; }
+  }
+
+  /** Move u from a to b over ms, eased in and out once over the whole move.
+   *  If the frames aren't decoded yet the clock waits at the hand-over. */
+  private run(a: number, b: number, ms: number) {
+    cancelAnimationFrame(this.raf);
     return new Promise<void>((res) => {
-      const t0 = performance.now();
-      const go = () => {
-        const t = Math.min(1, (performance.now() - t0) / ms);
-        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-        this.draw(Math.round(a + (b - a) * e));
-        if (t < 1) requestAnimationFrame(go); else res();
+      let last = performance.now(), t = 0;
+      const S = WindowView.FADE0;
+      const go = (now: number) => {
+        const dt = Math.min(50, now - last); last = now;
+        const e0 = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        const u0 = a + (b - a) * e0;
+        // hold just before the frames would show until they're decoded
+        if (this.ready || (a < b ? u0 < S : true)) t = Math.min(1, t + dt / ms);
+        const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        this.at(a + (b - a) * e);
+        if (t < 1) this.raf = requestAnimationFrame(go); else res();
       };
-      go();
+      this.raf = requestAnimationFrame(go);
     });
   }
 
@@ -169,18 +234,17 @@ export class WindowView {
     // the write-up slides away, the still and the shadow play fade, the camera swings back out
     this.el.classList.remove('is-settled');
     this.onClose();
-    const n = this.frames.length;
-    if (this.motion && n > 1) {
-      await new Promise((r) => setTimeout(r, 250));
-      await this.play(n - 1, 0, 900);
+    if (this.motion && this.frames.length > 1 && this.geo) {
+      await new Promise((r) => setTimeout(r, 300));
+      await this.run(this.u || 1, 0, 2000);
     }
-    // then the street glides back out from the window
-    this.canvas?.classList.remove('is-on');
-    this.stage.style.transition = this.motion ? 'transform 0.9s cubic-bezier(0.3, 0, 0.2, 1), opacity 0.2s ease' : 'none';
     this.stage.style.transform = '';
     this.stage.style.opacity = '';
+    this.stage.style.transition = '';
     this.el.classList.remove('is-open');
-    setTimeout(() => { if (!this.el.classList.contains('is-open')) { this.el.hidden = true; this.el.innerHTML = ''; this.stage.style.transition = ''; } }, 900);
+    this.el.hidden = true; this.el.innerHTML = '';
+    for (const f of this.frames) if (f && 'close' in f) f.close();
+    this.frames = []; this.geo = null; this.u = 0;
   }
 }
 
@@ -196,72 +260,143 @@ const ease = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t));
 const seg = (t: number, a: number, b: number) => ease((t - a) / (b - a));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+/** Two-bone reach: from root towards target with segment lengths l1, l2;
+ *  the joint bends to the side `bend` (+1 / -1 across the root→target line). */
+function ik(rx: number, ry: number, tx: number, ty: number, l1: number, l2: number, bend: number) {
+  let dx = tx - rx, dy = ty - ry;
+  let d = Math.hypot(dx, dy);
+  const max = l1 + l2 - 0.01;
+  if (d > max) { dx *= max / d; dy *= max / d; d = max; }
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const ux = dx / d, uy = dy / d;
+  return { jx: rx + ux * a - uy * h * bend, jy: ry + uy * a + ux * h * bend, ex: rx + dx, ey: ry + dy };
+}
+
 /** Squirrels and Seeds: someone carries a box to the shelves, slides it in,
  *  takes out their phone and notes it down, then goes for the next one. */
 export function boxesPlay(svg: SVGSVGElement, PW: number) {
   const sx = PW / 300;   // designed 300 wide; squeeze sideways to fit the glass
   svg.innerHTML = '';
   const ink = '#1c0d06';
-  const shadow = el('g', { fill: ink, stroke: ink, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', filter: 'url(#soft)', opacity: 0.86 }, svg);
   const defs = el('defs', {}, svg);
   const f = el('filter', { id: 'soft', x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs);
-  el('feGaussianBlur', { stdDeviation: 4.5 }, f);
-  svg.insertBefore(defs, shadow);
-  // shelves on the right, with boxes already stored
+  el('feGaussianBlur', { stdDeviation: 2.6 }, f);
+  const f2 = el('filter', { id: 'softer', x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs);
+  el('feGaussianBlur', { stdDeviation: 4.5 }, f2);
+  const shadow = el('g', { fill: ink, stroke: ink, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', filter: 'url(#soft)', opacity: 0.86 }, svg);
   const room = el('g', { transform: `scale(${sx} 1)` }, shadow);
-  const shelves = el('g', { opacity: 0.55 }, room);
-  for (const y of [150, 235, 320]) el('rect', { x: 190, y, width: 105, height: 7, stroke: 'none' }, shelves);
-  el('rect', { x: 290, y: 120, width: 8, height: 280, stroke: 'none' }, shelves);
-  const stored: [number, number, number, number][] = [[198, 118, 34, 32], [236, 124, 28, 26], [205, 205, 40, 30], [252, 210, 30, 25], [200, 292, 30, 28]];
+  // shelves on the right, further from the glass so a little softer: jars,
+  // a stack of folded clothes, tins and boxes already stored
+  const shelves = el('g', { opacity: 0.5, filter: 'url(#softer)' }, room);
+  for (const y of [150, 235, 320]) el('rect', { x: 186, y, width: 112, height: 7, stroke: 'none' }, shelves);
+  el('rect', { x: 291, y: 110, width: 8, height: 290, stroke: 'none' }, shelves);
+  el('rect', { x: 188, y: 110, width: 5, height: 290, stroke: 'none' }, shelves);
+  const stored: [number, number, number, number][] = [[200, 118, 30, 32], [200, 292, 32, 28]];
   for (const [x, y, w, h] of stored) el('rect', { x, y, width: w, height: h, rx: 2, stroke: 'none' }, shelves);
-  // the box that's about to be stored
-  const box = el('rect', { width: 36, height: 30, rx: 2, stroke: 'none' }, room);
-  // the person: head, body, two arms, two legs
+  for (const [x, w, h] of [[238, 14, 22], [256, 12, 18], [272, 14, 24]]) {          // jars with lids
+    el('rect', { x, y: 150 - h, width: w, height: h, rx: 4, stroke: 'none' }, shelves);
+    el('rect', { x: x - 1, y: 150 - h - 4, width: w + 2, height: 5, rx: 1, stroke: 'none' }, shelves);
+  }
+  for (let k = 0; k < 4; k++) el('rect', { x: 198 + (k % 2) * 2, y: 235 - 7 * (k + 1), width: 40, height: 6, rx: 3, stroke: 'none' }, shelves);   // folded clothes
+  for (const x of [244, 258, 272]) el('rect', { x, y: 302, width: 11, height: 18, rx: 2, stroke: 'none' }, shelves);                          // tins
+  // the box about to be stored, flaps open
+  const box = el('path', { stroke: 'none' }, room);
+  // the person, drawn in profile
   const person = el('g', {}, room);
-  const head = el('circle', { r: 17, stroke: 'none' }, person);
-  const body = el('path', { stroke: 'none' }, person);
-  const armA = el('path', { fill: 'none', 'stroke-width': 11 }, person);
-  const armB = el('path', { fill: 'none', 'stroke-width': 11 }, person);
-  const legA = el('path', { fill: 'none', 'stroke-width': 14 }, person);
-  const legB = el('path', { fill: 'none', 'stroke-width': 14 }, person);
+  const legBack = el('path', { fill: 'none', 'stroke-width': 13 }, person);
+  const shoeBack = el('path', { stroke: 'none' }, person);
+  const armBack = el('path', { fill: 'none', 'stroke-width': 9 }, person);
+  const handBack = el('circle', { r: 5, stroke: 'none' }, person);
+  const torso = el('path', { stroke: 'none' }, person);
+  const head = el('path', { stroke: 'none' }, person);
+  const hair = el('path', { stroke: 'none' }, person);
+  const strands = el('path', { fill: 'none', 'stroke-width': 1.4 }, person);
+  const legFront = el('path', { fill: 'none', 'stroke-width': 13.5 }, person);
+  const shoeFront = el('path', { stroke: 'none' }, person);
+  const armFront = el('path', { fill: 'none', 'stroke-width': 9.5 }, person);
+  const handFront = el('path', { stroke: 'none' }, person);
   // the phone's glow shows through the blur as a small bright spot
-  const glow = el('ellipse', { rx: 9, ry: 7, fill: '#fff3d6', stroke: 'none', opacity: 0, filter: 'url(#soft)' }, svg);
+  const glow = el('ellipse', { rx: 8, ry: 6, fill: '#fff3d6', stroke: 'none', opacity: 0, filter: 'url(#softer)' }, svg);
   const LOOP = 11;
+  const GROUND = 396;
+  const set = (e: Element, d: string) => e.setAttribute('d', d);
   return (time: number) => {
     const t = time % LOOP;
-    // walk in from the left carrying the box, to the shelf, lift, slide, phone, walk off
     const walkIn = seg(t, 0, 2.4), lift = seg(t, 2.6, 3.4), slide = seg(t, 3.4, 4.0), back = seg(t, 4.2, 4.6);
     const phoneUp = seg(t, 4.8, 5.3), phoneDown = seg(t, 8.0, 8.4), walkOut = seg(t, 8.6, 10.6);
     let x = lerp(-60, 150, walkIn); x = lerp(x, -80, walkOut);
+    const face = t > 8.6 ? -1 : 1;                         // walks off the way they came
     const walking = (t < 2.4 || t > 8.6) ? 1 : 0;
-    const stepPh = t * 7.5;
-    const bob = walking * Math.abs(Math.sin(stepPh)) * 4;
-    const hipY = 300 - bob, shY = 205 - bob;
-    head.setAttribute('cx', String(x + 4)); head.setAttribute('cy', String(shY - 30 + phoneUp * (1 - phoneDown) * 6));
-    body.setAttribute('d', `M ${x - 20} ${shY} Q ${x} ${shY - 8} ${x + 22} ${shY} L ${x + 16} ${hipY} L ${x - 16} ${hipY} Z`);
-    const sw = walking * Math.sin(stepPh) * 16;
-    legA.setAttribute('d', `M ${x - 8} ${hipY} L ${x - 8 + sw} ${hipY + 50} L ${x - 4 + sw} ${hipY + 98}`);
-    legB.setAttribute('d', `M ${x + 8} ${hipY} L ${x + 8 - sw} ${hipY + 50} L ${x + 12 - sw} ${hipY + 98}`);
+    const ph = t * 7.5;
+    const bob = walking * Math.abs(Math.sin(ph)) * 3.5;
+    const out = phoneUp * (1 - phoneDown);                  // phone in hand
+    const hipY = 298 - bob, shY = 206 - bob;
+    // in the person's own frame: +X is the way they face
+    const X = (u: number) => x + face * u;
+    // legs: each foot swings and lifts a little, the knee bends forward
+    const leg = (side: number) => {
+      const s_ = walking * Math.sin(ph + (side > 0 ? 0 : Math.PI));
+      const fx = X(2 + s_ * 18), fy = GROUND - Math.max(0, walking * Math.cos(ph + (side > 0 ? 0 : Math.PI))) * 7;
+      const hx = X(side * 2), j = ik(hx, hipY, fx, fy, 50, 49, -face);
+      const toe = fx + face * 15;
+      return { d: `M ${hx} ${hipY} L ${j.jx} ${j.jy} L ${j.ex} ${j.ey}`,
+               shoe: `M ${j.ex - face * 7} ${j.ey - 6} Q ${j.ex + face * 4} ${j.ey - 9} ${toe} ${j.ey - 1} Q ${toe + face * 1} ${j.ey + 3} ${toe - face * 3} ${j.ey + 3} L ${j.ex - face * 8} ${j.ey + 3} Z` };
+    };
+    const lb = leg(-1), lf = leg(1);
+    set(legBack, lb.d); set(shoeBack, lb.shoe); set(legFront, lf.d); set(shoeFront, lf.shoe);
+    // torso: jumper with rounded shoulders, a soft hem over the hips
+    const lean = out * 4;                                    // leans over the phone
+    set(torso, `M ${X(-5 + lean)} ${shY - 8} Q ${X(-17 + lean)} ${shY - 4} ${X(-17 + lean)} ${shY + 10} Q ${X(-19)} ${shY + 50} ${X(-15)} ${hipY - 6}
+      Q ${X(-17)} ${hipY + 4} ${X(-14)} ${hipY + 9} L ${X(15)} ${hipY + 9} Q ${X(18)} ${hipY + 2} ${X(15)} ${hipY - 8}
+      Q ${X(13)} ${shY + 52} ${X(18 + lean)} ${shY + 22} Q ${X(19 + lean)} ${shY + 4} ${X(10 + lean)} ${shY - 2} L ${X(6 + lean)} ${shY - 10} Z`);
+    // head in profile: brow, nose, lips, chin; looks down at the phone
+    const hx = X(4 + lean * 1.4), hy = shY - 30 + out * 5;
+    const P = (u: number, v: number) => `${hx + face * u} ${hy + v}`;
+    set(head, `M ${P(-12, -14)} Q ${P(-2, -22)} ${P(9, -16)} Q ${P(14, -10)} ${P(13, -3)} L ${P(18, 3)} Q ${P(19, 5)} ${P(14, 6)}
+      Q ${P(15, 9)} ${P(13, 10)} Q ${P(14, 13)} ${P(11, 15)} Q ${P(9, 19)} ${P(3, 19)} Q ${P(-1, 19)} ${P(-1, 24)} L ${P(-1, 31)}
+      L ${P(-9, 31)} Q ${P(-10, 22)} ${P(-14, 14)} Q ${P(-17, 0)} ${P(-12, -14)} Z`);
+    // hair: swept back into a bun, a fringe over the brow
+    set(hair, `M ${P(10, -12)} Q ${P(6, -24)} ${P(-6, -21)} Q ${P(-16, -18)} ${P(-17, -5)} Q ${P(-18, 4)} ${P(-14, 10)}
+      Q ${P(-12, 2)} ${P(-11, -4)} Q ${P(-2, -14)} ${P(10, -12)} Z
+      M ${P(-14, -14)} m ${-face * 5} 0 a 8 8 0 1 0 ${face * 0.1} 0 Z`);
+    set(strands, `M ${P(-19, -12)} q ${-face * 5} 6 ${-face * 3} 12 M ${P(-16, -6)} q ${-face * 2} 7 ${-face * 1} 12`);
     // the box: carried at the chest, lifted to the shelf, slid in
-    const carry = t < 3.4 && t >= 0;
-    const bx = carry ? lerp(x + 18, 205, lift) : lerp(205, 236, slide);
-    const by = carry ? lerp(shY + 30, 289, lift) : 289;
+    const carry = t < 3.4;
+    const bx = carry ? lerp(X(16), 228, lift) : lerp(228, 250, slide);
+    const by = carry ? lerp(shY + 34, 235, lift) : 235;
+    const bw = 36, bh = 28, fl = 10 * (1 - slide);
+    set(box, `M ${bx} ${by - bh} L ${bx + bw} ${by - bh} L ${bx + bw} ${by} L ${bx} ${by} Z
+      M ${bx} ${by - bh} L ${bx - 6} ${by - bh - fl} L ${bx + 4} ${by - bh - fl * 0.9} L ${bx + 9} ${by - bh} Z
+      M ${bx + bw} ${by - bh} L ${bx + bw + 6} ${by - bh - fl} L ${bx + bw - 4} ${by - bh - fl * 0.9} L ${bx + bw - 9} ${by - bh} Z`);
     const stored = t >= 3.4 && t < LOOP - 0.4;
-    box.setAttribute('x', String(bx)); box.setAttribute('y', String(by - 30));
     box.setAttribute('opacity', String(t < 0.05 ? 0 : stored && t > LOOP - 1 ? Math.max(0, (LOOP - 0.4 - t) / 0.6) : 1));
-    // arms: round the box while carrying, reaching while storing, phone after
-    const hold = carry || (t < 4.2);
+    // arms: round the box while carrying, reaching up to store it, the phone after
+    const hold = t < 4.2;
     const reach = lift * (1 - back);
-    const hx = hold ? lerp(x + 30, bx + 6, reach) : x + 18;
-    const hy = hold ? lerp(shY + 22, by - 18, reach) : lerp(hipY - 10, shY + 18, phoneUp * (1 - phoneDown));
-    const hx2 = hold ? hx + 22 : x + 22 * phoneUp * (1 - phoneDown) + 4;
-    const hy2 = hold ? hy + 4 : lerp(hipY - 6, shY + 22, phoneUp * (1 - phoneDown));
-    armA.setAttribute('d', `M ${x - 14} ${shY + 6} Q ${x - 2} ${(shY + hy) / 2 + 14} ${hx} ${hy}`);
-    armB.setAttribute('d', `M ${x + 16} ${shY + 6} Q ${x + 26} ${(shY + hy2) / 2 + 12} ${hx2} ${hy2}`);
+    const swing = walking * Math.sin(ph) * 14;
+    let fx: number, fy: number, gx: number, gy: number;
+    if (hold) {
+      fx = lerp(bx + (face > 0 ? bw - 4 : 4), bx + 30, reach); fy = lerp(by - bh / 2, by - bh + 4, reach);
+      gx = lerp(bx + 6, bx + 8, reach); gy = lerp(by - 6, by - bh + 8, reach);
+    } else if (out > 0.01) {
+      fx = X(lerp(6 + swing, 32, out)); fy = lerp(hipY + 2, shY + 30, out);
+      gx = X(lerp(-6 - swing, 27, out)); gy = lerp(hipY, shY + 35, out);
+    } else {
+      fx = X(6 + swing); fy = hipY + 2; gx = X(-6 - swing); gy = hipY;
+    }
+    const shF = { x: X(4 + lean), y: shY + 6 }, shB = { x: X(-6 + lean), y: shY + 6 };
+    const aF = ik(shF.x, shF.y, fx, fy, 34, 33, face), aB = ik(shB.x, shB.y, gx, gy, 34, 33, face);
+    set(armFront, `M ${shF.x} ${shF.y} L ${aF.jx} ${aF.jy} L ${aF.ex} ${aF.ey}`);
+    set(armBack, `M ${shB.x} ${shB.y} L ${aB.jx} ${aB.jy} L ${aB.ex} ${aB.ey}`);
+    handBack.setAttribute('cx', String(aB.ex)); handBack.setAttribute('cy', String(aB.ey));
+    // front hand: palm with a thumb sticking up
+    const hX = aF.ex, hY = aF.ey;
+    set(handFront, `M ${hX - face * 5} ${hY - 4} Q ${hX + face * 4} ${hY - 6} ${hX + face * 7} ${hY} Q ${hX + face * 4} ${hY + 6} ${hX - face * 4} ${hY + 4} Z
+      M ${hX} ${hY - 4} q ${face * 3} -6 ${face * 6} -5 q ${-face * 1} 4 ${-face * 4} 6 Z`);
     // the phone: a soft glow at the hands while it's out, flickering as they tap
-    const out = phoneUp * (1 - phoneDown);
     const tap = 0.85 + 0.15 * Math.sin(t * 19);
-    glow.setAttribute('cx', String(((hx + hx2) / 2 + 2) * sx)); glow.setAttribute('cy', String((hy + hy2) / 2 - 6));
+    glow.setAttribute('cx', String(((aF.ex + aB.ex) / 2) * sx)); glow.setAttribute('cy', String((aF.ey + aB.ey) / 2 - 6));
     glow.setAttribute('opacity', String(out * tap * 0.85));
   };
 }

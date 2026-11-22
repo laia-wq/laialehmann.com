@@ -575,7 +575,11 @@ html[data-mode='scene'] .panel { z-index: 8; }
 .window-view.is-open { background: transparent; }
 .window-view.is-settled { background: radial-gradient(ellipse at 40% 50%, #191a22 0%, #0b0c10 75%); }
 .window-view { transition: background 0.5s ease; }
-.window-fly { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.22s ease; }
+/* the frames' canvas carries its own soft edge, since it rides along with the
+   zooming street (smaller than the picture) before it takes over */
+.window-fly { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transform-origin: 50% 50%; will-change: transform, opacity;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent), linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent), linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent); mask-composite: intersect; }
 .window-fly.is-on { opacity: 1; }
 .window-view .window-still { opacity: 0; transition: opacity 0.35s ease; }
 .window-view.is-settled .window-still { opacity: 1; }
@@ -608,3 +612,5 @@ html[data-mode='scene'] .panel { z-index: 8; }
   .room.window-view.is-settled .window-pic { transform: translate(-50%, calc(-50% - 22dvh)); }
 }
 @media (prefers-reduced-motion: reduce) { .room.window-view .window-pic { transition: none; } }
+/* while flying in, only the canvas's own edge applies (else it would be feathered twice) */
+.room.window-view:not(.is-settled) .window-pic { -webkit-mask-image: none; mask-image: none; }

@@ -16,30 +16,54 @@ from kit import solid, node_mat, link, sphere, cyl
 
 
 def plush_fabric(name, color, pile=1.0):
-    """Velboa / minky plush: soft sheen, fine pile bump, a faint weave."""
+    """Short-pile plush fabric: fine fibre bump, a brushed nap that streaks one
+    way, slightly matted patches, soft sheen at grazing angles."""
     if name in bpy.data.materials: return bpy.data.materials[name]
     m, n, l, b = node_mat(name)
     tc = n.new('ShaderNodeTexCoord')
-    nz = n.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 900; nz.inputs['Detail'].default_value = 2
-    l.new(tc.outputs['Object'], nz.inputs['Vector'])
-    wv = n.new('ShaderNodeTexWave'); wv.inputs['Scale'].default_value = 260; wv.inputs['Distortion'].default_value = 1.5
-    l.new(tc.outputs['Object'], wv.inputs['Vector'])
-    h = n.new('ShaderNodeMath'); h.operation = 'ADD'; h.inputs[1].default_value = 0
-    hw = n.new('ShaderNodeMath'); hw.operation = 'MULTIPLY'; hw.inputs[1].default_value = 0.25
-    l.new(wv.outputs['Fac'], hw.inputs[0]); l.new(nz.outputs['Fac'], h.inputs[0]); l.new(hw.outputs['Value'], h.inputs[1])
-    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.35 * pile; bp.inputs['Distance'].default_value = 0.0015
+    # fibres: very fine noise, stretched along the nap (local z)
+    mp = n.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (1.0, 1.0, 0.25)
+    l.new(tc.outputs['Object'], mp.inputs['Vector'])
+    fib = n.new('ShaderNodeTexNoise'); fib.inputs['Scale'].default_value = 2600; fib.inputs['Detail'].default_value = 4
+    fib.inputs['Roughness'].default_value = 0.7
+    l.new(mp.outputs['Vector'], fib.inputs['Vector'])
+    # matted patches where the pile lies a different way
+    mat_ = n.new('ShaderNodeTexNoise'); mat_.inputs['Scale'].default_value = 140; mat_.inputs['Detail'].default_value = 3
+    l.new(tc.outputs['Object'], mat_.inputs['Vector'])
+    h = n.new('ShaderNodeMath'); h.operation = 'MULTIPLY_ADD'
+    l.new(mat_.outputs['Fac'], h.inputs[0]); h.inputs[1].default_value = 0.35; l.new(fib.outputs['Fac'], h.inputs[2])
+    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.75 * pile; bp.inputs['Distance'].default_value = 0.0025
     l.new(h.outputs['Value'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
-    # a touch of colour variation in the pile
-    cv = n.new('ShaderNodeMix'); cv.data_type = 'RGBA'; cv.blend_type = 'MULTIPLY'
-    cr = n.new('ShaderNodeMapRange'); cr.inputs['To Min'].default_value = 0.0; cr.inputs['To Max'].default_value = 0.18
-    l.new(nz.outputs['Fac'], cr.inputs['Value']); l.new(cr.outputs['Result'], cv.inputs['Factor'])
-    cv.inputs['A'].default_value = (*color, 1); cv.inputs['B'].default_value = (0.6, 0.55, 0.5, 1)
-    l.new(cv.outputs['Result'], b.inputs['Base Color'])
-    b.inputs['Roughness'].default_value = 0.88
-    b.inputs['Sheen Weight'].default_value = 1.0 * pile; b.inputs['Sheen Roughness'].default_value = 0.3
-    b.inputs['Sheen Tint'].default_value = (1, 0.95, 0.88, 1)
-    b.inputs['Subsurface Weight'].default_value = 0.05
+    # colour: fibre tips lighter, matted patches a little darker
+    cr = n.new('ShaderNodeMapRange'); cr.inputs['From Min'].default_value = 0.35; cr.inputs['From Max'].default_value = 0.65
+    cr.inputs['To Min'].default_value = 0.78; cr.inputs['To Max'].default_value = 1.12
+    l.new(fib.outputs['Fac'], cr.inputs['Value'])
+    cm = n.new('ShaderNodeMapRange'); cm.inputs['To Min'].default_value = 0.85; cm.inputs['To Max'].default_value = 1.05
+    l.new(mat_.outputs['Fac'], cm.inputs['Value'])
+    k = n.new('ShaderNodeMath'); k.operation = 'MULTIPLY'
+    l.new(cr.outputs['Result'], k.inputs[0]); l.new(cm.outputs['Result'], k.inputs[1])
+    sc = n.new('ShaderNodeVectorMath'); sc.operation = 'SCALE'; sc.inputs[0].default_value = color
+    l.new(k.outputs['Value'], sc.inputs['Scale'])
+    l.new(sc.outputs['Vector'], b.inputs['Base Color'])
+    b.inputs['Roughness'].default_value = 0.95
+    b.inputs['Sheen Weight'].default_value = 1.0 * pile; b.inputs['Sheen Roughness'].default_value = 0.45
+    b.inputs['Sheen Tint'].default_value = (1, 0.96, 0.9, 1)
+    b.inputs['Subsurface Weight'].default_value = 0.04
     return m
+
+
+def _fuzz(o, s, density=260000, length=0.0035):
+    """Short fibres standing off the fabric, so the outline reads as fuzzy."""
+    bpy.context.view_layer.update()
+    area = sum(p.area for p in o.data.polygons) * max(o.scale) ** 2
+    md = o.modifiers.new('fuzz', 'PARTICLE_SYSTEM'); ps = md.particle_system.settings
+    ps.type = 'HAIR'; ps.count = max(200, int(area * density)); ps.hair_length = length * s
+    ps.use_advanced_hair = False
+    ps.render_type = 'PATH'; ps.display_step = 2; ps.render_step = 3
+    ps.root_radius = 0.5; ps.tip_radius = 0.0; ps.radius_scale = 0.0004 * s
+    ps.material = 1
+    ps.child_type = 'NONE'
+    ps.use_hair_bspline = False
 
 
 def _soft(name, loc, r, mat, scale=(1, 1, 1), rot=None, seg=40):
@@ -50,8 +74,23 @@ def _soft(name, loc, r, mat, scale=(1, 1, 1), rot=None, seg=40):
     return o
 
 
-def _stitches(name, pts, mat, r=0.0016):
-    """Little thread stitches along a seam (every other gap)."""
+def _stitches(name, pts, mat, r=0.0016, on=()):
+    """Little thread stitches along a seam (every other gap), pulled down onto
+    the surface of the panels they join so they sink into the fabric."""
+    if on:
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = [(o.evaluated_get(dg), o.matrix_world, o.matrix_world.inverted()) for o in on]
+        def snap(p):
+            best = None
+            for e, mw, mi in ev:
+                ok, loc, nrm, _ = e.closest_point_on_mesh(mi @ p)
+                if not ok: continue
+                w = mw @ loc
+                if best is None or (w - p).length < (best[0] - p).length:
+                    best = (w, (mw.to_3x3() @ nrm).normalized())
+            return best[0] + best[1] * r * 0.25 if best else p
+        pts = [snap(p) for p in pts]
     for i in range(0, len(pts) - 1, 2):
         a, b = pts[i], pts[i + 1]
         d = b - a
@@ -84,21 +123,22 @@ def plush_squirrel(origin, yaw, s=1.0, body_col=(0.6, 0.22, 0.06)):
     eye = solid('safety_eye', (0.01, 0.01, 0.012), 0.04, coat=1.0)
     eye.node_tree.nodes['Principled BSDF'].inputs['Coat Roughness'].default_value = 0.02
     # body: a pear-shaped pillow, sitting, leaning back a touch
-    _soft('plush_body', P(0, 0, 0.085), 0.08 * s, fur, (0.95, 0.85, 1.12), rot(Matrix.Rotation(-0.12, 3, 'X')))
-    _soft('plush_tummy', P(0, 0.052, 0.08), 0.052 * s, cream, (0.82, 0.32, 1.0), rot(Matrix.Rotation(-0.12, 3, 'X')))
-    _stitches('plush_seam', [P(0.044 * math.cos(a), 0.065 + 0.006 * math.sin(a) ** 2, 0.08 + 0.05 * math.sin(a)) for a in [k / 28 * 2 * math.pi for k in range(29)]], seam)
+    body = _soft('plush_body', P(0, 0, 0.085), 0.08 * s, fur, (0.95, 0.85, 1.12), rot(Matrix.Rotation(-0.12, 3, 'X')))
+    tummy = _soft('plush_tummy', P(0, 0.052, 0.08), 0.052 * s, cream, (0.82, 0.32, 1.0), rot(Matrix.Rotation(-0.12, 3, 'X')))
+    _stitches('plush_seam', [P(0.044 * math.cos(a), 0.065 + 0.006 * math.sin(a) ** 2, 0.08 + 0.05 * math.sin(a)) for a in [k / 28 * 2 * math.pi for k in range(29)]], seam, on=(tummy,))
     # head: big and round, a little wider than tall, a seam across the crown
     hc = P(0, 0.01, 0.215)
-    _soft('plush_head', hc, 0.072 * s, fur, (1.08, 0.98, 0.95))
-    _stitches('plush_seam', [P(0.073 * math.cos(a), 0.01 + 0.0, 0.215 + 0.068 * math.sin(a)) for a in [math.pi * k / 26 for k in range(27)]], seam)
-    _soft('plush_muzzle', P(0, 0.066, 0.198), 0.03 * s, cream, (1.05, 0.75, 0.82))
+    head = _soft('plush_head', hc, 0.072 * s, fur, (1.08, 0.98, 0.95))
+    _stitches('plush_seam', [P(0.073 * math.cos(a), 0.01 + 0.0, 0.215 + 0.068 * math.sin(a)) for a in [math.pi * k / 26 for k in range(27)]], seam, on=(head,))
+    muzzle = _soft('plush_muzzle', P(0, 0.066, 0.198), 0.03 * s, cream, (1.05, 0.75, 0.82))
     # neck seam where head meets body
-    _stitches('plush_seam', [P(0.055 * math.cos(a), 0.01 + 0.05 * math.sin(a), 0.155) for a in [k / 30 * 2 * math.pi for k in range(31)]], seam)
+    _stitches('plush_seam', [P(0.055 * math.cos(a), 0.01 + 0.05 * math.sin(a), 0.155) for a in [k / 30 * 2 * math.pi for k in range(31)]], seam, on=(head, body))
+    furry = [body, tummy, head, muzzle]
     # ears: round felt discs with pink lining, a little tufty pinch at the top
     for sg in (-1, 1):
         ec = P(sg * 0.045, -0.005, 0.272)
         tilt = Matrix.Rotation(sg * -0.35, 3, 'Y') @ Matrix.Rotation(-0.15, 3, 'X')
-        _soft('plush_ear', ec + R @ (tilt @ Vector((0, 0, 0.012))) * s, 0.03 * s, fur, (0.85, 0.32, 1.55), rot(tilt))
+        furry.append(_soft('plush_ear', ec + R @ (tilt @ Vector((0, 0, 0.012))) * s, 0.03 * s, fur, (0.85, 0.32, 1.55), rot(tilt)))
         _soft('plush_ear_in', ec + R @ (tilt @ Vector((0, 0.008, 0.006))) * s, 0.02 * s, pink, (0.8, 0.25, 1.35), rot(tilt))
         tip = ec + R @ (tilt @ Vector((0, 0, 0.06))) * s
         c = cyl('plush_tuft', tip, 0.009 * s, 0.03 * s, fur, verts=10, r2=0.0015 * s); c.rotation_euler = rot(tilt)
@@ -118,16 +158,25 @@ def plush_squirrel(origin, yaw, s=1.0, body_col=(0.6, 0.22, 0.06)):
             c = cyl('plush_mouth', (a + b) / 2, 0.0012 * s, (b - a).length, thread, verts=6); c.rotation_euler = (b - a).to_track_quat('Z', 'Y').to_euler()
     # arms: stubby, curving in to hold the seed together
     for sg in (-1, 1):
-        _soft('plush_arm', P(sg * 0.05, 0.05, 0.11), 0.026 * s, fur, (0.7, 1.4, 0.75), rot(Matrix.Rotation(sg * 0.55, 3, 'Z') @ Matrix.Rotation(0.5, 3, 'X')))
-        _soft('plush_paw', P(sg * 0.018, 0.085, 0.118), 0.016 * s, cream, (1, 1, 0.9))
+        furry.append(_soft('plush_arm', P(sg * 0.05, 0.05, 0.11), 0.026 * s, fur, (0.7, 1.4, 0.75), rot(Matrix.Rotation(sg * 0.55, 3, 'Z') @ Matrix.Rotation(0.5, 3, 'X'))))
+        furry.append(_soft('plush_paw', P(sg * 0.018, 0.085, 0.118), 0.016 * s, cream, (1, 1, 0.9)))
     # legs: straight out in front, soles with a felt paw pad
     for sg in (-1, 1):
-        _soft('plush_leg', P(sg * 0.045, 0.06, 0.03), 0.032 * s, fur, (0.85, 1.45, 0.8))
+        furry.append(_soft('plush_leg', P(sg * 0.045, 0.06, 0.03), 0.032 * s, fur, (0.85, 1.45, 0.8)))
         _soft('plush_sole', P(sg * 0.047, 0.11, 0.032), 0.022 * s, cream, (1.0, 0.25, 1.15), rot(Matrix.Rotation(0.1, 3, 'X')))
-    # the tail: a fat stuffed tube curling up behind, cream-tipped
-    tp = [P(0.02, -0.07, 0.04), P(0.07, -0.12, 0.09), P(0.1, -0.13, 0.19), P(0.09, -0.1, 0.29), P(0.06, -0.05, 0.33), P(0.04, -0.02, 0.32)]
-    _tube('plush_tail', tp, [0.035 * s, 0.055 * s, 0.065 * s, 0.06 * s, 0.045 * s, 0.03 * s], fur)
-    _soft('plush_tail_tip', tp[-1] + R @ Vector((0, 0.006, -0.004)) * s, 0.032 * s, cream, (1, 1, 0.9))
+    # the tail: a fat stuffed tube curling up behind and out to one side, its
+    # cream tip level with the cheek so it stays clear of the ears
+    tp = [P(0.03, -0.07, 0.04), P(0.1, -0.1, 0.08), P(0.155, -0.1, 0.15), P(0.175, -0.08, 0.21), P(0.168, -0.05, 0.248), P(0.142, -0.03, 0.252)]
+    tail = _tube('plush_tail', tp, [0.035 * s, 0.05 * s, 0.056 * s, 0.05 * s, 0.038 * s, 0.026 * s], fur)
+    bpy.context.view_layer.update()
+    tm = bpy.data.meshes.new_from_object(tail.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    bpy.data.objects.remove(tail)
+    tail = link(bpy.data.objects.new('plush_tail', tm))
+    for pg in tm.polygons: pg.use_smooth = True
+    tip = _soft('plush_tail_tip', tp[-1] + R @ Vector((-0.004, 0.006, -0.002)) * s, 0.028 * s, cream, (1, 1, 0.9))
+    furry += [tail, tip]
+    if s >= 0.3:
+        for o in furry: _fuzz(o, s)
     # a white satin tush tag sewn into the side seam
     tg = P(0.075, -0.03, 0.05)
     t = cyl('plush_tag', tg, 0.012 * s, 0.035 * s, solid('satin_tag', (0.95, 0.94, 0.9), 0.25), verts=4)

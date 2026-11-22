@@ -1571,8 +1571,9 @@ if os.environ.get('NO_SMOKE'):
             v = world_to_camera_view(sc, cam, p)
             SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5)})
         o.hide_render = True
+import window_closeup as WCU
+WCU.shop_squirrel(sc)
 if os.environ.get('CLOSEUP') == 'shop':
-    import window_closeup as WCU
     WCU.shop_window(sc, cam, globals())
 if os.environ.get('NO_RENDER'):
     render = lambda *a, **k: None
@@ -1585,6 +1586,28 @@ def glows(m):
     return False
 GLOWING = {o.name for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and o.name != 'canal' and any(glows(sl.material) for sl in o.material_slots)}
 WEB_ONLY = bool(os.environ.get('WEB_ONLY'))
+if os.environ.get('SHOP_PATCH'):
+    # Re-render only the box round the shop window (lit, then lights off), to
+    # paste into an existing street render: used when only that window changed.
+    import json as _json
+    PD = os.environ['SHOP_PATCH']; os.makedirs(PD, exist_ok=True)
+    pts = [Vector((x, y, z)) for x in (-0.98, -0.18) for y in (1.95, 2.4) for z in (0.3, 1.4)]
+    pbox = EX.crop_border(sc, cam, pts, 10)
+    EX.render_crop(sc, os.path.join(PD, 'lit.png'), pbox, SAMPLES)
+    for o in sc.objects:
+        if o.type == 'LIGHT' and o.data.type != 'SUN': o.data.energy = 0.0
+    for m in bpy.data.materials:
+        if m.name == 'endless_canal': continue
+        if m.use_nodes and m.node_tree:
+            for n in m.node_tree.nodes:
+                if n.type == 'BSDF_PRINCIPLED':
+                    n.inputs['Emission Strength'].default_value = 0.0
+                    for l in list(n.inputs['Emission Strength'].links): m.node_tree.links.remove(l)
+                if n.type == 'EMISSION': n.inputs['Strength'].default_value = 0.0
+    EX.render_crop(sc, os.path.join(PD, 'off.png'), pbox, SAMPLES)
+    _json.dump({'box': pbox, 'size': [sc.render.resolution_x, sc.render.resolution_y]}, open(os.path.join(PD, 'box.json'), 'w'))
+    print('SHOP PATCH', pbox)
+    sys.exit(0)
 if not WEB_ONLY and not os.environ.get('OFF_ONLY'):
     render(sc, OUT, SAMPLES)
 if os.environ.get('CROPS'):
