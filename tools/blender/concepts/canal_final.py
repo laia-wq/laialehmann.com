@@ -1359,16 +1359,23 @@ def water_tank(tx, ty, tz):
     rust = varied('hoop_rust', (0.3, 0.15, 0.08), 0.15, 0.6)
     for hz in (0.1, 0.38, 0.64, 0.92):
         ring_of((tx, ty), R + 0.014, z0 + hz * H, 0.009, rust)
-    # stepped shingle lid
-    shingle = varied('tank_shingle', (0.2, 0.15, 0.13), 0.12, 0.85, bump=0.4)
+    # a plain conical roof, like the old rooftop tanks: a thin overhanging
+    # eave, straight planked sides with battens down the seams, a zinc cap
+    shingle = varied('tank_shingle', (0.26, 0.19, 0.14), 0.1, 0.85, bump=0.4, bump_scale=60)
     zt = z0 + H
-    for j in range(4):
-        rb = R + 0.07 - j * 0.085
-        cyl('tank_lid', (tx, ty, zt + 0.04 + j * 0.06), rb, 0.08, shingle, verts=28, r2=rb - 0.07)
-    cyl('tank_lid_top', (tx, ty, zt + 0.27), 0.05, 0.05, shingle, verts=16, r2=0.02)
-    box('tank_hatch', (tx + 0.12, ty - 0.12, zt + 0.12), (0.12, 0.1, 0.03), timber_h, bevel=0.004, rot=(0.35, -0.35, -0.785))
+    RL, HL = R + 0.05, 0.26
+    cyl('tank_eave', (tx, ty, zt + 0.012), RL + 0.01, 0.024, timber_h, verts=32)
+    cone = cyl('tank_lid', (tx, ty, zt + 0.024 + HL / 2), RL, HL, shingle, verts=16, r2=0.015)
+    cone.data.polygons.foreach_set('use_smooth', [False] * len(cone.data.polygons))
+    for k in range(16):
+        a = (k + 0.5) / 16 * 2 * math.pi
+        a0 = Vector((tx + math.cos(a) * RL * 0.985, ty + math.sin(a) * RL * 0.985, zt + 0.03))
+        a1 = Vector((tx + math.cos(a) * 0.03, ty + math.sin(a) * 0.03, zt + 0.024 + HL - 0.02))
+        limb(a0, a1, 0.006, timber_h)
+    cyl('tank_cap', (tx, ty, zt + HL + 0.01), 0.04, 0.04, solid('ch_zinc', (0.32, 0.33, 0.34), 0.45, metal=0.8), verts=12, r2=0.015)
+    box('tank_hatch', (tx + 0.13, ty - 0.13, zt + 0.1), (0.1, 0.09, 0.025), timber_h, bevel=0.004, rot=(0.5, -0.5, -0.785))
     # weathervane
-    vp = Vector((tx, ty, zt + 0.3))
+    vp = Vector((tx, ty, zt + HL + 0.02))
     limb(vp, vp + Vector((0, 0, 0.2)), 0.006, iron)
     sphere('vane_ball', vp + Vector((0, 0, 0.05)), 0.014, solid('brass_v', (0.7, 0.5, 0.25), 0.35, metal=1.0), 8)
     box('vane_arrow', vp + Vector((0.02, 0, 0.17)), (0.16, 0.006, 0.012), iron, bevel=0, rot=(0, 0, 0.5))
@@ -1709,6 +1716,8 @@ makeshift_corridor((-2.3, 2.75), (-0.95, 2.8), 2.6)
 makeshift_corridor((2.15, 3.1), (3.1, 3.1), 2.5, w=0.5)
 _b = set(bpy.data.objects.keys()); makeshift_corridor((-3.84, -0.05), (-3.84, 1.25), 1.64, w=0.32, h=0.5); GROUPS_EXTRA['corridor'] = set(bpy.data.objects.keys()) - _b
 _b = set(bpy.data.objects.keys()); wall_shrine(AF, -3.38, 1.72); GROUPS_EXTRA['shrine'] = set(bpy.data.objects.keys()) - _b
+import design_props as DP
+_b = set(bpy.data.objects.keys()); DP.place_all(sc); GROUPS_EXTRA['design'] = set(bpy.data.objects.keys()) - _b
 # lamps of every kind
 for (x, y) in ((-2.25, 1.0), (-0.95, 1.8), (2.6, 1.85), (3.05, -0.15), (-2.7, -3.25)):
     gas_lamp(x, y, 0.28)
@@ -1818,7 +1827,7 @@ GROUPS_NEW['lanterns'] = set(bpy.data.objects.keys()) - _b
 if os.environ.get('SPOTS'):
     # what sits on these bits of wall (to find clear spots for banners and lines)
     bpy.context.view_layer.update()
-    for label, lo_, hi_ in (('Afront', (-4.4, 0.9, 1.0), (-3.0, 1.35, 2.7)),):
+    for label, lo_, hi_ in (('Af2', (-4.5, 0.5, 2.6), (-2.4, 1.35, 3.7)), ('Af3', (-4.5, 0.5, 3.75), (-2.4, 1.35, 4.9))):
         print('SPOTS', label)
         for o in sc.objects:
             if o.type != 'MESH' or o.hide_render or o.name.split('.')[0] in ('A', 'B', 'C', 'D', 'quay', 'canal'): continue
@@ -1909,6 +1918,8 @@ import window_closeup as WCU
 WCU.shop_squirrel(sc)
 if os.environ.get('CLOSEUP') == 'shop':
     WCU.shop_window(sc, cam, globals())
+if os.environ.get('CLOSEUP') == 'design':
+    WCU.design_windows(sc, cam, globals())
 if os.environ.get('NO_RENDER'):
     render = lambda *a, **k: None
 # what glows, noted before the lights-off pass zeroes every emission
@@ -1920,6 +1931,12 @@ def glows(m):
     return False
 GLOWING = {o.name for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT') and o.name != 'canal' and any(glows(sl.material) for sl in o.material_slots)}
 WEB_ONLY = bool(os.environ.get('WEB_ONLY'))
+if os.environ.get('QCROP'):
+    # a quick render of just one box of the street, for checking details
+    q = [float(v) for v in os.environ['QCROP'].split(',')]
+    pts = [Vector((x, y, z)) for x in (q[0], q[3]) for y in (q[1], q[4]) for z in (q[2], q[5])]
+    EX.render_crop(sc, OUT, EX.crop_border(sc, cam, pts, 10), SAMPLES)
+    sys.exit(0)
 if os.environ.get('SHOP_PATCH'):
     # Re-render only the box round the shop window (lit, then lights off), to
     # paste into an existing street render: used when only that window changed.

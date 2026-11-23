@@ -285,3 +285,157 @@ def shop_window(sc, street_cam, G):
     render(sc, os.path.join(out, 'pane.png'), 4)
     print('CLOSEUP DONE', meta)
     sys.exit(0)
+
+
+# ---------------------------------------------------------------- the design teams' windows
+def design_windows(sc, street_cam, G):
+    """The tall house's top floor: three arched windows in a row, each with
+    a design team's thing on its sill and frosted glass someone moves behind.
+    The camera swings round from the street to face all three; the browser
+    then lets you pick one. Writes fly frames, design.png, one glass mask per
+    window (pane_0..2.png) and closeup.json with each window's glass corners."""
+    import design_props as DP
+    out = os.environ['CLOSE_OUT']; os.makedirs(out, exist_ok=True)
+    SAMPLES = G['SAMPLES']
+    bpy.context.view_layer.update()
+    yf, yp = DP.A_FACE_Y, DP.A_FACE_Y + 0.08
+    w, h = DP.WIN_W, DP.WIN_H
+    r = w / 2; z0 = DP.SILL_Z; zs = z0 + h - r
+    st, bar = 0.03, 0.012
+    paint = painted_wood('frame_green', (0.17, 0.24, 0.2))
+    lining = painted_wood('lining_cream', (0.74, 0.7, 0.6))
+    frost = frosted_glow()
+    rot_y = (math.pi / 2, 0, 0)
+    # take out the street's simple glazing and what was behind it
+    for o in list(sc.objects):
+        if o.type != 'MESH' or o.name.startswith('dt_'): continue
+        lo, hi = _bb(o); c = (lo + hi) / 2
+        for u in DP.WIN_U:
+            if abs(c.x - u) < w / 2 + 0.02 and yf + 0.03 < c.y < yf + 0.8 and z0 - 0.02 < c.z < z0 + h + 0.05:
+                if o.name.split('.')[0] not in ('A', 'shutter', 'louvre'):
+                    o.hide_render = True
+    def arc(name, u, zc, rad, y, depth, thick, mat, n=16):
+        for k in range(n):
+            a0, a1 = math.pi * k / n, math.pi * (k + 1) / n
+            p0 = Vector((u + rad * math.cos(a0), y, zc + rad * math.sin(a0)))
+            p1 = Vector((u + rad * math.cos(a1), y, zc + rad * math.sin(a1)))
+            m_ = (p0 + p1) / 2; L = (p1 - p0).length * 1.08
+            b_ = box(name, m_, (L, depth, thick), mat, bevel=0.002)
+            b_.rotation_euler = (0, -((a0 + a1) / 2 + math.pi / 2), 0)
+    # neighbouring windows' shutters overlap where they meet: keep one of each pair
+    shs = [(o, *_bb(o)) for o in sc.objects if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] == 'shutter']
+    shs = [t for t in shs if t[1].z > z0 - 0.3 and t[2].z < z0 + h + 0.3 and t[2].y < yf + 0.01]
+    gone = []
+    for i, (a, alo, ahi) in enumerate(shs):
+        for b, blo, bhi in shs[i + 1:]:
+            if b in gone or a in gone: continue
+            if min(ahi.x, bhi.x) - max(alo.x, blo.x) > 0.02:
+                gone.append(b if blo.x > alo.x else a)
+    for g in gone:
+        glo, ghi = _bb(g); g.hide_render = True
+        for o in sc.objects:
+            if o.type == 'MESH' and o.name.split('.')[0] == 'louvre':
+                lo, hi = _bb(o)
+                if abs(lo.x - glo.x) < 0.03 and abs(hi.x - ghi.x) < 0.03 and glo.z - 0.01 < lo.z < ghi.z: o.hide_render = True
+    print('DESIGN shutters dropped', [g.name for g in gone])
+    # the shutters are open louvres over nothing: give each a board behind
+    shut = solid('dw_shutter_back', (0.12, 0.16, 0.13), 0.8)
+    for o in list(sc.objects):
+        if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] == 'shutter':
+            lo, hi = _bb(o)
+            if lo.z > z0 - 0.3 and hi.z < z0 + h + 0.3 and hi.y < yf + 0.01 and DP.WIN_U[0] - 0.6 < lo.x < DP.WIN_U[2] + 0.6:
+                box('dw_shutter_back', ((lo.x + hi.x) / 2, hi.y + 0.002, (lo.z + hi.z) / 2), (hi.x - lo.x - 0.01, 0.004, hi.z - lo.z - 0.01), shut, bevel=0)
+    panes = []
+    for k, u in enumerate(DP.WIN_U):
+        # reveal lining, from the wall face back to the frame
+        dl = yp - yf
+        for sg in (-1, 1):
+            box('dw_lining', (u + sg * (w / 2 - 0.006), yf + dl / 2, (z0 + zs) / 2), (0.012, dl, zs - z0), lining, bevel=0)
+        arc('dw_lining', u, zs, r - 0.006, yf + dl / 2, dl, 0.012, lining, 18)
+        # the frame: stiles, an arched head, a transom at the springing line, a bottom rail
+        yb = yp - 0.012
+        for sg in (-1, 1):
+            box('dw_stile', (u + sg * (w / 2 - st / 2), yb, (z0 + zs) / 2), (st, 0.03, zs - z0), paint, bevel=0.004)
+        arc('dw_head', u, zs, r - st / 2, yb, 0.03, st, paint, 18)
+        box('dw_transom', (u, yb - 0.002, zs), (w - 0.01, 0.034, st), paint, bevel=0.004)
+        box('dw_rail', (u, yb, z0 + 0.025), (w, 0.03, 0.05), paint, bevel=0.004)
+        # two casement leaves meeting in the middle, each with a glazing bar and two cross bars
+        box('dw_meet', (u, yb - 0.004, (z0 + 0.05 + zs) / 2), (0.034, 0.036, zs - z0 - 0.05), paint, bevel=0.004)
+        gw = (w - 2 * st - 0.034) / 2
+        for sg in (-1, 1):
+            cx = u + sg * (0.017 + gw / 2)
+            box('dw_bar', (cx, yb - 0.006, (z0 + 0.05 + zs) / 2), (bar, 0.016, zs - z0 - 0.05), paint, bevel=0.002)
+            for f in (1 / 3, 2 / 3):
+                box('dw_bar', (cx, yb - 0.006, z0 + 0.05 + (zs - z0 - 0.05) * f), (gw, 0.016, bar), paint, bevel=0.002)
+            # a small brass handle on each leaf
+            sphere('dw_knob', (u + sg * 0.03, yb - 0.03, (z0 + zs) / 2), 0.008, G['brass_d'] if 'brass_d' in G else paint, 10)
+        # fanlight: three spokes from the middle of the transom
+        for a in (math.pi / 4, math.pi / 2, 3 * math.pi / 4):
+            p0 = Vector((u, yb - 0.006, zs)); p1 = p0 + Vector((math.cos(a), 0, math.sin(a))) * (r - st)
+            b_ = box('dw_bar', (p0 + p1) / 2, (bar, 0.016, (p1 - p0).length), paint, bevel=0.002)
+            b_.rotation_euler = (0, -(a - math.pi / 2), 0)
+        # frosted glass, lit from behind: a rectangle and the arch above it
+        box('sash_frost%d' % k, (u, yp + 0.004, (z0 + 0.05 + zs) / 2), (w - 2 * st + 0.01, 0.003, zs - z0 - 0.05 + 0.01), frost, bevel=0)
+        cyl('sash_frost%d' % k, (u, yp + 0.005, zs), r - st + 0.005, 0.003, frost, verts=40, rot=rot_y)
+        panes.append({'tl': Vector((u - (w / 2 - st), yp, zs + r - st)), 'tr': Vector((u + (w / 2 - st), yp, zs + r - st)),
+                      'bl': Vector((u - (w / 2 - st), yp, z0 + 0.05)), 'aspect': (w - 2 * st) / (zs + r - st - z0 - 0.05)})
+    # ---- the camera: from the street's angle round to straight on, all three windows in view
+    T = Vector((DP.WIN_U[1], yp, z0 + h / 2 + 0.02))
+    d0 = Vector((math.sin(math.radians(45)) * math.sin(math.radians(58)), -math.cos(math.radians(45)) * math.sin(math.radians(58)), math.cos(math.radians(58))))
+    d1 = Vector((0.0, -1.0, 0.3)).normalized()
+    W0, W1 = 2.6, float(os.environ.get('CLOSE_W', '2.4'))
+    cd = bpy.data.cameras.new('closecam'); cd.type = 'PERSP'; cd.sensor_width = 36; cd.clip_start = 0.05; cd.clip_end = 300
+    ccam = link(bpy.data.objects.new('closecam', cd)); sc.camera = ccam
+    ease = lambda t: t * t * (3 - 2 * t)
+    def place(t):
+        e = ease(t)
+        dirv = d0.lerp(d1, e).normalized()
+        lens = math.exp(math.log(420) + (math.log(50) - math.log(420)) * e)
+        width = W0 + (W1 - W0) * e
+        cd.lens = lens
+        ccam.location = T + dirv * (width * lens / 36)
+        ccam.rotation_euler = (T - ccam.location).to_track_quat('-Z', 'Y').to_euler()
+        bpy.context.view_layer.update()
+    from bpy_extras.object_utils import world_to_camera_view
+    uvv = lambda cam, p: (lambda v: [round(v.x, 5), round(1 - v.y, 5)])(world_to_camera_view(sc, cam, p))
+    meta = {'street_target': uvv(street_cam, T), 'scale': W0 / 15.5}
+    rr = sc.render
+    n_frames = int(os.environ.get('CLOSE_FRAMES', '30'))
+    fw, fh = int(os.environ.get('CLOSE_FW', '1440')), int(os.environ.get('CLOSE_FH', '1080'))
+    fx, fy = int(os.environ.get('RES_X', 2400)), int(os.environ.get('RES_Y', 1800))
+    if n_frames:
+        rr.resolution_x, rr.resolution_y = fw, fh
+        for k in range(n_frames):
+            place(k / (n_frames - 1))
+            render(sc, os.path.join(out, 'fly_%03d.png' % k), int(os.environ.get('FLY_SAMPLES', '16')))
+    meta['frames'] = n_frames
+    place(1.0)
+    rr.resolution_x, rr.resolution_y = fx, fy
+    meta['panes'] = [{'tl': uvv(ccam, p['tl']), 'tr': uvv(ccam, p['tr']), 'bl': uvv(ccam, p['bl']), 'aspect': round(p['aspect'], 4),
+                      'team': DP.TEAMS[k]} for k, p in enumerate(panes)]
+    json.dump(meta, open(os.path.join(out, 'closeup.json'), 'w'))
+    if os.environ.get('PROBE'):
+        dg = bpy.context.evaluated_depsgraph_get(); fr = ccam.data.view_frame(scene=sc); mw = ccam.matrix_world
+        for uv in os.environ['PROBE'].split(';'):
+            u_, v_ = map(float, uv.split(','))
+            q = fr[3].lerp(fr[0], u_).lerp(fr[2].lerp(fr[1], u_), v_)
+            o_ = mw.translation.copy(); d_ = ((mw @ q) - o_).normalized(); hits = []
+            for _ in range(8):
+                ok, loc, nrm, idx, ob, _m = sc.ray_cast(dg, o_, d_)
+                if not ok: hits.append('NONE'); break
+                o_ = loc + d_ * 1e-4
+                if ob.hide_render: continue
+                hits.append('%s@(%.3f,%.3f,%.3f)' % (ob.name, loc.x, loc.y, loc.z))
+            print('PROBE', uv, ' -> '.join(hits))
+        sys.exit(0)
+    if not os.environ.get('SKIP_STILL'):
+        render(sc, os.path.join(out, 'design.png'), SAMPLES)
+    geo = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT', 'META') and not o.hide_render]
+    rr.film_transparent = True; sc.cycles.use_denoising = False
+    rr.resolution_x, rr.resolution_y = fx // 2, fy // 2
+    for k in range(len(DP.WIN_U)):
+        for o in geo:
+            o.is_holdout = not o.name.startswith('sash_frost%d' % k)
+        render(sc, os.path.join(out, 'pane_%d.png' % k), 4)
+    print('DESIGN CLOSEUP DONE', meta)
+    sys.exit(0)
