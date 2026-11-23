@@ -166,6 +166,7 @@ async function bootScene() {
   stage.addEventListener('pointermove', (e) => { label.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 12}px)`; });
   const scene = new CanalScene(stage, {
     onHover(g) {
+      if (g) { const w = windowForBuilding(g); if (w) WindowView.prefetch(w.id); }
       label.textContent = g ? GROUP_NAMES[g] ?? '' : '';
       label.classList.toggle('is-on', !!g);
     },
@@ -176,7 +177,7 @@ async function bootScene() {
         app.classList.add('is-looking');
         const canvas = stage.querySelector('.canal-canvas') as HTMLElement;
         windowView.open(win, canvas.getBoundingClientRect()).catch(() => { app.classList.remove('is-looking'); windowView.close(); openSheet('projects'); });
-        live.textContent = 'Looking in at the corner shop.';
+        live.textContent = win.panes.length > 1 ? 'Looking up at three windows. Pick one.' : `Looking in at ${win.panes[0].label}.`;
         return;
       }
       const room = roomForBuilding(g);
