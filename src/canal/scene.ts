@@ -49,6 +49,7 @@ uniform vec4 uOwlBox;         // where the owl's crop sits (uv)
 uniform vec3 uOwlAB;          // frame A, frame B, blend A→B (frame 0 = eyes shut)
 uniform float uOwlN;          // frames in the owl strip
 uniform vec2 uImgPx;
+uniform vec4 uView;          // screen uv -> image uv (the window zoom), identity otherwise
 uniform float uTime, uHover, uMotion, uAspect, uOn, uIntroT, uLevel;
 uniform vec4 uSmoke[${MAX_SMOKE}];
 uniform int uSmokeCount;
@@ -61,7 +62,8 @@ float vnoise(vec2 p) {
 }
 
 void main() {
-  vec2 uv = vUv;
+  vec2 uv = vUv * uView.xy + uView.zw;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) { gl_FragColor = vec4(0.043, 0.043, 0.063, 1.0); return; }
   float t = uTime * uMotion;
   float w = texture2D(uWater, uv).r;
 
@@ -255,7 +257,8 @@ export class CanalScene {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return false;
     gl.useProgram(p);
     this.prog = p;
-    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uIntroT', 'uLevel', 'uOwlAB']) this.u[n] = gl.getUniformLocation(p, n);
+    for (const n of ['uTime', 'uHover', 'uMotion', 'uOn', 'uIntroT', 'uLevel', 'uOwlAB', 'uView']) this.u[n] = gl.getUniformLocation(p, n);
+    gl.uniform4f(this.u.uView, 1, 1, 0, 0);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -353,6 +356,8 @@ export class CanalScene {
     const ar = this.img.naturalWidth / this.img.naturalHeight;
     let cw = w, ch = w / ar;
     if (ch > h) { ch = h; cw = h * ar; }
+    this.fit = { left: (w - cw) / 2, top: (h - ch) / 2, width: cw, height: ch, w, h };
+    if (this.view) return this.applyView();
     const el = (this.fallback ?? this.canvas) as HTMLElement;
     el.style.width = `${cw}px`;
     el.style.height = `${ch}px`;
@@ -472,6 +477,38 @@ export class CanalScene {
   private switchOnNow() {
     this.replayIntro();
     this.dark = 0.15;
+  }
+
+  private fit: { left: number; top: number; width: number; height: number; w: number; h: number } | null = null;
+  private view: { s: number; tx: number; ty: number } | null = null;
+  /** Zoom the street inside the shader (for the window zoom), so it stays as
+   *  sharp as the full-size render allows instead of stretching the canvas.
+   *  The view is like a CSS transform on the stage: a stage point p shows at
+   *  s * p + (tx, ty). null puts the street back as it was. Returns false if
+   *  there's no WebGL (the caller then uses a CSS transform). */
+  setView(v: { s: number; tx: number; ty: number } | null) {
+    if (!this.gl || this.fallback) return false;
+    const was = this.view;
+    this.view = v;
+    if (v) this.applyView();
+    else if (was) { this.gl.uniform4f(this.u.uView, 1, 1, 0, 0); this.resize(); }
+    return true;
+  }
+  private applyView() {
+    const f = this.fit, v = this.view, gl = this.gl;
+    if (!f || !v || !gl) return;
+    // fill the whole stage while zoomed: margins become more street
+    if (this.canvas.style.width !== `${f.w}px`) {
+      this.canvas.style.width = `${f.w}px`; this.canvas.style.height = `${f.h}px`;
+      let dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      dpr = Math.min(dpr, Math.sqrt(2.1e6 / (f.w * f.h)));
+      this.canvas.width = Math.round(f.w * dpr); this.canvas.height = Math.round(f.h * dpr);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
+    // screen px c -> stage px p = (c - t) / s -> image uv = (p - fit.left/top) / fit size
+    gl.uniform4f(this.u.uView, f.w / (v.s * f.width), f.h / (v.s * f.height),
+      (-v.tx / v.s - f.left) / f.width, (-v.ty / v.s - f.top) / f.height);
+    this.draw();
   }
 
   dispose() {

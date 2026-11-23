@@ -56,7 +56,31 @@ export class WindowView {
 
   get isOpen() { return !this.el.hidden; }
 
-  private frames: (ImageBitmap | HTMLImageElement | undefined)[] = [];
+  private frames: (ImageBitmap | undefined)[] = [];
+  private blobs: (Blob | undefined)[] = [];
+  private decoding = new Set<number>();
+  /** decoded frames to keep ahead of / behind the playhead */
+  private static AHEAD = 7;
+  private static BEHIND = 2;
+  streetView: ((v: { s: number; tx: number; ty: number } | null) => boolean) | null = null;
+
+  /** Make sure frames around f are decoded (and free the rest); resolves once
+   *  frame f and the next few are ready. */
+  private want(f: number, dir = 1) {
+    const n = this.frames.length, jobs: Promise<void>[] = [];
+    const lo = dir > 0 ? f - WindowView.BEHIND : f - WindowView.AHEAD;
+    const hi = dir > 0 ? f + WindowView.AHEAD : f + WindowView.BEHIND;
+    for (let k = 0; k < n; k++) {
+      if (k < lo || k > hi) { const fr = this.frames[k]; if (fr) { fr.close(); this.frames[k] = undefined; } continue; }
+      if (this.frames[k] || this.decoding.has(k) || !this.blobs[k]) continue;
+      this.decoding.add(k);
+      jobs.push(createImageBitmap(this.blobs[k]!).then((bm) => {
+        this.decoding.delete(k);
+        if (this.frames.length === n) this.frames[k] = bm; else bm.close();
+      }).catch(() => { this.decoding.delete(k); }));
+    }
+    return Promise.all(jobs).then(() => {});
+  }
   private canvas: HTMLCanvasElement | null = null;
   private motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
   /** the zoom's geometry, measured once at the start */
@@ -96,26 +120,20 @@ export class WindowView {
     this.canvas = this.el.querySelector('.window-fly');
     const svg = this.el.querySelector('.window-svg') as SVGSVGElement;
     const step = spec.play(svg, this.paneW());
-    // the camera's swing round to face the window: pre-rendered frames,
-    // decoded off the main thread so drawing them never stalls
+    // the camera's swing round to face the window: pre-rendered frames. All
+    // are fetched (compressed), but only a few around the playhead are kept
+    // decoded at once, so memory stays small however big the frames are.
     const n = this.meta.frames ?? 0;
     this.frames = new Array(n);
+    this.blobs = new Array(n);
     this.ready = false;
-    const decode = async (k: number) => {
-      const url = `${base}fly_${String(k).padStart(3, '0')}.webp`;
-      try {
-        const blob = await fetch(url).then((r) => r.blob());
-        this.frames[k] = await createImageBitmap(blob);
-      } catch {
-        const im = new Image(); im.src = url;
-        await im.decode().catch(() => {});
-        this.frames[k] = im;
-      }
-    };
-    const loaded = Promise.all(Array.from({ length: n }, (_, k) => decode(k))).then(() => { this.ready = true; });
+    const fetched = Promise.all(Array.from({ length: n }, (_, k) =>
+      fetch(`${base}fly_${String(k).padStart(3, '0')}.webp`).then((r) => r.blob()).then((bl) => { this.blobs[k] = bl; }).catch(() => {})));
+    const loaded = fetched.then(() => this.want(0)).then(() => { this.ready = true; });
     const still = this.el.querySelector('.window-still') as HTMLImageElement;
     const stillReady = still.decode ? still.decode().catch(() => {}) : Promise.resolve();
 
+    loaded.then(() => { const f0 = this.frames[0]; if (f0 && this.canvas) { this.canvas.width = f0.width; this.canvas.height = f0.height; this.at(this.u); } });
     this.el.hidden = false;
     this.el.classList.add('is-open');
     const pic = this.el.querySelector('.window-pic') as HTMLElement;
@@ -166,7 +184,9 @@ export class WindowView {
     const s = Math.exp(Math.log(g.k) * z);                 // street scale
     const w = g.k > 1 ? (s - 1) / (g.k - 1) : 1;            // how far the window has come to the centre
     const px = g.tx + (g.cx - g.tx) * w, py = g.ty + (g.cy - g.ty) * w;
-    this.stage.style.transform = `translate(${px - s * g.tx}px, ${py - s * g.ty}px) scale(${s})`;
+    const v = { s, tx: px - s * g.tx, ty: py - s * g.ty };
+    if (this.streetView && this.streetView(v)) this.stage.style.transform = '';
+    else this.stage.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${s})`;
     const sm = (a: number, b: number) => { const t = Math.min(1, Math.max(0, (u - a) / (b - a))); return t * t * (3 - 2 * t); };
     this.stage.style.opacity = String(1 - sm(WindowView.OUT0, WindowView.OUT1));
     // the frames' canvas rides along with the street until the zoom is done
@@ -174,8 +194,12 @@ export class WindowView {
     cv.style.transform = r < 0.9999 ? `translate(${px - g.cx}px, ${py - g.cy}px) scale(${r})` : '';
     cv.style.opacity = String(sm(WindowView.FADE0, S));
     const n = this.frames.length;
-    this.draw(u <= S ? 0 : ((u - S) / (1 - S)) * (n - 1));
+    const f = u <= S ? 0 : ((u - S) / (1 - S)) * (n - 1);
+    this.want(Math.floor(f), u >= this.u0 ? 1 : -1);
+    this.u0 = u;
+    this.draw(f);
   }
+  private u0 = 0;
 
   private draw(f: number) {
     const cv = this.canvas;
@@ -183,7 +207,9 @@ export class WindowView {
     if (!cv || !n) return;
     f = Math.max(0, Math.min(n - 1, f));
     const i = Math.floor(f), t = f - i;
-    const a = this.frames[i], b = this.frames[Math.min(n - 1, i + 1)];
+    let a = this.frames[i];
+    const b = this.frames[Math.min(n - 1, i + 1)];
+    for (let k = 1; !a && k < n; k++) a = this.frames[i - k] ?? this.frames[i + k];
     if (!a) return;
     const x = cv.getContext('2d')!;
     x.globalAlpha = 1;
@@ -238,13 +264,14 @@ export class WindowView {
       await new Promise((r) => setTimeout(r, 300));
       await this.run(this.u || 1, 0, 2000);
     }
+    this.streetView?.(null);
     this.stage.style.transform = '';
     this.stage.style.opacity = '';
     this.stage.style.transition = '';
     this.el.classList.remove('is-open');
     this.el.hidden = true; this.el.innerHTML = '';
-    for (const f of this.frames) if (f && 'close' in f) f.close();
-    this.frames = []; this.geo = null; this.u = 0;
+    for (const f of this.frames) f?.close();
+    this.frames = []; this.blobs = []; this.geo = null; this.u = 0; this.u0 = 0;
   }
 }
 
@@ -281,14 +308,12 @@ export function boxesPlay(svg: SVGSVGElement, PW: number) {
   const ink = '#1c0d06';
   const defs = el('defs', {}, svg);
   const f = el('filter', { id: 'soft', x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs);
-  el('feGaussianBlur', { stdDeviation: 2.6 }, f);
-  const f2 = el('filter', { id: 'softer', x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs);
-  el('feGaussianBlur', { stdDeviation: 4.5 }, f2);
+  el('feGaussianBlur', { stdDeviation: 1.9 }, f);
   const shadow = el('g', { fill: ink, stroke: ink, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', filter: 'url(#soft)', opacity: 0.86 }, svg);
   const room = el('g', { transform: `scale(${sx} 1)` }, shadow);
   // shelves on the right, further from the glass so a little softer: jars,
   // a stack of folded clothes, tins and boxes already stored
-  const shelves = el('g', { opacity: 0.5, filter: 'url(#softer)' }, room);
+  const shelves = el('g', {}, room);
   for (const y of [150, 235, 320]) el('rect', { x: 186, y, width: 112, height: 7, stroke: 'none' }, shelves);
   el('rect', { x: 291, y: 110, width: 8, height: 290, stroke: 'none' }, shelves);
   el('rect', { x: 188, y: 110, width: 5, height: 290, stroke: 'none' }, shelves);
@@ -316,18 +341,20 @@ export function boxesPlay(svg: SVGSVGElement, PW: number) {
   const shoeFront = el('path', { stroke: 'none' }, person);
   const armFront = el('path', { fill: 'none', 'stroke-width': 9.5 }, person);
   const handFront = el('path', { stroke: 'none' }, person);
-  // the phone's glow shows through the blur as a small bright spot
-  const glow = el('ellipse', { rx: 8, ry: 6, fill: '#fff3d6', stroke: 'none', opacity: 0, filter: 'url(#softer)' }, svg);
+  // the phone: a small dark slab in the hand, its screen a soft light
+  const phone = el('rect', { width: 7, height: 12, rx: 1.5, stroke: 'none' }, person);
+  const glow = el('ellipse', { rx: 6, ry: 4.5, fill: '#fff1d2', stroke: 'none', opacity: 0, filter: 'url(#soft)' }, svg);
   const LOOP = 11;
   const GROUND = 396;
   const set = (e: Element, d: string) => e.setAttribute('d', d);
   return (time: number) => {
     const t = time % LOOP;
-    const walkIn = seg(t, 0, 2.4), lift = seg(t, 2.6, 3.4), slide = seg(t, 3.4, 4.0), back = seg(t, 4.2, 4.6);
-    const phoneUp = seg(t, 4.8, 5.3), phoneDown = seg(t, 8.0, 8.4), walkOut = seg(t, 8.6, 10.6);
+    const walkIn = seg(t, 0, 2.4), lift = seg(t, 2.6, 3.4), slide = seg(t, 3.4, 4.0), back = seg(t, 4.2, 4.7);
+    const shove = 1 - Math.pow(1 - Math.min(1, Math.max(0, (t - 3.5) / 1.4)), 3);   // pushed along the shelf, out of sight
+    const phoneUp = seg(t, 4.7, 5.6), phoneDown = seg(t, 7.8, 8.6), walkOut = seg(t, 8.7, 10.7);
     let x = lerp(-60, 150, walkIn); x = lerp(x, -80, walkOut);
-    const face = t > 8.6 ? -1 : 1;                         // walks off the way they came
-    const walking = (t < 2.4 || t > 8.6) ? 1 : 0;
+    const face = t > 8.7 ? -1 : 1;                         // walks off the way they came
+    const walking = (t < 2.4 || t > 8.7) ? 1 : 0;
     const ph = t * 7.5;
     const bob = walking * Math.abs(Math.sin(ph)) * 3.5;
     const out = phoneUp * (1 - phoneDown);                  // phone in hand
@@ -363,14 +390,13 @@ export function boxesPlay(svg: SVGSVGElement, PW: number) {
     set(strands, `M ${P(-19, -12)} q ${-face * 5} 6 ${-face * 3} 12 M ${P(-16, -6)} q ${-face * 2} 7 ${-face * 1} 12`);
     // the box: carried at the chest, lifted to the shelf, slid in
     const carry = t < 3.4;
-    const bx = carry ? lerp(X(16), 228, lift) : lerp(228, 250, slide);
+    const bx = carry ? lerp(X(16), 228, lift) : lerp(228, 360, shove);
     const by = carry ? lerp(shY + 34, 235, lift) : 235;
     const bw = 36, bh = 28, fl = 10 * (1 - slide);
+    box.setAttribute('opacity', '1');
     set(box, `M ${bx} ${by - bh} L ${bx + bw} ${by - bh} L ${bx + bw} ${by} L ${bx} ${by} Z
       M ${bx} ${by - bh} L ${bx - 6} ${by - bh - fl} L ${bx + 4} ${by - bh - fl * 0.9} L ${bx + 9} ${by - bh} Z
       M ${bx + bw} ${by - bh} L ${bx + bw + 6} ${by - bh - fl} L ${bx + bw - 4} ${by - bh - fl * 0.9} L ${bx + bw - 9} ${by - bh} Z`);
-    const stored = t >= 3.4 && t < LOOP - 0.4;
-    box.setAttribute('opacity', String(t < 0.05 ? 0 : stored && t > LOOP - 1 ? Math.max(0, (LOOP - 0.4 - t) / 0.6) : 1));
     // arms: round the box while carrying, reaching up to store it, the phone after
     const hold = t < 4.2;
     const reach = lift * (1 - back);
@@ -394,10 +420,11 @@ export function boxesPlay(svg: SVGSVGElement, PW: number) {
     const hX = aF.ex, hY = aF.ey;
     set(handFront, `M ${hX - face * 5} ${hY - 4} Q ${hX + face * 4} ${hY - 6} ${hX + face * 7} ${hY} Q ${hX + face * 4} ${hY + 6} ${hX - face * 4} ${hY + 4} Z
       M ${hX} ${hY - 4} q ${face * 3} -6 ${face * 6} -5 q ${-face * 1} 4 ${-face * 4} 6 Z`);
-    // the phone: a soft glow at the hands while it's out, flickering as they tap
-    const tap = 0.85 + 0.15 * Math.sin(t * 19);
-    glow.setAttribute('cx', String(((aF.ex + aB.ex) / 2) * sx)); glow.setAttribute('cy', String((aF.ey + aB.ey) / 2 - 6));
-    glow.setAttribute('opacity', String(out * tap * 0.85));
+    // the phone in the front hand, screen towards the face; a steady soft glow
+    phone.setAttribute('x', String(hX + face * 2 - 3.5)); phone.setAttribute('y', String(hY - 14));
+    phone.setAttribute('opacity', String(Math.min(1, out * 1.5)));
+    glow.setAttribute('cx', String((hX + face * 2) * sx)); glow.setAttribute('cy', String(hY - 8));
+    glow.setAttribute('opacity', String(out * out * 0.7));
   };
 }
 

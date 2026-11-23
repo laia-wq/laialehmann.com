@@ -194,6 +194,7 @@ async function bootScene() {
   const roomView = new RoomView(app);
   const windowView = new WindowView(app, stage);
   windowView.onClose = () => app.classList.remove('is-looking');
+  windowView.streetView = (v) => scene.setView(v);
   // fetch the window's zoom frames once the street has settled, so a click moves at once
   const idle = (cb: () => void) => ('requestIdleCallback' in window ? (window as any).requestIdleCallback(cb, { timeout: 8000 }) : setTimeout(cb, 4000));
   setTimeout(() => idle(() => WindowView.prefetch('shop')), 3500);
