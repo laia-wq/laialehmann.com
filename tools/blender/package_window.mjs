@@ -1,6 +1,6 @@
 // Package a window close-up (canal_final.py CLOSEUP=<id>) for the browser.
 // Usage: node tools/blender/package_window.mjs <close-out-dir> <id> [out=public/windows/<id>]
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import sharp from 'sharp';
 
 const [src, id, out = `public/windows/${id}`] = process.argv.slice(2);
@@ -21,5 +21,12 @@ const n = JSON.parse(readFileSync(`${src}/closeup.json`, 'utf8')).frames ?? 0;
 for (let k = 0; k < n; k++) {
   const f = `${src}/fly_${String(k).padStart(3, '0')}.png`;
   if (existsSync(f)) await sharp(f).webp({ quality: 76, effort: 5 }).toFile(`${out}/fly_${String(k).padStart(3, '0')}.webp`);
+}
+// mark this zoom ready in the street's index (its click areas switch on)
+const idxPath = `${out}/../index.json`;
+if (existsSync(idxPath)) {
+  const idx = JSON.parse(readFileSync(idxPath, 'utf8'));
+  idx.ready = [...new Set([...(idx.ready ?? []), id])];
+  writeFileSync(idxPath, JSON.stringify(idx));
 }
 console.log('packaged window', id, 'to', out);

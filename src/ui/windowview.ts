@@ -369,10 +369,8 @@ let ZOOM_INDEX: { id: string; quads: Quad[] }[] = [];
 export async function loadZoomIndex() {
   try {
     const base = `${import.meta.env.BASE_URL}windows/`;
-    const idx: Record<string, Quad[]> = await fetch(base + 'index.json').then((r) => r.json());
-    const ok = await Promise.all(Object.keys(idx).map((id) =>
-      fetch(`${base}${id}/closeup.json`, { method: 'HEAD' }).then((r) => (r.ok && windowById(id) ? id : null)).catch(() => null)));
-    ZOOM_INDEX = ok.filter((id): id is string => !!id).map((id) => ({ id, quads: idx[id] }));
+    const idx: Record<string, Quad[]> & { ready?: string[] } = await fetch(base + 'index.json').then((r) => r.json());
+    ZOOM_INDEX = (idx.ready ?? []).filter((id) => windowById(id) && Array.isArray(idx[id])).map((id) => ({ id, quads: idx[id] as Quad[] }));
   } catch { ZOOM_INDEX = []; }
 }
 const inQuad = (q: Quad, u: number, v: number) => {
