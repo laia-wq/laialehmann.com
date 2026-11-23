@@ -494,12 +494,11 @@ def zoom_generic(sc, street_cam, G, zid):
                 lo, hi = ZP._bb(o)
                 if glo.x - 0.01 <= lo.x and hi.x <= ghi.x + 0.01 and glo.y - 0.01 <= lo.y and hi.y <= ghi.y + 0.01 and glo.z - 0.01 < lo.z < ghi.z:
                     o.hide_render = True
-    sb = solid('dw_shutter_back', (0.12, 0.16, 0.13), 0.8)
     for o, lo, hi in shs:
-        if o in gone: continue
+        # a board the shutter's own colour behind it (and where a dropped one was)
         _, c0, t0, n0, *_ = wins[0]
         cc = (lo + hi) / 2 - n0 * 0.012
-        b_ = box('zw_shutter_back', cc, (abs(t0.x) * (hi.x - lo.x) + abs(t0.y) * (hi.y - lo.y) - 0.01, 0.004, hi.z - lo.z - 0.01), sb, bevel=0)
+        b_ = box('zw_shutter_back', cc, (abs(t0.x) * (hi.x - lo.x) + abs(t0.y) * (hi.y - lo.y) - 0.004, 0.004, hi.z - lo.z - 0.004), o.active_material, bevel=0)
         b_.rotation_euler = (0, 0, math.atan2(t0.y, t0.x))
     print('ZOOM shutters dropped', [g_.name for g_ in gone])
     if spec.get('frost_dim'):
@@ -590,6 +589,20 @@ def zoom_generic(sc, street_cam, G, zid):
     rr.resolution_x, rr.resolution_y = fx, fy
     meta['panes'] = [{'tl': uvv(ccam, p['tl']), 'tr': uvv(ccam, p['tr']), 'bl': uvv(ccam, p['bl']), 'aspect': round(p['aspect'], 4), 'team': p['team']} for p in panes]
     json.dump(meta, open(os.path.join(out, 'closeup.json'), 'w'))
+    if os.environ.get('PROBE'):
+        dg = bpy.context.evaluated_depsgraph_get(); fr_ = ccam.data.view_frame(scene=sc); mw = ccam.matrix_world
+        for uv in os.environ['PROBE'].split(';'):
+            u_, v_ = map(float, uv.split(','))
+            q = fr_[3].lerp(fr_[0], u_).lerp(fr_[2].lerp(fr_[1], u_), v_)
+            o_ = mw.translation.copy(); d_ = ((mw @ q) - o_).normalized(); hits = []
+            for _ in range(8):
+                ok, loc, nrm, idx, ob, _m = sc.ray_cast(dg, o_, d_)
+                if not ok: hits.append('NONE'); break
+                o_ = loc + d_ * 1e-4
+                if ob.hide_render: continue
+                hits.append('%s@(%.3f,%.3f,%.3f)' % (ob.name, loc.x, loc.y, loc.z))
+            print('PROBE', uv, ' -> '.join(hits))
+        sys.exit(0)
     if not os.environ.get('SKIP_STILL'):
         render(sc, os.path.join(out, zid + '.png'), SAMPLES)
     geo = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT', 'META') and not o.hide_render]

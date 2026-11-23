@@ -27,7 +27,7 @@ ZOOMS = {
     'saas':      {'glass': [(0.21, 2.33, 3.28)], 'W0': 1.55, 'W1': 1.25, 'elev': 0.12, 'teams': ['saas']},
     'lilies':    {'glass': [(3.49, -0.14, 1.97), (3.79, 0.01, 1.97)], 'frame': False, 'frost_out': 0.002, 'W0': 1.6, 'W1': 1.25, 'elev': 0.18, 'side': 0.75,
                   'teams': ['lily-and-rain', 'lily-and-fire']},
-    'community': {'glass': [(-4.16, -2.82, 0.83)], 'W0': 1.55, 'W1': 1.3, 'elev': 0.32, 'frost_dim': True, 'teams': ['community']},
+    'community': {'glass': [(-2.93, -2.42, 0.83)], 'W0': 1.55, 'W1': 1.3, 'elev': 0.15, 'teams': ['community']},   # the bakery's canal side: open water in front
 }
 GLASS_NAMES = ('pane', 'bay_glass', 'win_glass', 'shop_glass')
 
