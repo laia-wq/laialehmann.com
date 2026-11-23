@@ -501,10 +501,10 @@ def barge_hull(P, L, W=0.33, deck_mat=None, mat=None):
     prof = [(1.0, 0.0), (1.0, 0.06), (0.99, 0.13), (0.96, 0.2), (0.88, 0.3), (0.65, 0.55), (0.3, 0.9), (0.0, 1.0)]
     def half(t):
         if t > 0.42: return W * max(0.025, math.sqrt(max(0.0, 1 - ((t - 0.42) / 0.58) ** 2)) ** 0.9)
-        if t < -0.75: return W * (1 - 0.3 * ((-t - 0.75) / 0.25) ** 2)
+        if t < -0.5: return W * max(0.42, math.sqrt(max(0.0, 1 - ((-t - 0.5) / 0.56) ** 2)))   # a rounded counter stern
         return W
-    sheer = lambda t: 0.19 + 0.1 * max(0.0, (t - 0.3) / 0.7) ** 2 + 0.03 * max(0.0, (-t - 0.6) / 0.4) ** 2
-    keel = lambda t: -0.09 + 0.08 * max(0.0, (t - 0.55) / 0.45) ** 2
+    sheer = lambda t: 0.19 + 0.1 * max(0.0, (t - 0.3) / 0.7) ** 2 + 0.06 * max(0.0, (-t - 0.55) / 0.45) ** 2
+    keel = lambda t: -0.09 + 0.08 * max(0.0, (t - 0.55) / 0.45) ** 2 + 0.06 * max(0.0, (-t - 0.6) / 0.4) ** 2
     me = bpy.data.meshes.new('hull'); bm = _bm.new()
     rings = []
     for i in range(N + 1):
@@ -602,6 +602,27 @@ def houseboat(x, y, a, L=2.2):
     limb(rp + Vector((0, 0, 0.08)), rp + Vector((0, 0, 0.27)), 0.01, iron)
     limb(rp + Vector((0, 0, 0.26)), rp + Vector((0, 0, 0.29)) + d * 0.35, 0.008, iron)
     sphere('tiller_knob', rp + Vector((0, 0, 0.29)) + d * 0.36, 0.013, wood('gunwale', (0.45, 0.16, 0.11), 6), 8)
+    # a cat asleep on the bow deck, curled up
+    catf = solid('cat_fur', (0.42, 0.42, 0.4), 0.8)
+    cp = P(L * 0.3, 0.14, sheer(0.6) + 0.035)
+    sphere('boat_cat', cp, 0.05, catf, 14, (1.3, 1.0, 0.6))
+    sphere('boat_cat', cp + d * 0.05 + s_ * 0.02 + Vector((0, 0, 0.012)), 0.03, catf, 12)
+    for sg in (-1, 1):
+        cyl('boat_cat_ear', cp + d * 0.06 + s_ * (0.02 + sg * 0.014) + Vector((0, 0, 0.04)), 0.009, 0.018, catf, verts=4, r2=0.0)
+    limb(cp - d * 0.06, cp - d * 0.02 - s_ * 0.06 + Vector((0, 0, -0.01)), 0.009, catf)
+    # an old bike leaning on the cabin, and a rain barrel at the stern
+    bk = solid('bike_frame', (0.15, 0.3, 0.32), 0.5, metal=0.4)
+    for k, du in enumerate((-0.12, 0.12)):
+        wc = P(-0.15 - L * 0.3 + 0.95 + du, -0.27, 0.27)
+        w_ = cyl('bike_wheel', wc, 0.07, 0.008, iron, verts=24, rot=(math.pi / 2, 0, a)); cut(w_, cyl('bw_hole', wc, 0.063, 0.05, None, verts=24, rot=(math.pi / 2, 0, a)))
+    b0, b1 = P(-0.15 - L * 0.3 + 0.83, -0.27, 0.27), P(-0.15 - L * 0.3 + 1.07, -0.27, 0.27)
+    seat, bar = P(-0.15 - L * 0.3 + 0.9, -0.27, 0.38), P(-0.15 - L * 0.3 + 1.05, -0.27, 0.4)
+    for a_, b_ in ((b0, seat), (seat, bar), (bar, b1), (seat, P(-0.15 - L * 0.3 + 0.95, -0.27, 0.28)), (P(-0.15 - L * 0.3 + 0.95, -0.27, 0.28), b1)):
+        limb(a_, b_, 0.006, bk)
+    box('bike_saddle', seat + Vector((0, 0, 0.012)), (0.05, 0.02, 0.012), solid('saddle', (0.1, 0.07, 0.05), 0.6), bevel=0.004, rot=R_)
+    bp_ = P(-L * 0.44, 0.12, sheer(-0.88))
+    cyl('rain_barrel', bp_ + Vector((0, 0, 0.07)), 0.055, 0.14, wood('barrel', (0.36, 0.24, 0.14), 6), verts=16, r2=0.05)
+    for hz in (0.03, 0.11): cyl('barrel_hoop', bp_ + Vector((0, 0, hz)), 0.057, 0.008, iron, verts=16)
     # a short mast at the bow with a faded pennant
     mp_ = P(L * 0.4, 0.0, sheer(0.8) - 0.02)
     limb(mp_, mp_ + Vector((0, 0, 0.55)), 0.01, wood('gunwale', (0.45, 0.16, 0.11), 6))
