@@ -246,13 +246,13 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
         box('bay_glass', W.P(u, bd - 0.02, gz), W.S(bw - 0.06, 0.01, gh), glass, bevel=0)
         for k in range(4):
             box('bay_mull', W.P(u - (bw - 0.06) / 2 + k * (bw - 0.06) / 3, bd - 0.012, gz), W.S(0.028, 0.022, gh), trim, bevel=0.003)
-        box('bay_mull', W.P(u, bd - 0.012, tz), W.S(bw - 0.06, 0.022, 0.024), trim, bevel=0.003)
+        box('bay_mull', W.P(u, bd - 0.014, tz), W.S(bw - 0.06, 0.016, 0.024), trim, bevel=0.003)
         for sg in sides:
             xs = u + sg * (bw / 2 - 0.02)
             box('bay_glass', W.P(xs, bd / 2 + 0.01, gz), W.S(0.01, bd - 0.1, gh), glass, bevel=0)
             for dd in (0.04, bd / 2 + 0.01, bd - 0.05):
                 box('bay_mull', W.P(xs + sg * 0.008, dd, gz), W.S(0.022, 0.028, gh), trim, bevel=0.003)
-            box('bay_mull', W.P(xs + sg * 0.008, bd / 2 + 0.01, tz), W.S(0.022, bd - 0.08, 0.024), trim, bevel=0.003)
+            box('bay_mull', W.P(xs + sg * 0.008, bd / 2 + 0.01, tz), W.S(0.016, bd - 0.08, 0.024), trim, bevel=0.003)
         # sill all round
         box('bay_sill', W.P(u, bd / 2 + 0.015, za - 0.005), W.S(bw + 0.05, bd + 0.03, 0.03), trim, bevel=0.006)
         # cornice: a crown moulding and a row of little dentils
