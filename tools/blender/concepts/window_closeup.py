@@ -473,6 +473,38 @@ def zoom_generic(sc, street_cam, G, zid):
                 base = o.name.split('.')[0]
                 if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass') or (depth > 0.004 and base not in keep):
                     o.hide_render = True
+    # neighbouring windows' shutters overlap where they meet (renders black):
+    # keep one of each pair, and put a board behind every shutter in view
+    shs = []
+    for o in sc.objects:
+        if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] == 'shutter':
+            lo, hi = ZP._bb(o)
+            if any((((lo + hi) / 2) - c).length < 1.0 for _, c, *_ in wins): shs.append((o, lo, hi))
+    gone = []
+    for i, (a_, alo, ahi) in enumerate(shs):
+        for b_, blo, bhi in shs[i + 1:]:
+            if a_ in gone or b_ in gone: continue
+            ox = min(ahi.x, bhi.x) - max(alo.x, blo.x); oy = min(ahi.y, bhi.y) - max(alo.y, blo.y)
+            if ox > 0.02 and oy > -0.01 and min(ahi.z, bhi.z) - max(alo.z, blo.z) > 0.1 or (oy > 0.02 and ox > -0.01 and min(ahi.z, bhi.z) - max(alo.z, blo.z) > 0.1):
+                gone.append(b_)
+    for g_ in gone:
+        glo, ghi = ZP._bb(g_); g_.hide_render = True
+        for o in sc.objects:
+            if o.type == 'MESH' and o.name.split('.')[0] == 'louvre':
+                lo, hi = ZP._bb(o)
+                if glo.x - 0.01 <= lo.x and hi.x <= ghi.x + 0.01 and glo.y - 0.01 <= lo.y and hi.y <= ghi.y + 0.01 and glo.z - 0.01 < lo.z < ghi.z:
+                    o.hide_render = True
+    sb = solid('dw_shutter_back', (0.12, 0.16, 0.13), 0.8)
+    for o, lo, hi in shs:
+        if o in gone: continue
+        _, c0, t0, n0, *_ = wins[0]
+        cc = (lo + hi) / 2 - n0 * 0.012
+        b_ = box('zw_shutter_back', cc, (abs(t0.x) * (hi.x - lo.x) + abs(t0.y) * (hi.y - lo.y) - 0.01, 0.004, hi.z - lo.z - 0.01), sb, bevel=0)
+        b_.rotation_euler = (0, 0, math.atan2(t0.y, t0.x))
+    print('ZOOM shutters dropped', [g_.name for g_ in gone])
+    if spec.get('frost_dim'):
+        frost = frost.copy(); frost.name = 'frosted_dim'
+        frost.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.16, 0.12, 0.08, 1)
     panes = []
     rot_for = lambda n: (math.pi / 2, 0, math.atan2(n.y, n.x) + math.pi / 2)
     for k, (g, c, t, n, w, h) in enumerate(wins):
