@@ -437,8 +437,8 @@ export const signPlay: Play = (svg, PW) => {
   const { room } = stage(svg, PW);
   const arm = el('path', { stroke: 'none' }, room);
   const palm = el('path', { stroke: 'none' }, room);
-  const fingers = [0, 1, 2, 3].map(() => el('path', { fill: 'none', 'stroke-width': 17 }, room));
-  const thumb = el('path', { fill: 'none', 'stroke-width': 19 }, room);
+  const fingers = [0, 1, 2, 3].map((k) => el('path', { fill: 'none', 'stroke-width': k === 3 ? 11 : 12.5 }, room));
+  const thumb = el('path', { fill: 'none', 'stroke-width': 14 }, room);
   // per letter: curl of index, middle, ring, pinky (0 straight .. 1 folded), spread, thumb (angle, curl)
   const L: Record<string, number[]> = {
     A: [1, 1, 1, 1, 0, 0.15, 0.1], B: [0, 0, 0, 0, 0, 1.4, 0.9], C: [0.5, 0.5, 0.5, 0.5, 0, 0.7, 0.4], L: [0, 1, 1, 1, 0, -0.1, 0],
@@ -447,16 +447,16 @@ export const signPlay: Play = (svg, PW) => {
   const word = ['L', 'A', 'I', 'A', 'C', 'B', 'V', 'Y', 'W'];
   const DUR = 1.3;
   const cx = 150, cy = 250;
-  const base = [[-30, -40], [-10, -46], [10, -44], [28, -36]];
-  const len = [62, 68, 62, 48];
+  const base = [[-21, -36], [-7, -40], [7, -38], [20, -32]];
+  const len = [84, 92, 86, 66];
   return (time: number) => {
     const n = word.length, tt = time % (n * DUR), i = Math.floor(tt / DUR);
     const s_ = ease(Math.min(1, ((tt - i * DUR) / DUR) * 1.6));
     const A = L[word[i]], B = L[word[(i + 1) % n]];
     const v = A.map((a, k) => a + (B[k] - a) * s_);
     const sway = Math.sin(time * 0.9) * 3;
-    set(arm, `M ${cx - 34} ${cy + 30} Q ${cx - 30} ${cy + 120} ${cx - 44} ${cy + 200} L ${cx + 40} ${cy + 200} Q ${cx + 30} ${cy + 120} ${cx + 34} ${cy + 30} Z`);
-    set(palm, `M ${cx - 40 + sway} ${cy - 40} Q ${cx + sway} ${cy - 54} ${cx + 38 + sway} ${cy - 36} L ${cx + 36} ${cy + 34} Q ${cx} ${cy + 48} ${cx - 36} ${cy + 34} Z`);
+    set(arm, `M ${cx - 20} ${cy + 36} Q ${cx - 22} ${cy + 120} ${cx - 30} ${cy + 200} L ${cx + 30} ${cy + 200} Q ${cx + 20} ${cy + 120} ${cx + 20} ${cy + 36} Z`);
+    set(palm, `M ${cx - 28 + sway} ${cy - 36} Q ${cx + sway} ${cy - 46} ${cx + 27 + sway} ${cy - 32} L ${cx + 24} ${cy + 26} Q ${cx} ${cy + 44} ${cx - 24} ${cy + 26} Z`);
     fingers.forEach((f, k) => {
       const curl = v[k], spread = (k === 1 ? -1 : k === 2 ? 1 : k === 0 ? -1.6 : 1.6) * v[4] * 0.5;
       const [bx, by] = [cx + base[k][0] + sway, cy + base[k][1]];
@@ -467,7 +467,7 @@ export const signPlay: Play = (svg, PW) => {
       set(f, `M ${bx} ${by} L ${m[0]} ${m[1]} L ${e[0]} ${e[1]}`);
     });
     const ta = Math.PI + 0.6 - v[5] * 1.2, tc = v[6];
-    const t0 = [cx - 34 + sway, cy + 12], t1 = [t0[0] + Math.cos(ta) * 40, t0[1] + Math.sin(ta) * 40];
+    const t0 = [cx - 24 + sway, cy + 8], t1 = [t0[0] + Math.cos(ta) * 38, t0[1] + Math.sin(ta) * 38];
     const t2 = [t1[0] + Math.cos(ta + tc * 1.8) * 30, t1[1] + Math.sin(ta + tc * 1.8) * 30];
     set(thumb, `M ${t0[0]} ${t0[1]} L ${t1[0]} ${t1[1]} L ${t2[0]} ${t2[1]}`);
   };
@@ -657,7 +657,7 @@ export const firePlay: Play = (svg, PW) => {
   const st = stage(svg, PW);
   const glowId = 'glow' + Math.random().toString(36).slice(2, 8);
   const f = el('filter', { id: glowId, x: '-50%', y: '-50%', width: '200%', height: '200%' }, st.defs);
-  el('feGaussianBlur', { stdDeviation: 9 }, f);
+  el('feGaussianBlur', { stdDeviation: 5 }, f);
   const light = el('g', { transform: `scale(${st.sx} 1)`, filter: `url(#${glowId})` }, st.svg);
   st.svg.insertBefore(light, st.shadow);
   const flare = el('circle', { cx: 150, cy: 330, r: 10, fill: '#fff3d6', opacity: 0 }, light);
@@ -668,7 +668,7 @@ export const firePlay: Play = (svg, PW) => {
     flare.setAttribute('r', String(10 + fl * 90)); flare.setAttribute('opacity', String(fl));
     const burn = seg(t, 0.2, 1.2);
     flames.forEach((p, k) => {
-      const x = 92 + k * 30, h = (90 + (k % 3) * 40) * burn * (0.85 + 0.15 * Math.sin(t * 9 + k * 2)), w = 22 + (k % 2) * 8;
+      const x = 92 + k * 30, h = (150 + (k % 3) * 60) * burn * (0.82 + 0.18 * Math.sin(t * 9 + k * 2)), w = 20 + (k % 2) * 8;
       const sw = Math.sin(t * 5 + k) * 8;
       set(p, `M ${x - w} 380 Q ${x - w} ${380 - h * 0.5} ${x + sw} ${380 - h} Q ${x + w} ${380 - h * 0.5} ${x + w} 380 Z`);
       p.setAttribute('opacity', String(burn * 0.85));
