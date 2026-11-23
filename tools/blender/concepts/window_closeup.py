@@ -439,3 +439,134 @@ def design_windows(sc, street_cam, G):
         render(sc, os.path.join(out, 'pane_%d.png' % k), 4)
     print('DESIGN CLOSEUP DONE', meta)
     sys.exit(0)
+
+
+# ---------------------------------------------------------------- any other window zoom
+def zoom_generic(sc, street_cam, G, zid):
+    """A zoom described in zoom_props.ZOOMS: one or more windows, each found by
+    the street's glass nearest a point. Their glass becomes frosted and lit
+    (with a proper frame where the street's was simple), the camera swings
+    from the street round to face them, and each window gets its own mask."""
+    import zoom_props as ZP
+    spec = ZP.ZOOMS[zid]
+    out = os.environ['CLOSE_OUT']; os.makedirs(out, exist_ok=True)
+    SAMPLES = G['SAMPLES']
+    bpy.context.view_layer.update()
+    frost = frosted_glow()
+    paint = painted_wood('zoom_frame', spec.get('paint', (0.8, 0.76, 0.66)))
+    d0 = ZP.STREET_DIR
+    wins = []
+    for k, gp in enumerate(spec['glass']):
+        g = ZP.find_glass(sc, gp)
+        c, t, n, w, h = ZP.frame_of(g, d0)
+        wins.append((g, c, t, n, w, h))
+    # clear the street's glazing and whatever was behind it
+    keep = ('A', 'B', 'C', 'D', 'shutter', 'louvre', 'bay', 'bay_mull', 'bay_post', 'bay_panel', 'bay_sill', 'bay_cornice', 'bay_dentil', 'bay_roof',
+            'win_frame', 'win_mull', 'win_box', 'wb_flower', 'trimband', 'cabin', 'board', 'roof', 'hull', 'sill', 'string', 'voussoir', 'lintel')
+    for g, c, t, n, w, h in wins:
+        g.hide_render = True
+        for o in list(sc.objects):
+            if o.type not in ('MESH', 'CURVE') or o.name.startswith(('zp_', 'dt_', 'plush')) or o is g: continue
+            lo, hi = ZP._bb(o); q = (lo + hi) / 2 - c
+            along, depth = q.dot(t), -q.dot(n)
+            if abs(along) < w / 2 + 0.01 and -0.03 < depth < 0.9 and abs(q.z) < h / 2 + 0.01:
+                base = o.name.split('.')[0]
+                if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass') or (depth > 0.004 and base not in keep):
+                    o.hide_render = True
+    panes = []
+    rot_for = lambda n: (math.pi / 2, 0, math.atan2(n.y, n.x) + math.pi / 2)
+    for k, (g, c, t, n, w, h) in enumerate(wins):
+        P = lambda a, z, o_=0.0: c + t * a + Vector((0, 0, z)) - n * o_
+        yaw = math.atan2(t.y, t.x)
+        def bx(name, a, z, o_, sa, sz, sd, mat, bev=0.003):
+            b_ = box(name, P(a, z, o_), (sa, sd, sz), mat, bevel=bev); b_.rotation_euler = (0, 0, yaw); return b_
+        st = min(0.03, w * 0.08)
+        top = h / 2
+        if spec.get('arch'):
+            r = w / 2; zs = h / 2 - r; top = zs
+        if spec.get('frame', True):
+            for sg in (-1, 1):
+                bx('zf_stile', sg * (w / 2 - st / 2), (top - h / 2) / 2, -0.012, st, top + h / 2, 0.03, paint)
+            bx('zf_rail', 0, -h / 2 + 0.025, -0.012, w, 0.05, 0.03, paint)
+            bx('zf_rail', 0, top - st / 2, -0.012, w, st, 0.03, paint)
+            bx('zf_meet', 0, (top - h / 2) / 2 + 0.012, -0.01, 0.03, top + h / 2 - 0.05, 0.034, paint)
+            gw = (w - 2 * st - 0.03) / 2
+            for sg in (-1, 1):
+                ca = sg * (0.015 + gw / 2)
+                bx('zf_bar', ca, (top - h / 2) / 2 + 0.012, -0.004, 0.012, top + h / 2 - 0.05, 0.016, paint)
+                for f in (1 / 3, 2 / 3):
+                    bx('zf_bar', ca, -h / 2 + 0.05 + (top + h / 2 - 0.05) * f, -0.004, gw, 0.012, 0.016, paint)
+            if spec.get('arch'):
+                for j in range(18):
+                    a0, a1 = math.pi * j / 18, math.pi * (j + 1) / 18; am = (a0 + a1) / 2
+                    rr = r - st / 2
+                    b_ = box('zf_head', P(rr * math.cos(am), zs + rr * math.sin(am), -0.012), ((a1 - a0) * rr * 1.08, 0.03, st), paint, bevel=0.002)
+                    b_.rotation_euler = Matrix.Rotation(yaw, 3, 'Z').to_euler() if False else (0, 0, 0)
+                    b_.rotation_euler = (Matrix.Rotation(yaw, 3, 'Z') @ Matrix.Rotation(-(am + math.pi / 2), 3, 'Y')).to_euler()
+                for a in (math.pi / 4, math.pi / 2, 3 * math.pi / 4):
+                    p0 = P(0, zs, -0.004); p1 = p0 + (t * math.cos(a) + Vector((0, 0, math.sin(a)))) * (r - st)
+                    b_ = box('zf_bar', (p0 + p1) / 2, (0.012, 0.016, (p1 - p0).length), paint, bevel=0.002)
+                    b_.rotation_euler = (p1 - p0).to_track_quat('Z', 'Y').to_euler()
+        # frosted glass, lit from behind
+        fo = -spec.get('frost_out', -0.004)
+        if spec.get('frame', True):
+            fr = box('sash_frost%d' % k, P(0, (top - h / 2) / 2 + 0.012, fo), (w - 2 * st + 0.01, 0.003, top + h / 2 - 0.02), frost, bevel=0)
+        else:
+            fr = box('sash_frost%d' % k, P(0, 0, fo), (w, 0.003, h), frost, bevel=0)
+        fr.rotation_euler = (0, 0, yaw)
+        if spec.get('arch'):
+            cyl('sash_frost%d' % k, P(0, zs, 0.005), r - st + 0.005, 0.003, frost, verts=40, rot=rot_for(n))
+        if not spec.get('frame', True): st = 0.0
+        zt = h / 2 - st
+        panes.append({'tl': P(-(w / 2 - st), zt), 'tr': P(w / 2 - st, zt), 'bl': P(-(w / 2 - st), -h / 2 + (0.05 if spec.get('frame', True) else 0.0)),
+                      'aspect': (w - 2 * st) / (zt + h / 2 - (0.05 if spec.get('frame', True) else 0.0)), 'team': spec['teams'][k]})
+    # ---- the camera
+    T = sum((c for _, c, *_ in wins), Vector()) / len(wins)
+    nm = sum((n for *_, n, w, h in [(x[0], x[1], x[2], x[3], x[4], x[5]) for x in wins]), Vector())
+    nm = wins[0][3].copy()
+    if spec.get('side') and len(wins) > 1: nm = (wins[0][3] + wins[1][3] * spec['side']).normalized()
+    d1 = (nm + Vector((0, 0, spec.get('elev', 0.12)))).normalized()
+    W0, W1 = spec['W0'], spec['W1']
+    cd = bpy.data.cameras.new('closecam'); cd.type = 'PERSP'; cd.sensor_width = 36; cd.clip_start = 0.05; cd.clip_end = 300
+    ccam = link(bpy.data.objects.new('closecam', cd)); sc.camera = ccam
+    ease = lambda x: x * x * (3 - 2 * x)
+    def place(x):
+        e = ease(x)
+        dirv = d0.lerp(d1, e).normalized()
+        lens = math.exp(math.log(420) + (math.log(50) - math.log(420)) * e)
+        width = W0 + (W1 - W0) * e
+        cd.lens = lens
+        ccam.location = T + dirv * (width * lens / 36)
+        ccam.rotation_euler = (T - ccam.location).to_track_quat('-Z', 'Y').to_euler()
+        bpy.context.view_layer.update()
+    from bpy_extras.object_utils import world_to_camera_view
+    uvv = lambda cam, p: (lambda v: [round(v.x, 5), round(1 - v.y, 5)])(world_to_camera_view(sc, cam, p))
+    meta = {'street_target': uvv(street_cam, T), 'scale': W0 / 15.5,
+            'street_quads': [[uvv(street_cam, c + t * (sa * w / 2) + Vector((0, 0, sz * h / 2))) for sa, sz in ((-1, 1), (1, 1), (1, -1), (-1, -1))]
+                             for _, c, t, n, w, h in wins]}
+    rr = sc.render
+    n_frames = int(os.environ.get('CLOSE_FRAMES', '30'))
+    fw, fh = int(os.environ.get('CLOSE_FW', '1440')), int(os.environ.get('CLOSE_FH', '1080'))
+    fx, fy = int(os.environ.get('RES_X', 2400)), int(os.environ.get('RES_Y', 1800))
+    if n_frames:
+        rr.resolution_x, rr.resolution_y = fw, fh
+        for j in range(n_frames):
+            place(j / (n_frames - 1))
+            render(sc, os.path.join(out, 'fly_%03d.png' % j), int(os.environ.get('FLY_SAMPLES', '16')))
+    meta['frames'] = n_frames
+    place(1.0)
+    rr.resolution_x, rr.resolution_y = fx, fy
+    meta['panes'] = [{'tl': uvv(ccam, p['tl']), 'tr': uvv(ccam, p['tr']), 'bl': uvv(ccam, p['bl']), 'aspect': round(p['aspect'], 4), 'team': p['team']} for p in panes]
+    json.dump(meta, open(os.path.join(out, 'closeup.json'), 'w'))
+    if not os.environ.get('SKIP_STILL'):
+        render(sc, os.path.join(out, zid + '.png'), SAMPLES)
+    geo = [o for o in sc.objects if o.type in ('MESH', 'CURVE', 'FONT', 'META') and not o.hide_render]
+    rr.film_transparent = True; sc.cycles.use_denoising = False
+    rr.resolution_x, rr.resolution_y = fx // 2, fy // 2
+    names = ['pane'] if len(wins) == 1 else ['pane_%d' % k for k in range(len(wins))]
+    for k, nm_ in enumerate(names):
+        for o in geo:
+            o.is_holdout = not o.name.startswith('sash_frost%d' % k)
+        render(sc, os.path.join(out, nm_ + '.png'), 4)
+    print('ZOOM DONE', zid, meta)
+    sys.exit(0)

@@ -197,6 +197,17 @@ export const projects: Project[] = [
     object: 'swimmer',
   },
   {
+    id: 'community',
+    title: 'Community',
+    status: 'community',
+    summary: 'Cooking free meals, a youth council, the library, two donation drives.',
+    body: [
+      'I volunteer as a cook, making and serving free meals.',
+      'I am a member of the Youth Council for the Office of MLA Bowinn Ma, and I volunteer at the library.',
+      'I founded and ran two donation drives that collected about $50,000 in goods for libraries, Indigenous schools, shelters and families.',
+    ],
+  },
+  {
     id: 'donation-drives',
     title: 'Donation Drives',
     status: 'community',

@@ -7,7 +7,7 @@ import { Panel, projectBody } from './ui/panel';
 import { drawSignature } from './ui/signature';
 import { RoomView } from './ui/room';
 import { roomForBuilding } from './content/rooms';
-import { WindowView, windowForBuilding } from './ui/windowview';
+import { WindowView, zoomAt, loadZoomIndex, type WindowSpec } from './ui/windowview';
 
 type Mode = 'scene' | '2d';
 
@@ -164,22 +164,45 @@ async function bootScene() {
   addEventListener('resize', () => drawSignature(sigCanvas, { color: '#efe3cf', animate: false, width: sigWidth() }));
   const { CanalScene } = await import('./canal/scene');
   stage.addEventListener('pointermove', (e) => { label.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 12}px)`; });
+  // windows you can look into: found by where the pointer is on the street image
+  loadZoomIndex();
+  const streetUV = (x: number, y: number) => {
+    const c = stage.querySelector('.canal-canvas') as HTMLElement | null;
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return [(x - r.left) / r.width, (y - r.top) / r.height] as const;
+  };
+  let pointed: WindowSpec | null = null;
+  stage.addEventListener('pointermove', (e) => {
+    if (windowView.isOpen) return;
+    const uv = streetUV(e.clientX, e.clientY);
+    const z = uv ? zoomAt(uv[0], uv[1]) : null;
+    if (z === pointed) return;
+    pointed = z;
+    if (z) { WindowView.prefetch(z.id); label.textContent = z.label; label.classList.add('is-on'); }
+    stage.style.cursor = z ? 'pointer' : '';
+  });
+  const openZoom = (win: WindowSpec) => {
+    label.classList.remove('is-on');
+    app.classList.add('is-looking');
+    const canvas = stage.querySelector('.canal-canvas') as HTMLElement;
+    windowView.open(win, canvas.getBoundingClientRect()).catch(() => { app.classList.remove('is-looking'); windowView.close(); openSheet('projects'); });
+    live.textContent = win.panes.length > 1 ? `${win.label}. Pick a window.` : `Looking in at ${win.label}.`;
+  };
+  // a click on a window opens its zoom before the street's own click sees it
+  stage.addEventListener('click', (e) => {
+    if (windowView.isOpen) return;
+    const uv = streetUV(e.clientX, e.clientY);
+    const z = uv ? zoomAt(uv[0], uv[1]) : null;
+    if (z) { e.stopPropagation(); e.preventDefault(); openZoom(z); }
+  }, true);
   const scene = new CanalScene(stage, {
     onHover(g) {
-      if (g) { const w = windowForBuilding(g); if (w) WindowView.prefetch(w.id); }
+      if (pointed) return;     // a window's own label wins over its building's
       label.textContent = g ? GROUP_NAMES[g] ?? '' : '';
       label.classList.toggle('is-on', !!g);
     },
     onSelect(g) {
-      const win = windowForBuilding(g);
-      if (win) {
-        label.classList.remove('is-on');
-        app.classList.add('is-looking');
-        const canvas = stage.querySelector('.canal-canvas') as HTMLElement;
-        windowView.open(win, canvas.getBoundingClientRect()).catch(() => { app.classList.remove('is-looking'); windowView.close(); openSheet('projects'); });
-        live.textContent = win.panes.length > 1 ? 'Looking up at three windows. Pick one.' : `Looking in at ${win.panes[0].label}.`;
-        return;
-      }
       const room = roomForBuilding(g);
       if (!room) { openSheet('projects'); return; }
       // lean in towards the building, then the room opens

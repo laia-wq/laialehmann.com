@@ -16,7 +16,7 @@
  */
 import { projects } from '../content/projects';
 import { projectBody } from './panel';
-import { boxesPlay, dronePlay, rescuePlay, vrPlay, type Play } from './shadowplays';
+import { boxesPlay, dronePlay, rescuePlay, vrPlay, forestPlay, physicsPlay, signPlay, robotPlay, calendarPlay, blocksPlay, servePlay, rainPlay, firePlay, type Play } from './shadowplays';
 
 export interface WindowSpec {
   id: string;
@@ -24,6 +24,10 @@ export interface WindowSpec {
   building: string;
   /** what the view says while you choose (only for more than one window) */
   hint?: string;
+  /** what the street says when you point at it */
+  label: string;
+  /** every window's play shows (still) before a pick; picking one sets it going */
+  idle?: boolean;
   /** one per window, in the order closeup.json lists them */
   panes: { project: string; label: string; play: Play }[];
 }
@@ -184,6 +188,10 @@ export class WindowView {
     await stillReady;
     this.el.classList.add('is-there');
     this.fitPane();
+    if (spec.idle) {
+      this.steps.forEach((st) => st(0));
+      this.el.querySelectorAll<HTMLElement>('.window-play').forEach((e) => e.classList.add('is-on'));
+    }
     if (!multi) this.select(0);
     else (this.el.querySelector('.pane-hit') as HTMLElement)?.focus({ preventScroll: true });
   }
@@ -196,7 +204,8 @@ export class WindowView {
     const p = byId(this.spec.panes[k]?.project ?? '');
     const body = this.el.querySelector('.room-body') as HTMLElement;
     body.innerHTML = p ? projectBody(p, 2) : '';
-    this.el.querySelectorAll<HTMLElement>('.window-play').forEach((e) => e.classList.toggle('is-on', Number(e.dataset.k) === k));
+    if (this.spec.idle) this.steps.forEach((st, j) => { if (j !== k) st(0); });
+    else this.el.querySelectorAll<HTMLElement>('.window-play').forEach((e) => e.classList.toggle('is-on', Number(e.dataset.k) === k));
     this.el.querySelectorAll<HTMLElement>('.pane-hit').forEach((e) => e.setAttribute('aria-pressed', String(Number(e.dataset.k) === k)));
     const wasSettled = this.el.classList.contains('is-settled');
     this.el.classList.add('is-settled');
@@ -328,12 +337,55 @@ export class WindowView {
 }
 
 export const WINDOWS: WindowSpec[] = [
-  { id: 'shop', building: 'shop', panes: [{ project: 'squirrels-and-seeds', label: 'Squirrels and Seeds', play: boxesPlay }] },
-  { id: 'design', building: 'tall', hint: 'three design teams, three windows. pick one.',
+  { id: 'shop', building: 'shop', label: 'Squirrels and Seeds', panes: [{ project: 'squirrels-and-seeds', label: 'Squirrels and Seeds', play: boxesPlay }] },
+  { id: 'design', building: 'tall', label: 'Design teams', hint: 'three design teams, three windows. pick one.',
     panes: [
       { project: 'warg', label: 'WARG', play: dronePlay },
       { project: 'medtechresolve', label: 'MedTechResolve', play: rescuePlay },
       { project: 'wrl', label: 'Waterloo Reality Labs', play: vrPlay },
     ] },
+  { id: 'firsts', building: 'boat', label: 'Where it started', hint: 'my first three projects. pick a window.',
+    panes: [
+      { project: 'forest-loss', label: 'Forest Loss Detection', play: forestPlay },
+      { project: 'physics-engine', label: '2D Physics Engine', play: physicsPlay },
+      { project: 'signwise', label: 'Signwise', play: signPlay },
+    ] },
+  { id: 'robot', building: 'tall', label: 'Sink-finding robot', panes: [{ project: 'brita-robot', label: 'Sink-finding robot', play: robotPlay }] },
+  { id: 'watif', building: 'shop', label: 'Waterloo API + WatIf', panes: [{ project: 'watif', label: 'Waterloo API + WatIf', play: calendarPlay }] },
+  { id: 'saas', building: 'shop', label: 'SaaS from scratch', panes: [{ project: 'saas', label: 'SaaS from scratch', play: blocksPlay }] },
+  { id: 'lilies', building: 'corner', label: 'Lily and Rain, Lily and Fire', hint: 'two lilies. pick a window.', idle: true,
+    panes: [
+      { project: 'lily-and-rain', label: 'Lily and Rain', play: rainPlay },
+      { project: 'lily-and-fire', label: 'Lily and Fire', play: firePlay },
+    ] },
+  { id: 'community', building: 'bakery', label: 'Community', panes: [{ project: 'community', label: 'Community', play: servePlay }] },
 ];
+export const windowById = (id: string) => WINDOWS.find((w) => w.id === id) ?? null;
+
+/** Where each zoom's windows are on the street (public/windows/index.json),
+ *  only for zooms whose close-up has been rendered. */
+type Quad = [number, number][];
+let ZOOM_INDEX: { id: string; quads: Quad[] }[] = [];
+export async function loadZoomIndex() {
+  try {
+    const base = `${import.meta.env.BASE_URL}windows/`;
+    const idx: Record<string, Quad[]> = await fetch(base + 'index.json').then((r) => r.json());
+    const ok = await Promise.all(Object.keys(idx).map((id) =>
+      fetch(`${base}${id}/closeup.json`, { method: 'HEAD' }).then((r) => (r.ok && windowById(id) ? id : null)).catch(() => null)));
+    ZOOM_INDEX = ok.filter((id): id is string => !!id).map((id) => ({ id, quads: idx[id] }));
+  } catch { ZOOM_INDEX = []; }
+}
+const inQuad = (q: Quad, u: number, v: number) => {
+  let inside = false;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+    const [xi, yi] = q[i], [xj, yj] = q[j];
+    if ((yi > v) !== (yj > v) && u < ((xj - xi) * (v - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+/** The zoom whose window is under (u, v) on the street image, if any. */
+export const zoomAt = (u: number, v: number) => {
+  const z = ZOOM_INDEX.find((e) => e.quads.some((q) => inQuad(q, u, v)));
+  return z ? windowById(z.id) : null;
+};
 export const windowForBuilding = (g: string) => WINDOWS.find((w) => w.building === g) ?? null;

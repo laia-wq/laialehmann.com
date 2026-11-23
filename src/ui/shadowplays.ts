@@ -45,7 +45,7 @@ function stage(svg: SVGSVGElement, PW: number) {
   const shadow = el('g', { fill: ink, stroke: ink, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', filter: `url(#${id})`, opacity: 0.86 }, svg);
   const sx = PW / 300;
   const room = el('g', { transform: `scale(${sx} 1)` }, shadow);
-  return { room, sx, defs, filter: `url(#${id})`, svg };
+  return { room, sx, defs, filter: `url(#${id})`, svg, shadow };
 }
 
 export interface Pose {
@@ -58,6 +58,7 @@ export interface Pose {
   hand: [number, number];   // front hand target
   hand2: [number, number];  // back hand target
   hipY?: number;        // standing hip height (default 298)
+  sit?: boolean;        // sitting on a chair: thighs forward, shins down
 }
 
 /** A person in profile: legs that bend at the knee and lift their feet,
@@ -95,7 +96,13 @@ export function person(parent: Element, opts: { headset?: boolean } = {}) {
       return { d: `M ${hx} ${hipY} L ${j.jx} ${j.jy} L ${j.ex} ${j.ey}`,
                shoe: `M ${j.ex - face * 7} ${j.ey - 6} Q ${j.ex + face * 4} ${j.ey - 9} ${toe} ${j.ey - 1} Q ${toe + face} ${j.ey + 3} ${toe - face * 3} ${j.ey + 3} L ${j.ex - face * 8} ${j.ey + 3} Z` };
     };
-    const lb = leg(-1), lf = leg(1);
+    const sitLeg = (side: number) => {
+      const hx = X(side * 2), kx = X(46 + side * 2), ky = hipY + 4;
+      const fx = X(42 + side * 3);
+      return { d: `M ${hx} ${hipY} L ${kx} ${ky} L ${fx} ${GROUND}`,
+               shoe: `M ${fx - face * 6} ${GROUND - 6} Q ${fx + face * 4} ${GROUND - 9} ${fx + face * 15} ${GROUND - 1} L ${fx + face * 12} ${GROUND + 3} L ${fx - face * 7} ${GROUND + 3} Z` };
+    };
+    const lb = p.sit ? sitLeg(-1) : leg(-1), lf = p.sit ? sitLeg(1) : leg(1);
     set(legBack, lb.d); set(shoeBack, lb.shoe); set(legFront, lf.d); set(shoeFront, lf.shoe);
     set(torso, `M ${X(-5 + lean)} ${shY - 8} Q ${X(-17 + lean)} ${shY - 4} ${X(-17 + lean)} ${shY + 10} Q ${X(-19)} ${shY + 50} ${X(-15)} ${hipY - 6}
       Q ${X(-17)} ${hipY + 4} ${X(-14)} ${hipY + 9} L ${X(15)} ${hipY + 9} Q ${X(18)} ${hipY + 2} ${X(15)} ${hipY - 8}
@@ -345,6 +352,326 @@ export const vrPlay: Play = (svg, PW) => {
       lean: mix(A.lean, B.lean, s), look: mix(A.look, B.look, s) + Math.sin(time * 0.8) * 0.04,
       hand: [mix(A.f[0], B.f[0], s) + wob, mix(A.f[1], B.f[1], s) - pinch],
       hand2: [mix(A.b[0], B.b[0], s) - wob, mix(A.b[1], B.b[1], s) + pinch * 0.5],
+    });
+  };
+};
+
+
+// ---------------------------------------------------------------- the first three
+const tree = (x: number, base: number, h: number) =>
+  `M ${x} ${base - h} L ${x + h * 0.22} ${base - h * 0.62} L ${x + h * 0.12} ${base - h * 0.62} L ${x + h * 0.3} ${base - h * 0.28} L ${x + h * 0.18} ${base - h * 0.28}
+   L ${x + h * 0.36} ${base - h * 0.06} L ${x + 3} ${base - h * 0.06} L ${x + 3} ${base} L ${x - 3} ${base} L ${x - 3} ${base - h * 0.06}
+   L ${x - h * 0.36} ${base - h * 0.06} L ${x - h * 0.18} ${base - h * 0.28} L ${x - h * 0.3} ${base - h * 0.28} L ${x - h * 0.12} ${base - h * 0.62} L ${x - h * 0.22} ${base - h * 0.62} Z`;
+
+/** Forest loss: a hillside of pines; a patch of them comes down, a scan line
+ *  sweeps over from above and boxes the gap it finds; then saplings grow back. */
+export const forestPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  const hill = el('path', { stroke: 'none' }, room);
+  hill.setAttribute('d', 'M -20 400 L -20 330 Q 80 300 160 318 Q 240 334 320 312 L 320 400 Z');
+  const ground = (x: number) => (x < 160 ? 330 - (x + 20) / 180 * 30 + Math.sin((x + 20) / 180 * Math.PI) * -6 : 318 - (x - 160) / 160 * 6 + Math.sin((x - 160) / 160 * Math.PI) * 8);
+  const trees = Array.from({ length: 13 }, (_, k) => {
+    const x = -6 + k * 24 + (k % 3) * 4, h = 58 + ((k * 37) % 5) * 9;
+    return { x, h, g: el('path', { stroke: 'none' }, room), cut: k >= 5 && k <= 8, order: k - 5 };
+  });
+  const scan = el('rect', { x: -20, width: 340, height: 3, stroke: 'none' }, room);
+  const boxp = el('rect', { fill: 'none', 'stroke-width': 3, 'stroke-dasharray': '8 6' }, room);
+  const LOOP = 12;
+  return (time: number) => {
+    const t = time % LOOP;
+    for (const tr of trees) {
+      const base = ground(tr.x) + 4;
+      let fall = 0, grow = 1;
+      if (tr.cut) {
+        fall = seg(t, 1.0 + tr.order * 0.55, 1.6 + tr.order * 0.55);
+        grow = seg(t, 8.0 + tr.order * 0.4, 10.6 + tr.order * 0.4);
+      }
+      const h = tr.h * (fall >= 1 ? Math.max(0.0001, grow) : 1) * (fall >= 1 && grow <= 0 ? 0 : 1);
+      const ang = fall < 1 ? fall * 88 : 0;
+      tr.g.setAttribute('d', tree(tr.x, base, Math.max(0.001, h)));
+      tr.g.setAttribute('transform', `rotate(${ang} ${tr.x} ${base})`);
+      tr.g.setAttribute('opacity', String(fall < 1 ? 1 - Math.max(0, fall - 0.8) * 5 : (grow > 0 ? 1 : 0)));
+    }
+    const sy = lerp(-20, 420, seg(t, 4.0, 6.0));
+    scan.setAttribute('y', String(sy)); scan.setAttribute('opacity', String(t > 3.9 && t < 6.1 ? 0.8 : 0));
+    const show = seg(t, 5.2, 5.8) * (1 - seg(t, 9.5, 10.5));
+    boxp.setAttribute('x', '105'); boxp.setAttribute('y', '232'); boxp.setAttribute('width', '102'); boxp.setAttribute('height', '96');
+    boxp.setAttribute('opacity', String(show)); boxp.setAttribute('stroke-dashoffset', String(t * 20));
+  };
+};
+
+/** The physics lab: balls bouncing off the floor and walls, a pendulum, and
+ *  a wireframe cube turning above them. */
+export const physicsPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  el('rect', { x: -20, y: 372, width: 340, height: 6, stroke: 'none' }, room);
+  const balls = [0, 1, 2].map((k) => ({ r: 14 + k * 5, T: 1.1 + k * 0.37, H: 150 - k * 30, vx: 38 + k * 19, ph: k * 0.7, g: el('ellipse', { stroke: 'none' }, room) }));
+  const cube = el('path', { fill: 'none', 'stroke-width': 3 }, room);
+  const pend = el('path', { fill: 'none', 'stroke-width': 3 }, room);
+  const bob = el('circle', { r: 12, stroke: 'none' }, room);
+  const V = [-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => [x, y, z])));
+  const E = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]];
+  return (t: number) => {
+    for (const b of balls) {
+      const u = ((t + b.ph) / b.T) % 1;
+      const y = 372 - b.r - b.H * 4 * u * (1 - u);
+      const squash = u < 0.06 || u > 0.94 ? 0.82 : 1;
+      const span = 300 - 2 * b.r, p = ((t + b.ph) * b.vx) % (2 * span);
+      const x = b.r + (p < span ? p : 2 * span - p);
+      b.g.setAttribute('cx', String(x)); b.g.setAttribute('cy', String(y + (1 - squash) * b.r));
+      b.g.setAttribute('rx', String(b.r / Math.sqrt(squash))); b.g.setAttribute('ry', String(b.r * squash));
+    }
+    const a = t * 0.7, c = Math.cos(a), s_ = Math.sin(a), c2 = Math.cos(0.5), s2 = Math.sin(0.5);
+    const pr = V.map(([x, y, z]) => { const X = x * c + z * s_, Z = -x * s_ + z * c, Y = y * c2 - Z * s2; return [230 + X * 34, 92 + Y * 34]; });
+    set(cube, E.map(([i, j]) => `M ${pr[i][0]} ${pr[i][1]} L ${pr[j][0]} ${pr[j][1]}`).join(' '));
+    const th = Math.sin(t * 2.1) * 0.6, px = 80, py = 40, L = 130;
+    const bx = px + Math.sin(th) * L, by = py + Math.cos(th) * L;
+    set(pend, `M ${px - 18} ${py} L ${px + 18} ${py} M ${px} ${py} L ${bx} ${by}`);
+    bob.setAttribute('cx', String(bx)); bob.setAttribute('cy', String(by));
+  };
+};
+
+/** Signwise: a hand close to the glass spelling out letters of the ASL
+ *  alphabet, easing from one shape to the next. */
+export const signPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  const arm = el('path', { stroke: 'none' }, room);
+  const palm = el('path', { stroke: 'none' }, room);
+  const fingers = [0, 1, 2, 3].map(() => el('path', { fill: 'none', 'stroke-width': 17 }, room));
+  const thumb = el('path', { fill: 'none', 'stroke-width': 19 }, room);
+  // per letter: curl of index, middle, ring, pinky (0 straight .. 1 folded), spread, thumb (angle, curl)
+  const L: Record<string, number[]> = {
+    A: [1, 1, 1, 1, 0, 0.15, 0.1], B: [0, 0, 0, 0, 0, 1.4, 0.9], C: [0.5, 0.5, 0.5, 0.5, 0, 0.7, 0.4], L: [0, 1, 1, 1, 0, -0.1, 0],
+    V: [0, 0, 1, 1, 0.35, 1.1, 0.8], Y: [1, 1, 1, 0, 0.3, -0.2, 0], I: [1, 1, 1, 0, 0, 1.2, 0.8], W: [0, 0, 0, 1, 0.3, 1.2, 0.8],
+  };
+  const word = ['L', 'A', 'I', 'A', 'C', 'B', 'V', 'Y', 'W'];
+  const DUR = 1.3;
+  const cx = 150, cy = 250;
+  const base = [[-30, -40], [-10, -46], [10, -44], [28, -36]];
+  const len = [62, 68, 62, 48];
+  return (time: number) => {
+    const n = word.length, tt = time % (n * DUR), i = Math.floor(tt / DUR);
+    const s_ = ease(Math.min(1, ((tt - i * DUR) / DUR) * 1.6));
+    const A = L[word[i]], B = L[word[(i + 1) % n]];
+    const v = A.map((a, k) => a + (B[k] - a) * s_);
+    const sway = Math.sin(time * 0.9) * 3;
+    set(arm, `M ${cx - 34} ${cy + 30} Q ${cx - 30} ${cy + 120} ${cx - 44} ${cy + 200} L ${cx + 40} ${cy + 200} Q ${cx + 30} ${cy + 120} ${cx + 34} ${cy + 30} Z`);
+    set(palm, `M ${cx - 40 + sway} ${cy - 40} Q ${cx + sway} ${cy - 54} ${cx + 38 + sway} ${cy - 36} L ${cx + 36} ${cy + 34} Q ${cx} ${cy + 48} ${cx - 36} ${cy + 34} Z`);
+    fingers.forEach((f, k) => {
+      const curl = v[k], spread = (k === 1 ? -1 : k === 2 ? 1 : k === 0 ? -1.6 : 1.6) * v[4] * 0.5;
+      const [bx, by] = [cx + base[k][0] + sway, cy + base[k][1]];
+      const a1 = -Math.PI / 2 + spread, l1 = len[k] * 0.55, l2 = len[k] * 0.5;
+      const m = [bx + Math.cos(a1 + curl * 1.6) * l1 * (1 - curl * 0.35), by + Math.sin(a1 + curl * 1.6) * l1 * (1 - curl * 0.35)];
+      const a2 = a1 + curl * 3.0;
+      const e = [m[0] + Math.cos(a2) * l2 * (1 - curl * 0.3), m[1] + Math.sin(a2) * l2 * (1 - curl * 0.3)];
+      set(f, `M ${bx} ${by} L ${m[0]} ${m[1]} L ${e[0]} ${e[1]}`);
+    });
+    const ta = Math.PI + 0.6 - v[5] * 1.2, tc = v[6];
+    const t0 = [cx - 34 + sway, cy + 12], t1 = [t0[0] + Math.cos(ta) * 40, t0[1] + Math.sin(ta) * 40];
+    const t2 = [t1[0] + Math.cos(ta + tc * 1.8) * 30, t1[1] + Math.sin(ta + tc * 1.8) * 30];
+    set(thumb, `M ${t0[0]} ${t0[1]} L ${t1[0]} ${t1[1]} L ${t2[0]} ${t2[1]}`);
+  };
+};
+
+// ---------------------------------------------------------------- the sink-finding robot
+/** A small robot rolls in, finds the sink, lifts a water filter jug under
+ *  the tap; water runs; it lowers the jug and rolls off the way it came. */
+export const robotPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  el('rect', { x: 190, y: 250, width: 130, height: 12, stroke: 'none' }, room);            // counter top
+  el('rect', { x: 200, y: 262, width: 120, height: 134, stroke: 'none', opacity: 0.0 }, room);
+  el('path', { d: 'M 200 262 L 200 396 M 300 262 L 300 396', fill: 'none', 'stroke-width': 8 }, room);   // cabinet sides
+  el('path', { d: 'M 228 250 L 228 206 Q 228 196 238 196 L 258 196 L 258 204', fill: 'none', 'stroke-width': 7 }, room); // tap
+  el('rect', { x: 222, y: 216, width: 14, height: 6, rx: 2, stroke: 'none' }, room);
+  const water = el('path', { fill: 'none', 'stroke-width': 4, 'stroke-dasharray': '10 6' }, room);
+  const bot = el('g', {}, room);
+  el('rect', { x: -26, y: -40, width: 52, height: 34, rx: 6, stroke: 'none' }, bot);        // body
+  for (const wx of [-16, 16]) el('circle', { cx: wx, cy: -4, r: 9, stroke: 'none' }, bot);  // wheels
+  el('path', { d: 'M 0 -40 L 0 -64', fill: 'none', 'stroke-width': 4 }, bot);                // mast
+  el('rect', { x: -10, y: -76, width: 20, height: 13, rx: 3, stroke: 'none' }, bot);         // camera head
+  const arm = el('path', { fill: 'none', 'stroke-width': 5 }, bot);
+  const jug = el('path', { stroke: 'none' }, bot);
+  const LOOP = 12;
+  return (time: number) => {
+    const t = time % LOOP;
+    const x = lerp(lerp(-60, 196, seg(t, 0, 3)), -60, seg(t, 8.6, 11.6));
+    const face = t > 8.6 ? -1 : 1;
+    const bump = Math.abs(Math.sin(t * 9)) * 1.2 * ((t < 3 || t > 8.6) ? 1 : 0);
+    bot.setAttribute('transform', `translate(${x} ${392 - bump}) scale(${face} 1)`);
+    const up = seg(t, 3.3, 4.6) * (1 - seg(t, 7.4, 8.4));
+    const ex = lerp(30, 40, up), ey = lerp(-34, -176, up);
+    set(arm, `M 18 -30 L ${lerp(36, 30, up)} ${lerp(-30, -100, up)} L ${ex} ${ey}`);
+    set(jug, `M ${ex - 2} ${ey - 4} L ${ex + 24} ${ey - 4} L ${ex + 22} ${ey + 30} L ${ex} ${ey + 30} Z M ${ex + 24} ${ey + 2} q 8 2 6 14 q -2 6 -6 6`);
+    const on = t > 4.8 && t < 7.2 ? 1 : 0;
+    set(water, `M 258 210 L 258 ${on ? 216 : 210}`);
+    water.setAttribute('d', on ? 'M 258 210 L 258 222' : 'M 258 210 L 258 210');
+    water.setAttribute('stroke-dashoffset', String(-t * 60));
+    water.setAttribute('opacity', String(on));
+  };
+};
+
+// ---------------------------------------------------------------- desk scenes
+function desk(room: Element) {
+  el('rect', { x: 120, y: 290, width: 150, height: 10, stroke: 'none' }, room);             // desk top
+  el('path', { d: 'M 130 300 L 130 396 M 260 300 L 260 396', fill: 'none', 'stroke-width': 8 }, room);
+  el('path', { d: 'M 40 300 L 96 300 M 46 300 L 46 396 M 90 300 L 90 396 M 44 300 L 40 210', fill: 'none', 'stroke-width': 7 }, room); // chair
+  const lid = el('path', { stroke: 'none' }, room);
+  lid.setAttribute('d', 'M 150 290 L 196 290 L 205 246 L 202 244 Z');                     // laptop
+}
+
+/** Waterloo API + WatIf: someone at a laptop under a wall calendar; days get
+ *  ticked off one by one, then the page is flipped up for a fresh month. */
+export const calendarPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  desk(room);
+  const who = person(room);
+  const page = el('g', {}, room);
+  el('rect', { x: 150, y: 60, width: 130, height: 110, rx: 3, fill: 'none', 'stroke-width': 4 }, page);
+  el('rect', { x: 150, y: 60, width: 130, height: 18, stroke: 'none' }, page);
+  const ticks: Element[] = [];
+  for (let r = 0; r < 4; r++) for (let k = 0; k < 6; k++) {
+    el('rect', { x: 158 + k * 20, y: 86 + r * 20, width: 14, height: 14, fill: 'none', 'stroke-width': 1.5 }, page);
+    ticks.push(el('path', { d: `M ${160 + k * 20} ${93 + r * 20} l 4 5 l 8 -10`, fill: 'none', 'stroke-width': 3, opacity: 0 }, page));
+  }
+  const LOOP = 12;
+  return (time: number) => {
+    const t = time % LOOP;
+    const typing = Math.sin(time * 14) * 2;
+    const n = Math.floor(Math.min(9.2, t) / 0.95);
+    ticks.forEach((k, i) => k.setAttribute('opacity', i < n ? '1' : '0'));
+    const flip = seg(t, 10.2, 11.4);
+    page.setAttribute('transform', `translate(0 ${-flip * 160}) `);
+    page.setAttribute('opacity', String(1 - flip * 0.9 + seg(t, 11.5, 12) * 0.9));
+    who({ x: 84, face: 1, walk: 0, ph: 0, sit: true, hipY: 296, lean: 6, look: t > 9 && t < 10.5 ? 0.35 : -0.1,
+      hand: [164 + typing, 284], hand2: [154 - typing, 286] });
+  };
+};
+
+/** SaaS: someone at a laptop builds a stack of blocks one at a time, then
+ *  slides the finished stack off along the desk and starts again. */
+export const blocksPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  desk(room);
+  const who = person(room);
+  const blocks = Array.from({ length: 5 }, () => el('rect', { width: 34, height: 18, rx: 2, stroke: 'none' }, room));
+  const LOOP = 11;
+  return (time: number) => {
+    const t = time % LOOP;
+    const typing = Math.sin(time * 14) * 2;
+    const ship = seg(t, 8.8, 10.4);
+    let reach: [number, number] | null = null;
+    blocks.forEach((b, i) => {
+      const t0 = 0.6 + i * 1.5;
+      const land = seg(t, t0, t0 + 0.6);
+      const bx = 222 + (i % 2) * 4 + ship * 120, by = 290 - 18 * (i + 1);
+      const x = lerp(170, bx, land), y = lerp(250, by, land) - Math.sin(land * Math.PI) * 20;
+      b.setAttribute('x', String(x)); b.setAttribute('y', String(y));
+      b.setAttribute('opacity', String(t < t0 ? 0 : 1));
+      if (t > t0 - 0.3 && t < t0 + 0.7) reach = [x + 6, y + 9];
+    });
+    const r = reach as [number, number] | null;
+    who({ x: 84, face: 1, walk: 0, ph: 0, sit: true, hipY: 296, lean: 6, look: r ? 0.05 : -0.1,
+      hand: r ?? [164 + typing, 284], hand2: [154 - typing, 286] });
+  };
+};
+
+// ---------------------------------------------------------------- community
+/** A cook behind a counter ladles soup from a steaming pot into a bowl and
+ *  hands it across; the guest takes it and goes, the next one comes in. */
+export const servePlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  el('rect', { x: 150, y: 286, width: 170, height: 12, stroke: 'none' }, room);    // counter
+  el('rect', { x: 160, y: 298, width: 150, height: 98, stroke: 'none' }, room);
+  const pot = el('path', { stroke: 'none' }, room);
+  pot.setAttribute('d', 'M 238 286 L 238 254 L 292 254 L 292 286 Z M 232 254 L 298 254 L 298 248 L 232 248 Z');
+  const steam = [0, 1, 2].map(() => el('path', { fill: 'none', 'stroke-width': 3 }, room));
+  const cook = person(room);
+  const guest = person(room);
+  const ladle = el('path', { fill: 'none', 'stroke-width': 3 }, room);
+  const bowl = el('path', { stroke: 'none' }, room);
+  const LOOP = 12;
+  return (time: number) => {
+    const t = time % LOOP;
+    steam.forEach((s_, k) => {
+      const ph = (time * 0.5 + k / 3) % 1, x = 250 + k * 14, y = 244 - ph * 60;
+      set(s_, `M ${x} ${y} q ${6 + Math.sin(time + k) * 4} -10 0 -20 q -6 -10 0 -20`);
+      s_.setAttribute('opacity', String(Math.sin(ph * Math.PI) * 0.8));
+    });
+    // guest walks in (0..2.4), waits, takes the bowl (6..7), walks out (7.6..10.4)
+    let gx = lerp(-60, 118, seg(t, 0, 2.4)); gx = lerp(gx, -70, seg(t, 7.6, 10.4));
+    const gface = t > 7.6 ? -1 : 1, gwalk = (t < 2.4 || t > 7.6) ? 1 : 0;
+    // cook: ladle into bowl (2.6..4.6), hold it out (4.6..6.4)
+    const scoop = seg(t, 2.6, 3.4) * (1 - seg(t, 3.8, 4.4));
+    const hold = seg(t, 4.4, 5.2) * (1 - seg(t, 6.2, 6.8));
+    const taken = t > 6.4 && t < 10.6;
+    const cx = 268;
+    const ladH: [number, number] = [lerp(250, 262, scoop), lerp(230, 246, scoop)];
+    const bowlCook: [number, number] = [lerp(222, 172, hold), 262];
+    cook({ x: cx, face: -1, walk: 0, ph: 0, lean: 3 + hold * 6, look: -0.2,
+      hand: hold > 0.01 ? [bowlCook[0], bowlCook[1] + 4] : ladH, hand2: [bowlCook[0] + 8, bowlCook[1] + 6] });
+    set(ladle, hold > 0.01 ? '' : `M ${ladH[0]} ${ladH[1]} L ${ladH[0] - 6} ${ladH[1] + 34}`);
+    const [hx, hy] = taken ? [gx + gface * 26, 250] : bowlCook;
+    const gHands: [[number, number], [number, number]] = taken ? [[hx, hy + 6], [hx - gface * 8, hy + 8]] :
+      (t > 5.4 && t < 6.6 ? [[lerp(gx + 20, 176, seg(t, 5.4, 6.2)), lerp(300, 266, seg(t, 5.4, 6.2))], [gx - 6, 298]] : [[gx + gface * 6 + Math.sin(t * 7.5) * 12 * gwalk, 300], [gx - gface * 6, 298]]);
+    guest({ x: gx, face: gface as 1 | -1, walk: gwalk, ph: t * 7.5, hand: gHands[0], hand2: gHands[1], look: taken ? -0.15 : 0.05 });
+    const show = t > 3.6 && t < 10.8;
+    set(bowl, show ? `M ${hx - 13} ${hy - 2} Q ${hx} ${hy + 14} ${hx + 13} ${hy - 2} Z` : '');
+  };
+};
+
+// ---------------------------------------------------------------- lilies
+function lilies(room: Element, x0: number, n = 3) {
+  const g = el('g', {}, room);
+  el('path', { d: `M ${x0 - 34} 396 L ${x0 - 28} 352 L ${x0 + 28} 352 L ${x0 + 34} 396 Z`, stroke: 'none' }, g);   // pot
+  for (let k = 0; k < n; k++) {
+    const sx = x0 - 14 + k * 14, top = 190 + k * 26 + (k === 1 ? -30 : 0), lean = (k - 1) * 14;
+    el('path', { d: `M ${sx} 352 Q ${sx + lean * 0.3} ${(352 + top) / 2} ${sx + lean} ${top}`, fill: 'none', 'stroke-width': 4 }, g);
+    const fx = sx + lean, fy = top;
+    el('path', { d: `M ${fx} ${fy} l -14 -30 q 4 6 9 4 z M ${fx} ${fy} l 14 -30 q -4 6 -9 4 z M ${fx} ${fy} l -4 -36 l 8 0 z M ${fx} ${fy} l -20 -18 l 4 -4 z M ${fx} ${fy} l 20 -18 l -4 -4 z`, stroke: 'none' }, g);
+    el('path', { d: `M ${sx} 352 Q ${sx - 30 + k * 20} 320 ${sx - 40 + k * 34} 268`, fill: 'none', 'stroke-width': 6 }, g);   // strap leaves
+  }
+  return g;
+}
+
+/** Lily and Rain: the lilies stand still; once you pick this window it
+ *  starts to rain, softly at first, streaks running down the glass. */
+export const rainPlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  lilies(room, 150);
+  const drops = Array.from({ length: 46 }, (_, k) => ({ x: (k * 53) % 320 - 10, ph: (k * 0.37) % 1, sp: 1.1 + ((k * 13) % 7) / 10,
+    g: el('path', { fill: 'none', 'stroke-width': 2 }, room) }));
+  return (t: number) => {
+    const amt = Math.min(1, t / 1.6);
+    drops.forEach((d, k) => {
+      const u = (t * d.sp + d.ph) % 1, y = -30 + u * 450, x = d.x + u * 40;
+      const on = k / drops.length < amt ? 1 : 0;
+      set(d.g, `M ${x} ${y} l 5 22`);
+      d.g.setAttribute('opacity', String(on * 0.75));
+    });
+  };
+};
+
+/** Lily and Fire: the lilies stand still; pick this window and a flame
+ *  catches with a flare, then burns and flickers behind them. */
+export const firePlay: Play = (svg, PW) => {
+  const st = stage(svg, PW);
+  const glowId = 'glow' + Math.random().toString(36).slice(2, 8);
+  const f = el('filter', { id: glowId, x: '-50%', y: '-50%', width: '200%', height: '200%' }, st.defs);
+  el('feGaussianBlur', { stdDeviation: 9 }, f);
+  const light = el('g', { transform: `scale(${st.sx} 1)`, filter: `url(#${glowId})` }, st.svg);
+  st.svg.insertBefore(light, st.shadow);
+  const flare = el('circle', { cx: 150, cy: 330, r: 10, fill: '#fff3d6', opacity: 0 }, light);
+  const flames = [0, 1, 2, 3, 4].map((k) => el('path', { fill: k % 2 ? '#ffb45c' : '#ffd88a', opacity: 0 }, light));
+  lilies(st.room, 150);
+  return (t: number) => {
+    const fl = Math.max(0, 1 - Math.abs(t - 0.25) / 0.35);
+    flare.setAttribute('r', String(10 + fl * 90)); flare.setAttribute('opacity', String(fl));
+    const burn = seg(t, 0.2, 1.2);
+    flames.forEach((p, k) => {
+      const x = 92 + k * 30, h = (90 + (k % 3) * 40) * burn * (0.85 + 0.15 * Math.sin(t * 9 + k * 2)), w = 22 + (k % 2) * 8;
+      const sw = Math.sin(t * 5 + k) * 8;
+      set(p, `M ${x - w} 380 Q ${x - w} ${380 - h * 0.5} ${x + sw} ${380 - h} Q ${x + w} ${380 - h * 0.5} ${x + w} 380 Z`);
+      p.setAttribute('opacity', String(burn * 0.85));
     });
   };
 };

@@ -610,16 +610,7 @@ def houseboat(x, y, a, L=2.2):
     for sg in (-1, 1):
         cyl('boat_cat_ear', cp + d * 0.06 + s_ * (0.02 + sg * 0.014) + Vector((0, 0, 0.04)), 0.009, 0.018, catf, verts=4, r2=0.0)
     limb(cp - d * 0.06, cp - d * 0.02 - s_ * 0.06 + Vector((0, 0, -0.01)), 0.009, catf)
-    # an old bike leaning on the cabin, and a rain barrel at the stern
-    bk = solid('bike_frame', (0.15, 0.3, 0.32), 0.5, metal=0.4)
-    for k, du in enumerate((-0.12, 0.12)):
-        wc = P(-0.15 - L * 0.3 + 0.95 + du, -0.27, 0.27)
-        w_ = cyl('bike_wheel', wc, 0.07, 0.008, iron, verts=24, rot=(math.pi / 2, 0, a)); cut(w_, cyl('bw_hole', wc, 0.063, 0.05, None, verts=24, rot=(math.pi / 2, 0, a)))
-    b0, b1 = P(-0.15 - L * 0.3 + 0.83, -0.27, 0.27), P(-0.15 - L * 0.3 + 1.07, -0.27, 0.27)
-    seat, bar = P(-0.15 - L * 0.3 + 0.9, -0.27, 0.38), P(-0.15 - L * 0.3 + 1.05, -0.27, 0.4)
-    for a_, b_ in ((b0, seat), (seat, bar), (bar, b1), (seat, P(-0.15 - L * 0.3 + 0.95, -0.27, 0.28)), (P(-0.15 - L * 0.3 + 0.95, -0.27, 0.28), b1)):
-        limb(a_, b_, 0.006, bk)
-    box('bike_saddle', seat + Vector((0, 0, 0.012)), (0.05, 0.02, 0.012), solid('saddle', (0.1, 0.07, 0.05), 0.6), bevel=0.004, rot=R_)
+    # a rain barrel at the stern
     bp_ = P(-L * 0.44, 0.12, sheer(-0.88))
     cyl('rain_barrel', bp_ + Vector((0, 0, 0.07)), 0.055, 0.14, wood('barrel', (0.36, 0.24, 0.14), 6), verts=16, r2=0.05)
     for hz in (0.03, 0.11): cyl('barrel_hoop', bp_ + Vector((0, 0, hz)), 0.057, 0.008, iron, verts=16)
@@ -638,16 +629,16 @@ def houseboat(x, y, a, L=2.2):
         box('trimband', P(cx, -0.255, za), (cl + 0.02, 0.012, h_), trim, bevel=0, rot=R_)
     for k in range(3):
         u = cx - cl / 2 + 0.25 + k * (cl - 0.5) / 2
-        box('win_frame', P(u, -0.258, 0.45), (0.22, 0.012, 0.2), trim, bevel=0.004, rot=R_)
-        box('win_glass', P(u, -0.262, 0.45), (0.18, 0.006, 0.16), glow, bevel=0, rot=R_)
-        box('win_mull', P(u, -0.266, 0.45), (0.012, 0.006, 0.16), trim, bevel=0, rot=R_)
-        box('win_mull', P(u, -0.266, 0.45), (0.18, 0.006, 0.012), trim, bevel=0, rot=R_)
+        box('win_frame', P(u, -0.258, 0.45), (0.28, 0.012, 0.235), trim, bevel=0.004, rot=R_)
+        box('win_glass', P(u, -0.262, 0.45), (0.235, 0.006, 0.19), glow, bevel=0, rot=R_)
+        box('win_mull', P(u, -0.266, 0.45), (0.012, 0.006, 0.19), trim, bevel=0, rot=R_)
+        box('win_mull', P(u, -0.266, 0.45), (0.235, 0.006, 0.012), trim, bevel=0, rot=R_)
         col = cloths[(k * 2 + 1) % 6]
-        box('curtain', P(u - 0.065, -0.263, 0.45), (0.05, 0.004, 0.16), varied('curtain%d' % ((k * 2 + 1) % 6), col, 0.06, 0.95), bevel=0, rot=R_)
-        box('win_box', P(u, -0.285, 0.33), (0.22, 0.05, 0.05), wood('winbox', (0.45, 0.16, 0.11), 6), bevel=0.004, rot=R_)
+        box('curtain', P(u - 0.085, -0.263, 0.45), (0.05, 0.004, 0.19), varied('curtain%d' % ((k * 2 + 1) % 6), col, 0.06, 0.95), bevel=0, rot=R_)
+        box('win_box', P(u, -0.285, 0.31), (0.26, 0.05, 0.05), wood('winbox', (0.45, 0.16, 0.11), 6), bevel=0.004, rot=R_)
         for q in range(3):
             fc = FLOWERS[(k * 3 + q) % len(FLOWERS)]
-            sphere('wb_flower', P(u - 0.07 + q * 0.07, -0.285, 0.37), 0.022, solid('fl%.2f%.2f' % fc[:2], fc, 0.6), 8)
+            sphere('wb_flower', P(u - 0.08 + q * 0.08, -0.285, 0.35), 0.022, solid('fl%.2f%.2f' % fc[:2], fc, 0.6), 8)
     room_light(tuple(P(cx, 0, 0.45)), 18)
     # end door with a round porthole
     door = P(cx + cl / 2 + 0.005, 0, 0.4)
@@ -1739,6 +1730,8 @@ _b = set(bpy.data.objects.keys()); makeshift_corridor((-3.84, -0.05), (-3.84, 1.
 _b = set(bpy.data.objects.keys()); wall_shrine(AF, -3.38, 1.72); GROUPS_EXTRA['shrine'] = set(bpy.data.objects.keys()) - _b
 import design_props as DP
 _b = set(bpy.data.objects.keys()); DP.place_all(sc); GROUPS_EXTRA['design'] = set(bpy.data.objects.keys()) - _b
+import zoom_props as ZP
+_b = set(bpy.data.objects.keys()); ZP.place_all(sc, ZP.STREET_DIR); GROUPS_EXTRA['zoomprops'] = set(bpy.data.objects.keys()) - _b
 # lamps of every kind
 for (x, y) in ((-2.25, 1.0), (-0.95, 1.8), (2.6, 1.85), (3.05, -0.15), (-2.7, -3.25)):
     gas_lamp(x, y, 0.28)
@@ -1916,6 +1909,26 @@ if os.environ.get('LIST_PANES'):
             rows.append({'n': o.name, 'c': [round(x, 2) for x in c], 'px': [round(v.x, 4), round(1 - v.y, 4)]})
     _json.dump(rows, open(os.environ['LIST_PANES'], 'w'))
     print('PANES', len(rows))
+if os.environ.get('ZOOM_INDEX'):
+    # where each zoom's windows sit in the street render (for the browser's click areas)
+    from bpy_extras.object_utils import world_to_camera_view
+    import json as _json
+    import zoom_props as ZP
+    bpy.context.view_layer.update()
+    uvv = lambda p: (lambda v: [round(v.x, 5), round(1 - v.y, 5)])(world_to_camera_view(sc, cam, p))
+    def quad(c, t, w, h):
+        return [uvv(c + t * (sa * w / 2) + Vector((0, 0, sz * h / 2))) for sa, sz in ((-1, 1), (1, 1), (1, -1), (-1, -1))]
+    idx = {}
+    for zid, spec in list(ZP.ZOOMS.items()) + [('shop', {'glass': [(-0.56, 2.33, 0.85)]}), ('design', {'glass': [(u, 1.33, 4.31) for u in (-4.2167, -3.45, -2.6833)]})]:
+        qs = []
+        for gp in spec['glass']:
+            g = ZP.find_glass(sc, gp)
+            if g is None: continue
+            c, t, n, w, h = ZP.frame_of(g, ZP.STREET_DIR)
+            qs.append(quad(c, t, w + 0.1, h + 0.1))
+        idx[zid] = qs
+    _json.dump(idx, open(os.environ['ZOOM_INDEX'], 'w'))
+    print('ZOOM INDEX', {k: len(v) for k, v in idx.items()})
 if os.environ.get('PROBE_PX'):
     # what the street camera sees at these pixels (x,y from the top-left)
     bpy.context.view_layer.update()
@@ -1956,6 +1969,8 @@ if os.environ.get('CLOSEUP') == 'shop':
     WCU.shop_window(sc, cam, globals())
 if os.environ.get('CLOSEUP') == 'design':
     WCU.design_windows(sc, cam, globals())
+if os.environ.get('CLOSEUP') not in (None, '', 'shop', 'design'):
+    WCU.zoom_generic(sc, cam, globals(), os.environ['CLOSEUP'])
 if os.environ.get('NO_RENDER'):
     render = lambda *a, **k: None
 # what glows, noted before the lights-off pass zeroes every emission
