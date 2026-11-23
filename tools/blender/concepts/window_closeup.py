@@ -223,6 +223,9 @@ def shop_window(sc, street_cam, G):
         width = W0 + (W1 - W0) * e
         cd.lens = lens
         ccam.location = T + dirv * (width * lens / 36)
+        if spec.get('clip_keep'):
+            dist = width * lens / 36; k_ = min(1.0, max(0.0, (e - 0.5) / 0.4)); k_ = k_ * k_ * (3 - 2 * k_)
+            cd.clip_start = 0.05 + max(0.0, dist - spec['clip_keep'] - 0.05) * k_
         ccam.rotation_euler = (T - ccam.location).to_track_quat('-Z', 'Y').to_euler()
         bpy.context.view_layer.update()
     from bpy_extras.object_utils import world_to_camera_view
@@ -394,6 +397,9 @@ def design_windows(sc, street_cam, G):
         width = W0 + (W1 - W0) * e
         cd.lens = lens
         ccam.location = T + dirv * (width * lens / 36)
+        if spec.get('clip_keep'):
+            dist = width * lens / 36; k_ = min(1.0, max(0.0, (e - 0.5) / 0.4)); k_ = k_ * k_ * (3 - 2 * k_)
+            cd.clip_start = 0.05 + max(0.0, dist - spec['clip_keep'] - 0.05) * k_
         ccam.rotation_euler = (T - ccam.location).to_track_quat('-Z', 'Y').to_euler()
         bpy.context.view_layer.update()
     from bpy_extras.object_utils import world_to_camera_view
@@ -471,8 +477,18 @@ def zoom_generic(sc, street_cam, G, zid):
             along, depth = q.dot(t), -q.dot(n)
             if abs(along) < w / 2 + 0.01 and -0.03 < depth < 0.9 and abs(q.z) < h / 2 + 0.01:
                 base = o.name.split('.')[0]
-                if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass') or (depth > 0.004 and base not in keep):
+                if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass', 'head', 'body') or (depth > 0.004 and base not in keep):
                     o.hide_render = True
+            elif spec.get('clear_front') and abs(along) < w / 2 - 0.02 and -spec['clear_front'] < depth <= -0.03 and abs(q.z) < h / 2 \
+                    and max(hi - lo) < w and o.name.split('.')[0] not in keep:
+                o.hide_render = True; print('ZOOM cleared in front', o.name)
+    if os.environ.get('ZPROBE'):
+        g, c, t, n, w, h = wins[0]
+        for o in sc.objects:
+            if o.hide_render or o.type not in ('MESH', 'CURVE'): continue
+            lo, hi = ZP._bb(o); q = (lo + hi) / 2 - c
+            if abs(q.dot(t)) < 0.08 and -0.15 < -q.dot(n) < 0.4 and -0.1 < q.z < 0.35 and max(hi - lo) < 1.5:
+                print('ZPROBE', o.name, [round(x, 3) for x in (q.dot(t), -q.dot(n), q.z)], [round(x, 3) for x in (hi - lo)])
     # neighbouring windows' shutters overlap where they meet (renders black):
     # keep one of each pair, and put a board behind every shutter in view
     shs = []
@@ -487,13 +503,14 @@ def zoom_generic(sc, street_cam, G, zid):
             ox = min(ahi.x, bhi.x) - max(alo.x, blo.x); oy = min(ahi.y, bhi.y) - max(alo.y, blo.y)
             if ox > 0.02 and oy > -0.01 and min(ahi.z, bhi.z) - max(alo.z, blo.z) > 0.1 or (oy > 0.02 and ox > -0.01 and min(ahi.z, bhi.z) - max(alo.z, blo.z) > 0.1):
                 gone.append(b_)
-    for g_ in gone:
-        glo, ghi = ZP._bb(g_); g_.hide_render = True
-        for o in sc.objects:
-            if o.type == 'MESH' and o.name.split('.')[0] == 'louvre':
-                lo, hi = ZP._bb(o)
-                if glo.x - 0.01 <= lo.x and hi.x <= ghi.x + 0.01 and glo.y - 0.01 <= lo.y and hi.y <= ghi.y + 0.01 and glo.z - 0.01 < lo.z < ghi.z:
-                    o.hide_render = True
+    # each louvre belongs to the shutter whose centre is nearest; drop the gone ones'
+    sc_ = [(o_, (lo_ + hi_) / 2) for o_, lo_, hi_ in shs]
+    for o in sc.objects:
+        if o.type == 'MESH' and o.name.split('.')[0] == 'louvre' and sc_:
+            lo, hi = ZP._bb(o); m = (lo + hi) / 2
+            near = min(sc_, key=lambda e: (Vector((e[1].x - m.x, e[1].y - m.y, 0)).length, abs(e[1].z - m.z)))
+            if near[0] in gone and (Vector((near[1].x - m.x, near[1].y - m.y, 0)).length < 0.3): o.hide_render = True
+    for g_ in gone: g_.hide_render = True
     for o, lo, hi in shs:
         # a board the shutter's own colour behind it (and where a dropped one was)
         _, c0, t0, n0, *_ = wins[0]
@@ -518,15 +535,15 @@ def zoom_generic(sc, street_cam, G, zid):
         if spec.get('frame', True):
             for sg in (-1, 1):
                 bx('zf_stile', sg * (w / 2 - st / 2), (top - h / 2) / 2, -0.012, st, top + h / 2, 0.03, paint)
-            bx('zf_rail', 0, -h / 2 + 0.025, -0.012, w, 0.05, 0.03, paint)
-            bx('zf_rail', 0, top - st / 2, -0.012, w, st, 0.03, paint)
+            bx('zf_rail', 0, -h / 2 + 0.025, -0.014, w - 0.004, 0.05, 0.024, paint)
+            bx('zf_rail', 0, top - st / 2, -0.014, w - 0.004, st, 0.024, paint)
             bx('zf_meet', 0, (top - h / 2) / 2 + 0.012, -0.01, 0.03, top + h / 2 - 0.05, 0.034, paint)
             gw = (w - 2 * st - 0.03) / 2
             for sg in (-1, 1):
                 ca = sg * (0.015 + gw / 2)
                 bx('zf_bar', ca, (top - h / 2) / 2 + 0.012, -0.004, 0.012, top + h / 2 - 0.05, 0.016, paint)
                 for f in (1 / 3, 2 / 3):
-                    bx('zf_bar', ca, -h / 2 + 0.05 + (top + h / 2 - 0.05) * f, -0.004, gw, 0.012, 0.016, paint)
+                    bx('zf_bar', ca, -h / 2 + 0.05 + (top + h / 2 - 0.05) * f, -0.005, gw, 0.012, 0.011, paint)
             if spec.get('arch'):
                 for j in range(18):
                     a0, a1 = math.pi * j / 18, math.pi * (j + 1) / 18; am = (a0 + a1) / 2
@@ -568,6 +585,9 @@ def zoom_generic(sc, street_cam, G, zid):
         width = W0 + (W1 - W0) * e
         cd.lens = lens
         ccam.location = T + dirv * (width * lens / 36)
+        if spec.get('clip_keep'):
+            dist = width * lens / 36; k_ = min(1.0, max(0.0, (e - 0.5) / 0.4)); k_ = k_ * k_ * (3 - 2 * k_)
+            cd.clip_start = 0.05 + max(0.0, dist - spec['clip_keep'] - 0.05) * k_
         ccam.rotation_euler = (T - ccam.location).to_track_quat('-Z', 'Y').to_euler()
         bpy.context.view_layer.update()
     from bpy_extras.object_utils import world_to_camera_view
