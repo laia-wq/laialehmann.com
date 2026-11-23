@@ -672,7 +672,7 @@ def houseboat(x, y, a, L=2.2):
     box('bow_chair', P(L * 0.36, -0.1, 0.24), (0.18, 0.18, 0.03), timber_h, bevel=0.005, rot=(0, 0.25, a))
     lantern(tuple(P(L * 0.47, 0, 0.32)), 0.6)
     hanging_lanterns(tuple(P(-L * 0.45, 0, 0.95)), tuple(P(cx - cl / 2, -0.1, 0.8)), 2, 0.05)
-    lr = cyl('lifering', P(cx + cl * 0.2, -0.27, 0.45), 0.075, 0.03, varied('ring', (0.85, 0.3, 0.2), 0.05, 0.6), verts=24, rot=(math.pi / 2, 0, a)); cut(lr, cyl('lr_hole', P(cx + cl * 0.2, -0.27, 0.45), 0.04, 0.2, None, verts=16, rot=(math.pi / 2, 0, a)))
+    lr = cyl('lifering', P(0.07, -0.27, 0.45), 0.064, 0.026, varied('ring', (0.85, 0.3, 0.2), 0.05, 0.6), verts=24, rot=(math.pi / 2, 0, a)); cut(lr, cyl('lr_hole', P(0.07, -0.27, 0.45), 0.034, 0.2, None, verts=16, rot=(math.pi / 2, 0, a)))
     # the sign: a big piece of cardboard, lettered in a hurry, propped on the roof
     sb = P(cx - cl * 0.05, -0.2, 0.98)
     card = solid('cardboard', (0.44, 0.32, 0.21), 0.85)
