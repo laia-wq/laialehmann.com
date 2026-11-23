@@ -1880,6 +1880,21 @@ _sun = next(o for o in sc.objects if o.type == 'LIGHT' and o.data.type == 'SUN')
 _sun.light_linking.receiver_collection = _ns
 for _co in _ns.collection_objects: _co.light_linking.link_state = 'EXCLUDE'
 cam = iso_camera(sc, (-0.1, 0.4, 2.4), 15.5, res=(int(os.environ.get('RES_X', 1400)), int(os.environ.get('RES_Y', 1050))))
+if os.environ.get('LIST_PANES'):
+    # every window's glass and where it lands in the street render
+    from bpy_extras.object_utils import world_to_camera_view
+    import json as _json
+    bpy.context.view_layer.update()
+    rows = []
+    for o in sc.objects:
+        if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] in ('pane', 'bay_glass', 'shop_glass', 'win_glass', 'hull_port'):
+            lo = [min((o.matrix_world @ Vector(c))[i] for c in o.bound_box) for i in range(3)]
+            hi = [max((o.matrix_world @ Vector(c))[i] for c in o.bound_box) for i in range(3)]
+            c = Vector([(a + b) / 2 for a, b in zip(lo, hi)])
+            v = world_to_camera_view(sc, cam, c)
+            rows.append({'n': o.name, 'c': [round(x, 2) for x in c], 'px': [round(v.x, 4), round(1 - v.y, 4)]})
+    _json.dump(rows, open(os.environ['LIST_PANES'], 'w'))
+    print('PANES', len(rows))
 if os.environ.get('PROBE_PX'):
     # what the street camera sees at these pixels (x,y from the top-left)
     bpy.context.view_layer.update()
