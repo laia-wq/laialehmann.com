@@ -532,8 +532,8 @@ def zoom_generic(sc, street_cam, G, zid):
     ease = lambda x: x * x * (3 - 2 * x)
     def place(x):
         e = ease(x)
-        dirv = d0.lerp(d1, e).normalized()
-        lens = math.exp(math.log(420) + (math.log(50) - math.log(420)) * e)
+        dirv = (d0.lerp(d1, e) + Vector((0, 0, spec.get('arc', 0.0) * math.sin(math.pi * e)))).normalized()
+        lens = math.exp(math.log(420) + (math.log(spec.get('lens', 50)) - math.log(420)) * e)
         width = W0 + (W1 - W0) * e
         cd.lens = lens
         ccam.location = T + dirv * (width * lens / 36)

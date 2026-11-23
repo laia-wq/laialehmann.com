@@ -22,7 +22,7 @@ from canal_extras import limb
 ZOOMS = {
     'firsts':    {'glass': [(0.14, -1.45, 0.45), (0.55, -1.3, 0.45), (0.96, -1.15, 0.45)], 'frame': False, 'frost_out': 0.002, 'W0': 2.2, 'W1': 1.25, 'elev': 0.2,
                   'teams': ['forest-loss', 'physics-engine', 'signwise']},
-    'robot':     {'glass': [(-3.45, 1.33, 3.16)], 'arch': True, 'W0': 1.55, 'W1': 1.3, 'elev': 0.12, 'teams': ['brita-robot']},
+    'robot':     {'glass': [(-3.45, 1.33, 3.16)], 'arch': True, 'W0': 1.55, 'W1': 1.2, 'elev': 0.1, 'lens': 20, 'arc': 0.6, 'teams': ['brita-robot']},   # the bakery stands close in front: a wide lens from the gap
     'watif':     {'glass': [(0.21, 2.33, 2.08)], 'W0': 1.55, 'W1': 1.25, 'elev': 0.12, 'teams': ['watif']},
     'saas':      {'glass': [(0.21, 2.33, 3.28)], 'W0': 1.55, 'W1': 1.25, 'elev': 0.12, 'teams': ['saas']},
     'lilies':    {'glass': [(3.49, -0.14, 1.97), (3.79, 0.01, 1.97)], 'frame': False, 'frost_out': 0.002, 'W0': 1.6, 'W1': 1.25, 'elev': 0.18, 'side': 0.75,
