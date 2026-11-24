@@ -1583,9 +1583,10 @@ gable_end(-2.85, -2.9, -0.05, topD + 0.1, 0.75, oldbrick2, 'lunette')
 # C's roof: ridge along y — build as gable on a rotated footprint by swapping: use a mansard-ish hip of boxes
 gable_roof('roofC', 3.875, 2.05, 1.55, 3.7, topC + 0.1, 0.9, slate, over=0.15)
 _b = set(bpy.data.objects.keys()); timbered_gable(4.65, 0.2, 3.9, topC, topC + 0.1, 0.9, plaster_o); GROUPS_EXTRA['gableC'] = set(bpy.data.objects.keys()) - _b
-def chimney(style, x, y, z, h):
-    """Six kinds of chimney, so the roofline isn't one stack repeated.
-    Returns where the smoke leaves it."""
+def chimney(style, x, y, z, h, wall):
+    """Six kinds of chimney, so the roofline isn't one stack repeated. Each
+    is built of its own house's wall (same colour, same brick or plaster), so
+    it reads as part of the building. Returns where the smoke leaves it."""
     potm = varied('pot_c', (0.45, 0.25, 0.16), 0.1, 0.8)
     potm2 = varied('pot_c2', (0.55, 0.36, 0.24), 0.1, 0.8)
     stone = varied('ch_stone', (0.55, 0.52, 0.47), 0.08, 0.9, bump=0.6, bump_scale=40)
@@ -1594,22 +1595,25 @@ def chimney(style, x, y, z, h):
     rust_ = varied('ch_rust', (0.36, 0.18, 0.09), 0.15, 0.85)
     top = z + h
     if style == 'corbel':          # tall brick stack, stepped brick cap, three mismatched pots
-        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), oldbrick, bevel=0.01)
-        box('ch_band', (x, y, top - 0.12), (0.36, 0.36, 0.05), oldbrick, bevel=0.005)
-        box('ch_band', (x, y, top - 0.04), (0.4, 0.4, 0.06), oldbrick, bevel=0.005)
+        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), wall, bevel=0.01)
+        box('ch_band', (x, y, top - 0.12), (0.36, 0.36, 0.05), wall, bevel=0.005)
+        box('ch_band', (x, y, top - 0.04), (0.4, 0.4, 0.06), wall, bevel=0.005)
         for k, (dx, ph, pr, m) in enumerate(((-0.1, 0.2, 0.04, potm), (0.0, 0.28, 0.035, potm2), (0.1, 0.14, 0.045, potm))):
             cyl('ch_pot', (x + dx, y, top + ph / 2), pr, ph, m, verts=12, r2=pr * 0.8)
             cyl('ch_pot_rim', (x + dx, y, top + ph), pr * 1.15, 0.025, m, verts=12)
         return Vector((x, y, top + 0.3))
     if style == 'hood':            # stone stack with a slab hood on four little piers
-        box('chimney', (x, y, z + h / 2), (0.3, 0.26, h), stone, bevel=0.012)
+        box('chimney', (x, y, z + h / 2), (0.3, 0.26, h), wall, bevel=0.012)
+        box('ch_band', (x, y, top - 0.03), (0.34, 0.3, 0.05), wall, bevel=0.005)
         for dx in (-0.11, 0.11):
             for dy in (-0.09, 0.09):
-                box('ch_pier', (x + dx, y + dy, top + 0.07), (0.05, 0.05, 0.14), oldbrick, bevel=0.004)
+                box('ch_pier', (x + dx, y + dy, top + 0.07), (0.05, 0.05, 0.14), wall, bevel=0.004)
         box('ch_slab', (x, y, top + 0.16), (0.38, 0.34, 0.04), stone, bevel=0.008)
         return Vector((x, y, top + 0.12))
     if style == 'flue':            # tin stovepipe through a flashing collar, a conical rain cap, guy wires
-        cyl('ch_collar', (x, y, z + 0.04), 0.1, 0.08, zinc, verts=16, r2=0.06)
+        box('ch_stack', (x, y, z + 0.14), (0.24, 0.24, 0.28), wall, bevel=0.01)
+        box('ch_band', (x, y, z + 0.29), (0.28, 0.28, 0.04), wall, bevel=0.005)
+        cyl('ch_collar', (x, y, z + 0.33), 0.08, 0.05, zinc, verts=16, r2=0.06)
         cyl('chimney', (x, y, z + h / 2), 0.055, h, zinc, verts=16)
         for f in (0.3, 0.62): cyl('ch_joint', (x, y, z + h * f), 0.06, 0.02, rust_, verts=16)
         cyl('ch_cap', (x, y, top + 0.1), 0.13, 0.07, zinc, verts=16, r2=0.01)
@@ -1618,8 +1622,8 @@ def chimney(style, x, y, z, h):
                  Vector((x + 0.45 * math.cos(a), y + 0.45 * math.sin(a), z + 0.01)), 0.0025, iron)
         return Vector((x, y, top + 0.06))
     if style == 'cowl':            # short brick stack with a turning metal cowl
-        box('chimney', (x, y, z + h / 2), (0.26, 0.26, h), oldbrick2, bevel=0.01)
-        box('ch_band', (x, y, top - 0.03), (0.31, 0.31, 0.05), oldbrick2, bevel=0.005)
+        box('chimney', (x, y, z + h / 2), (0.26, 0.26, h), wall, bevel=0.01)
+        box('ch_band', (x, y, top - 0.03), (0.31, 0.31, 0.05), wall, bevel=0.005)
         cyl('ch_pot', (x, y, top + 0.08), 0.05, 0.16, potm2, verts=12)
         sphere('ch_cowl', (x, y, top + 0.2), 0.08, zinc, 16, (1, 1, 0.8))
         c = cyl('ch_cowl_mouth', (x - 0.06, y - 0.06, top + 0.2), 0.05, 0.08, zinc, verts=12)
@@ -1627,8 +1631,8 @@ def chimney(style, x, y, z, h):
         cyl('ch_vane', (x, y, top + 0.31), 0.004, 0.08, iron, verts=6)
         return Vector((x - 0.08, y - 0.08, top + 0.2))
     if style == 'rendered':        # plastered chimney, a brick string course, two pots, a pigeon
-        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), render_, bevel=0.012)
-        box('ch_band', (x, y, top - 0.2), (0.32, 0.32, 0.06), oldbrick, bevel=0.004)
+        box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), wall, bevel=0.012)
+        box('ch_band', (x, y, top - 0.2), (0.32, 0.32, 0.06), wall, bevel=0.004)
         box('ch_cap', (x, y, top - 0.02), (0.36, 0.36, 0.04), stone, bevel=0.006)
         for k in range(2):
             cyl('ch_pot', (x - 0.07 + k * 0.14, y, top + 0.09), 0.045, 0.18, potm, verts=12, r2=0.035)
@@ -1636,21 +1640,22 @@ def chimney(style, x, y, z, h):
         sphere('pigeon', (x + 0.17, y - 0.12, top + 0.09), 0.02, solid('pigeon_g', (0.45, 0.46, 0.5), 0.7), 8)
         return Vector((x - 0.07, y, top + 0.2))
     # 'oven': the bakery's broad chimney, a little pitched roof over arched vents
-    box('chimney', (x, y, z + h / 2), (0.42, 0.3, h), oldbrick2, bevel=0.01)
-    box('ch_band', (x, y, top - 0.02), (0.46, 0.34, 0.04), oldbrick2, bevel=0.004)
+    box('chimney', (x, y, z + h / 2), (0.42, 0.3, h), wall, bevel=0.01)
+    box('ch_band', (x, y, top - 0.02), (0.46, 0.34, 0.04), wall, bevel=0.004)
     for dx in (-0.17, 0.17):
-        box('ch_pier', (x + dx, y, top + 0.1), (0.07, 0.3, 0.2), oldbrick2, bevel=0.005)
-    box('ch_pier', (x, y, top + 0.1), (0.06, 0.3, 0.2), oldbrick2, bevel=0.005)
+        box('ch_pier', (x + dx, y, top + 0.1), (0.07, 0.3, 0.2), wall, bevel=0.005)
+    box('ch_pier', (x, y, top + 0.1), (0.06, 0.3, 0.2), wall, bevel=0.005)
     for sg in (-1, 1):
         r_ = box('ch_roof', (x, y + sg * 0.09, top + 0.25), (0.5, 0.21, 0.025), tile_mat('rt_old', (0.42, 0.22, 0.15)), bevel=0.004)
         r_.rotation_euler = (sg * 0.5, 0, 0)
     return Vector((x, y, top + 0.18))
 
 
-for style, (x, y, z, h) in zip(('corbel', 'hood', 'flue', 'cowl', 'rendered', 'oven'),
+for style, (x, y, z, h), wall in zip(('corbel', 'hood', 'flue', 'cowl', 'rendered', 'oven'),
                                ((-4.1, 3.4, topA + 0.6, 1.2), (-2.9, 1.8, topA + 0.5, 1.0), (-0.4, 3.6, topB + 0.1, 0.8), (1.5, 3.7, topB + 0.1, 0.7),
-                                (4.3, 3.2, topC + 0.4, 0.9), (-4.2, -0.6, topD + 0.3, 0.8))):
-    sp = chimney(style, x, y, z, h)
+                                (4.3, 3.2, topC + 0.4, 0.9), (-4.2, -0.6, topD + 0.3, 0.8)),
+                               (oldbrick, oldbrick, plaster_g, plaster_g, plaster_o, oldbrick2)):
+    sp = chimney(style, x, y, z, h, wall)
     sm = solid('smoke_c', (0.22, 0.22, 0.24), 0.9); sm.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.4
     for k in range(4):
         sphere('smoke', (sp.x + k * 0.1, sp.y + k * 0.04, sp.z + 0.27 + k * 0.22), 0.09 + k * 0.045, sm, 12)

@@ -46,7 +46,8 @@ interface CloseJson {
 }
 
 const byId = (id: string) => projects.find((p) => p.id === id);
-const PANE_H = 400;     // the shadow play's own units: 400 tall, as wide as the glass is
+const PANE_H = 400;
+const V = `?v=${__ASSET_V__}`;     // the shadow play's own units: 400 tall, as wide as the glass is
 
 export class WindowView {
   readonly el: HTMLElement;
@@ -104,9 +105,9 @@ export class WindowView {
     if (WindowView.fetched.has(id)) return;
     WindowView.fetched.add(id);
     const base = `${import.meta.env.BASE_URL}windows/${id}/`;
-    fetch(base + 'closeup.json').then((r) => r.json()).then((m: CloseJson) => {
-      for (let k = 0; k < (m.frames ?? 0); k++) fetch(`${base}fly_${String(k).padStart(3, '0')}.webp`).catch(() => {});
-      fetch(`${base}${id}.webp`).catch(() => {});
+    fetch(base + 'closeup.json' + V).then((r) => r.json()).then((m: CloseJson) => {
+      for (let k = 0; k < (m.frames ?? 0); k++) fetch(`${base}fly_${String(k).padStart(3, '0')}.webp${V}`).catch(() => {});
+      fetch(`${base}${id}.webp${V}`).catch(() => {});
     }).catch(() => {});
   }
 
@@ -117,25 +118,39 @@ export class WindowView {
 
   async open(spec: WindowSpec, streetRect: DOMRect) {
     const base = `${import.meta.env.BASE_URL}windows/${spec.id}/`;
-    this.meta = await fetch(base + 'closeup.json').then((r) => r.json());
+    this.meta = await fetch(base + 'closeup.json' + V).then((r) => r.json());
     this.spec = spec;
     this.panes = this.meta.panes ?? [{ ...this.meta.pane!, aspect: this.meta.aspect ?? 0.75 }];
     const multi = this.panes.length > 1;
     const pw = (k: number) => Math.round(PANE_H * this.panes[k].aspect);
     const plays = this.panes.map((_, k) => `
-          <div class="window-play" data-k="${k}" style="-webkit-mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png);mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png)">
+          <div class="window-play" data-k="${k}" style="-webkit-mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png${V});mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png${V})">
             <svg class="window-svg" viewBox="0 0 ${pw(k)} ${PANE_H}" width="${pw(k)}" height="${PANE_H}" aria-hidden="true"></svg>
           </div>`).join('');
-    const hits = multi ? this.panes.map((q, k) => {
-      const l = Math.min(q.tl[0], q.bl[0]) * 100, t = q.tl[1] * 100, w = (q.tr[0] - q.tl[0]) * 100, h = (q.bl[1] - q.tl[1]) * 100;
-      return `<button class="pane-hit" type="button" data-k="${k}" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><span>${spec.panes[k]?.label ?? ''}</span></button>`;
+    // each window's button covers its glass and reaches halfway to its
+    // neighbours (and a little past the outer ones), so a click between two
+    // windows still picks the nearer, never one further off
+    const rects = this.panes.map((q) => {
+      const l = Math.min(q.tl[0], q.bl[0]), r = Math.max(q.tr[0], q.tr[0] + q.bl[0] - q.tl[0]);
+      const t = Math.min(q.tl[1], q.tr[1]), b = Math.max(q.bl[1], q.bl[1] + q.tr[1] - q.tl[1]);
+      return { l, r, t, b };
+    });
+    const order = rects.map((_, k) => k).sort((a, b) => rects[a].l - rects[b].l);
+    const hits = multi ? this.panes.map((_, k) => {
+      const q = rects[k], i = order.indexOf(k), w = q.r - q.l, h = q.b - q.t;
+      const prev = i > 0 ? rects[order[i - 1]] : null, next = i < order.length - 1 ? rects[order[i + 1]] : null;
+      const l = prev ? (prev.r + q.l) / 2 : q.l - w * 0.18, r = next ? (q.r + next.l) / 2 : q.r + w * 0.18;
+      const t = q.t - h * 0.08, b = q.b + h * 0.08;
+      return `<button class="pane-hit" type="button" data-k="${k}" style="left:${l * 100}%;top:${t * 100}%;width:${(r - l) * 100}%;height:${(b - t) * 100}%"><span>${spec.panes[k]?.label ?? ''}</span></button>`;
     }).join('') : '';
+    const glows = multi ? this.panes.map((_, k) => `<div class="pane-glow" data-k="${k}" style="-webkit-mask-image:url(${base}pane_${k}.png${V});mask-image:url(${base}pane_${k}.png${V})"></div>`).join('') : '';
     this.el.innerHTML = `
       <div class="room-stage">
         <div class="room-pic window-pic" style="aspect-ratio: 4 / 3">
           <canvas class="window-fly" width="960" height="720"></canvas>
-          <picture><source srcset="${base}${spec.id}.avif" type="image/avif"><img class="room-img window-still" src="${base}${spec.id}.webp" alt="" decoding="async"></picture>
+          <picture><source srcset="${base}${spec.id}.avif${V}" type="image/avif"><img class="room-img window-still" src="${base}${spec.id}.webp${V}" alt="" decoding="async"></picture>
           ${plays}
+          ${glows}
           ${hits}
         </div>
         ${multi ? `<button class="room-back window-back-float" type="button"><span aria-hidden="true">←</span> back to the street</button>
@@ -146,7 +161,21 @@ export class WindowView {
         <div class="room-body"></div>
       </aside>`;
     this.el.querySelectorAll('.room-back').forEach((b) => b.addEventListener('click', () => this.close()));
-    this.el.querySelectorAll<HTMLButtonElement>('.pane-hit').forEach((b) => b.addEventListener('click', () => this.select(Number(b.dataset.k))));
+    this.el.querySelectorAll<HTMLButtonElement>('.pane-hit').forEach((b) => {
+      const k = Number(b.dataset.k);
+      const glow = (on: boolean) => this.el.querySelector(`.pane-glow[data-k="${k}"]`)?.classList.toggle('is-hot', on);
+      b.addEventListener('click', () => this.select(k));
+      b.addEventListener('pointerenter', () => glow(true));
+      b.addEventListener('pointerleave', () => glow(false));
+      b.addEventListener('focus', () => glow(b.matches(':focus-visible')));
+      b.addEventListener('blur', () => glow(false));
+    });
+    // a click anywhere on the picture that isn't a window goes back out
+    (this.el.querySelector('.room-stage') as HTMLElement).addEventListener('click', (e) => {
+      if (!this.el.classList.contains('is-there')) return;
+      if ((e.target as HTMLElement).closest('.pane-hit, .room-back')) return;
+      this.close();
+    });
     this.canvas = this.el.querySelector('.window-fly');
     this.steps = [...this.el.querySelectorAll<SVGSVGElement>('.window-svg')].map((svg, k) => (spec.panes[k]?.play ?? boxesPlay)(svg, pw(k)));
     this.current = -1;
@@ -158,7 +187,7 @@ export class WindowView {
     this.blobs = new Array(n);
     this.ready = false;
     const fetched = Promise.all(Array.from({ length: n }, (_, k) =>
-      fetch(`${base}fly_${String(k).padStart(3, '0')}.webp`).then((r) => r.blob()).then((bl) => { this.blobs[k] = bl; }).catch(() => {})));
+      fetch(`${base}fly_${String(k).padStart(3, '0')}.webp${V}`).then((r) => r.blob()).then((bl) => { this.blobs[k] = bl; }).catch(() => {})));
     const loaded = fetched.then(() => this.want(0)).then(() => { this.ready = true; });
     const still = this.el.querySelector('.window-still') as HTMLImageElement;
     const stillReady = still.decode ? still.decode().catch(() => {}) : Promise.resolve();
@@ -365,13 +394,27 @@ export const windowById = (id: string) => WINDOWS.find((w) => w.id === id) ?? nu
 /** Where each zoom's windows are on the street (public/windows/index.json),
  *  only for zooms whose close-up has been rendered. */
 type Quad = [number, number][];
-let ZOOM_INDEX: { id: string; quads: Quad[] }[] = [];
+let ZOOM_INDEX: { id: string; quads: Quad[]; hull: Quad | null }[] = [];
+/** Convex hull (monotone chain): the outline round a group of windows, so the
+ *  wall between them counts as part of the group but nothing beyond it does. */
+const hullOf = (pts: [number, number][]): Quad => {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo: Quad = [], hi: Quad = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of [...p].reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  return [...lo.slice(0, -1), ...hi.slice(0, -1)];
+};
 export async function loadZoomIndex() {
   try {
     const base = `${import.meta.env.BASE_URL}windows/`;
-    const idx: Record<string, Quad[]> & { ready?: string[] } = await fetch(base + 'index.json').then((r) => r.json());
-    ZOOM_INDEX = (idx.ready ?? []).filter((id) => windowById(id) && Array.isArray(idx[id])).map((id) => ({ id, quads: idx[id] as Quad[] }));
+    const idx: Record<string, Quad[]> & { ready?: string[] } = await fetch(base + 'index.json' + V).then((r) => r.json());
+    ZOOM_INDEX = (idx.ready ?? []).filter((id) => windowById(id) && Array.isArray(idx[id])).map((id) => {
+      const quads = idx[id] as Quad[];
+      return { id, quads, hull: quads.length > 1 ? hullOf(quads.flat() as [number, number][]) : null };
+    });
   } catch { ZOOM_INDEX = []; }
+  return ZOOM_INDEX.map((z) => z.quads);
 }
 const inQuad = (q: Quad, u: number, v: number) => {
   let inside = false;
@@ -381,9 +424,10 @@ const inQuad = (q: Quad, u: number, v: number) => {
   }
   return inside;
 };
-/** The zoom whose window is under (u, v) on the street image, if any. */
+/** The zoom whose window is under (u, v) on the street image, if any: a
+ *  window itself first, then the wall between a group's windows. */
 export const zoomAt = (u: number, v: number) => {
-  const z = ZOOM_INDEX.find((e) => e.quads.some((q) => inQuad(q, u, v)));
+  const z = ZOOM_INDEX.find((e) => e.quads.some((q) => inQuad(q, u, v))) ?? ZOOM_INDEX.find((e) => e.hull && inQuad(e.hull, u, v));
   return z ? windowById(z.id) : null;
 };
 export const windowForBuilding = (g: string) => WINDOWS.find((w) => w.building === g) ?? null;

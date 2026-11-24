@@ -617,11 +617,14 @@ html[data-mode='scene'] .panel { z-index: 8; }
 
 /* several windows in one view: each glass is a button; the chosen one's
    shadow play runs. Before a pick, a back button and a hint float over it. */
-.pane-hit { position: absolute; z-index: 2; border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 48% 48% 3px 3px / 30% 30% 3px 3px;
-  opacity: 0; pointer-events: none; transition: box-shadow 0.25s ease, background 0.25s ease, opacity 0.4s ease; }
+.pane-hit { position: absolute; z-index: 2; border: 0; padding: 0; background: transparent; cursor: pointer; outline: none;
+  opacity: 0; pointer-events: none; transition: opacity 0.4s ease; -webkit-tap-highlight-color: transparent; }
 .window-view.is-there .pane-hit { opacity: 1; pointer-events: auto; }
-.pane-hit:hover, .pane-hit:focus-visible { background: rgba(255, 228, 180, 0.1); box-shadow: 0 0 0 2px rgba(255, 226, 186, 0.55), 0 0 28px rgba(255, 196, 120, 0.35); outline: none; }
-.pane-hit[aria-pressed='true'] { box-shadow: 0 0 0 1px rgba(255, 226, 186, 0.35); }
+.pane-hit:focus, .pane-hit:focus-visible { outline: none; box-shadow: none; }
+/* the glass itself brightens a little under the pointer: no outline */
+.pane-glow { position: absolute; inset: 0; z-index: 1; pointer-events: none; -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  background: radial-gradient(ellipse at 50% 55%, rgba(255, 226, 170, 0.22), rgba(255, 210, 150, 0.08) 70%); opacity: 0; transition: opacity 0.3s ease; }
+.pane-glow.is-hot { opacity: 1; }
 .pane-hit span { position: absolute; left: 50%; bottom: -30px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; letter-spacing: 0.08em;
   color: var(--cream, #efe3cf); background: rgba(20, 18, 16, 0.75); padding: 3px 8px; border-radius: 6px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
 .pane-hit:hover span, .pane-hit:focus-visible span { opacity: 1; }
@@ -630,3 +633,5 @@ html[data-mode='scene'] .panel { z-index: 8; }
   font-size: 12px; letter-spacing: 0.06em; color: rgba(239, 227, 207, 0.8); opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }
 .window-view.is-there:not(.is-settled) .window-back-float, .window-view.is-there:not(.is-settled) .window-hint { opacity: 1; }
 .window-view.is-settled .window-back-float { pointer-events: none; }
+/* clicking anywhere off the windows goes back to the street */
+.window-view.is-there .room-stage { cursor: zoom-out; }

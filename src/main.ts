@@ -165,7 +165,7 @@ async function bootScene() {
   const { CanalScene } = await import('./canal/scene');
   stage.addEventListener('pointermove', (e) => { label.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 12}px)`; });
   // windows you can look into: found by where the pointer is on the street image
-  loadZoomIndex();
+  const zoomQuads = loadZoomIndex();
   const streetUV = (x: number, y: number) => {
     const c = stage.querySelector('.canal-canvas') as HTMLElement | null;
     if (!c) return null;
@@ -231,6 +231,7 @@ async function bootScene() {
     live.textContent = on ? 'Lights on.' : 'Lights off.';
   });
   await scene.ready;
+  scene.setHighlights((await zoomQuads).flat());
   if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __scene: unknown }).__scene = scene;
 }
 

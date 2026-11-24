@@ -52,6 +52,7 @@ uniform vec2 uImgPx;
 uniform vec4 uView;          // screen uv -> image uv (the window zoom), identity otherwise
 uniform float uTime, uHover, uMotion, uAspect, uOn, uIntroT, uLevel;
 uniform vec4 uSmoke[${MAX_SMOKE}];
+uniform vec4 uSmokeK[${MAX_SMOKE}];
 uniform int uSmokeCount;
 uniform vec4 uSmokeBox;       // min x, min y, max x, max y of all the plumes
 
@@ -124,25 +125,55 @@ void main() {
   c.rgb *= 1.0 + f * k;
   c.rgb += vec3(1.0, 0.66, 0.36) * halo * k;
 
-  // Chimney smoke: soft puffs rising, swelling and fading, drifting with the breeze.
+  // Windows with a project behind them glow a touch rosier than the rest,
+  // only where the glass is lit, so they read as different without shouting.
+  float zm = texture2D(uLightW, uv).b;
+  if (zm > 0.0) {
+    float lum = dot(c.rgb, vec3(0.3, 0.59, 0.11));
+    float wz = zm * smoothstep(0.32, 0.7, lum) * k;
+    c.rgb = mix(c.rgb, c.rgb * vec3(1.02, 0.9, 1.0) + vec3(0.025, 0.0, 0.035) * lum, wz * 0.7);
+  }
+
+  // Chimney smoke. Each plume is noise carried up the column, so it billows
+  // and tears instead of repeating; the breeze bends every plume the same
+  // way, and each chimney has its own character (uSmokeK): how fast it rises,
+  // how thick, how far it carries before thinning out, and whether it comes
+  // steady or in puffs. Only pixels inside a plume's box pay for the noise.
   float a = 0.0;
+  vec3 smokeCol = vec3(0.0);
   if (uv.x > uSmokeBox.x && uv.y > uSmokeBox.y && uv.x < uSmokeBox.z && uv.y < uSmokeBox.w)
   for (int i = 0; i < ${MAX_SMOKE}; i++) {
     if (i >= uSmokeCount) break;
     vec4 S = uSmoke[i];
-    vec2 rel = uv - S.xy;
-    if (rel.y > S.z * 5.0 || rel.y < -0.11 - S.z * 5.0 || abs(rel.x - S.z * 2.5) > S.z * 9.0) continue;
-    float wisp = 0.75 + 0.5 * vnoise(rel / S.z * 0.6 + vec2(S.w * 9.0, t * 0.3));
-    for (int j = 0; j < 4; j++) {
-      float ph = fract(t * 0.055 + float(j) / 4.0 + S.w);
-      vec2 cen = S.xy + vec2(S.z * (4.5 * ph + 0.7 * sin(t * 0.6 + float(j) * 1.7 + S.w * 6.0)), -0.11 * ph);
-      float rad = S.z * (1.2 + 3.0 * ph);
-      vec2 dd = vec2(uv.x - cen.x, (uv.y - cen.y) / uAspect);
-      float dist = length(dd) / rad;
-      a += smoothstep(1.0, 0.1, dist) * (1.0 - ph) * smoothstep(0.0, 0.1, ph) * 0.75 * wisp;
-    }
+    vec4 K = uSmokeK[i];             // rise speed, density, reach (in widths), puffiness
+    vec2 rel = (uv - S.xy) / S.z;    // in chimney widths; y down
+    rel.y *= 1.0 / uAspect;
+    float h = -rel.y;                // height above the pot
+    if (h < -0.6 || h > K.z * 1.35) continue;
+    float hh = max(h, 0.0);
+    // the breeze: bends the column over more the higher it gets, gusting
+    float gust = 0.75 + 0.25 * sin(t * 0.21 + S.w * 6.0) + 0.12 * sin(t * 0.53 + S.w * 3.0);
+    float cx = 0.055 * pow(hh, 1.55) * gust + 0.25 * sin(hh * 0.35 - t * 0.6 * K.x + S.w * 9.0) * min(1.0, hh * 0.2);
+    float wdt = 0.75 + 0.2 * hh;
+    float x = (rel.x - cx) / wdt;
+    if (abs(x) > 2.6) continue;
+    // noise rising with the smoke (advected up), warped so it curls
+    vec2 q = vec2(x * 1.1, hh * 0.42 - t * 0.55 * K.x) + S.w * 17.0;
+    float w1 = vnoise(q * 1.3 + vec2(0.0, t * 0.07));
+    q += vec2(w1 - 0.5, 0.0) * 1.2;
+    float n = 0.55 * vnoise(q * 1.7) + 0.3 * vnoise(q * 3.6 + 4.1) + 0.15 * vnoise(q * 7.3 + 9.2);
+    float body = exp(-x * x * 1.35);
+    // puffs: blobs leaving the pot at intervals (K.w = 0 steady, 1 all puffs)
+    float puff = 0.5 + 0.5 * sin((hh * 0.55 - t * 0.9 * K.x) * 3.0 + S.w * 11.0);
+    puff = mix(1.0, smoothstep(0.15, 0.85, puff), K.w);
+    float rise = smoothstep(-0.4, 0.6, h) * exp(-hh / K.z * 1.6) * smoothstep(K.z * 1.35, K.z * 0.6, hh);
+    float d = body * rise * puff * smoothstep(0.26, 0.8, n + 0.22 * body) * K.y;
+    a += d;
+    // fresh smoke near the pot catches the warm light from inside
+    smokeCol += d * mix(vec3(0.62, 0.55, 0.5), vec3(0.47, 0.47, 0.52), smoothstep(0.0, 4.0, hh));
   }
-  c.rgb = mix(c.rgb, vec3(0.5, 0.48, 0.52) * (0.55 + 0.45 * uLevel), clamp(a, 0.0, 0.8));
+  vec3 sc = a > 0.0 ? smokeCol / a : vec3(0.5);
+  c.rgb = mix(c.rgb, sc * (0.5 + 0.5 * uLevel), clamp(a, 0.0, 0.72));
 
   // Hover: lift the building under the pointer a little.
   float id = texture2D(uIds, uv).r;
@@ -162,7 +193,8 @@ function loadImage(src: string) {
     im.src = src;
   });
 }
-const loadRender = (name: string) => loadImage(BASE + name + '.avif').catch(() => loadImage(BASE + name + '.webp'));
+const V = `?v=${__ASSET_V__}`;
+const loadRender = (name: string) => loadImage(BASE + name + '.avif' + V).catch(() => loadImage(BASE + name + '.webp' + V));
 
 function seen(): boolean {
   try { return localStorage.getItem(SEEN_KEY) === '1'; } catch { return false; }
@@ -203,13 +235,13 @@ export class CanalScene {
     const big = Math.min(window.devicePixelRatio || 1, 2) * Math.max(innerWidth, innerHeight * 4 / 3) > 1500;
     const sfx = big ? '' : '-1400';
     const [data, img, off, water, ids, delay, owl] = await Promise.all([
-      fetch(BASE + 'scene.json').then((r) => r.json() as Promise<SceneJson>),
+      fetch(BASE + 'scene.json' + V).then((r) => r.json() as Promise<SceneJson>),
       loadRender('canal' + sfx),
       loadRender('canal-off' + sfx).catch(() => null),
-      loadImage(BASE + 'water.png'),
-      loadImage(BASE + 'ids.png'),
-      loadImage(BASE + 'delay.png').catch(() => null),
-      loadImage(BASE + 'owl.png').catch(() => null),
+      loadImage(BASE + 'water.png' + V),
+      loadImage(BASE + 'ids.png' + V),
+      loadImage(BASE + 'delay.png' + V).catch(() => null),
+      loadImage(BASE + 'owl.png' + V).catch(() => null),
     ]);
     this.data = data;
     this.img = img;
@@ -296,12 +328,32 @@ export class CanalScene {
     gl.uniform1f(gl.getUniformLocation(p, 'uAspect'), img.naturalWidth / img.naturalHeight);
     this.buildLightMaps(gl, p, img.naturalWidth / img.naturalHeight);
     const S = (this.data.smoke ?? []).slice(0, MAX_SMOKE);
-    const sarr = new Float32Array(MAX_SMOKE * 4);
-    S.forEach((s, i) => sarr.set([s.x, s.y, Math.max(s.r, 0.004), (i * 0.37) % 1], i * 4));
+    const sarr = new Float32Array(MAX_SMOKE * 4), karr = new Float32Array(MAX_SMOKE * 4);
+    // each chimney's character: [rise speed, density, reach in widths, puffiness];
+    // scene.json can name it (s.k), otherwise it's picked from a small set
+    const KINDS: Record<string, [number, number, number, number]> = {
+      hearth: [0.8, 0.85, 22, 0.15],     // a steady coal fire: a full, lazy column
+      oven: [0.6, 1.05, 26, 0.05],       // the bakery: thick, rolling, carried far
+      wisp: [1.4, 0.45, 15, 0.1],        // a thin draught, fast and soon gone
+      stove: [1.1, 0.7, 12, 0.75],       // a stove pipe: short puffs
+      banked: [0.5, 0.4, 18, 0.35],      // a fire banked low: faint, slow
+    };
+    // in the order the street's chimneys are built: tall house ×2, cream shop ×2, corner house, bakery, houseboat
+    const order = ['banked', 'hearth', 'wisp', 'banked', 'hearth', 'oven', 'stove'];
+    S.forEach((s, i) => {
+      // smoke.json marks where the old baked puffs began, a little above the pot
+      const k = (s as { k?: string }).k ?? order[i % order.length];
+      const drop = k === 'stove' ? 0.8 : 3.2;
+      sarr.set([s.x, s.y + s.r * drop * (img.naturalWidth / img.naturalHeight), Math.max(s.r, 0.004), (i * 0.37) % 1], i * 4);
+      karr.set(KINDS[k] ?? KINDS.hearth, i * 4);
+    });
     gl.uniform4fv(gl.getUniformLocation(p, 'uSmoke'), sarr);
+    gl.uniform4fv(gl.getUniformLocation(p, 'uSmokeK'), karr);
     gl.uniform1i(gl.getUniformLocation(p, 'uSmokeCount'), S.length);
+    const reach = (i: number) => karr[i * 4 + 2] * 1.4;
     const box = S.length
-      ? [Math.min(...S.map((s) => s.x - s.r * 7)), Math.min(...S.map((s) => s.y - 0.11 - s.r * 5)), Math.max(...S.map((s) => s.x + s.r * 12)), Math.max(...S.map((s) => s.y + s.r * 5))]
+      ? [Math.min(...S.map((s, i) => s.x - s.r * (2 + 0.25 * reach(i)))), Math.min(...S.map((s, i) => s.y - s.r * reach(i) * (this.img.naturalWidth / this.img.naturalHeight))),
+         Math.max(...S.map((s, i) => s.x + s.r * (4 + 0.075 * Math.pow(reach(i), 1.55) + 0.45 * reach(i)))), Math.max(...S.map((s) => s.y + s.r * 6))]
       : [2, 2, -1, -1];
     gl.uniform4f(gl.getUniformLocation(p, 'uSmokeBox'), box[0], box[1], box[2], box[3]);
     return true;
@@ -347,7 +399,30 @@ export class CanalScene {
     };
     up(6, idx, W, H + 1, 'uLightIdx', true);
     up(7, wt, W, H, 'uLightW', false);
+    this.lw = { data: wt, w: W, h: H };
     gl.uniform3f(gl.getUniformLocation(p, 'uLightRow'), H / (H + 1), (H + 0.5) / (H + 1), 1 / W);
+  }
+
+  private lw: { data: Uint8Array; w: number; h: number } | null = null;
+  /** Mark the windows that open a project (quads in image uv): they get a
+   *  slightly different hue. Drawn into the light-weight map's spare channel. */
+  setHighlights(quads: [number, number][][]) {
+    const gl = this.gl, lw = this.lw;
+    if (!gl || !lw) return;
+    const c = document.createElement('canvas'); c.width = lw.w; c.height = lw.h;
+    const x = c.getContext('2d', { willReadFrequently: true })!;
+    x.fillStyle = '#fff';
+    x.filter = 'blur(0.6px)';
+    for (const q of quads) {
+      x.beginPath();
+      q.forEach(([u, v], i) => (i ? x.lineTo(u * lw.w, v * lw.h) : x.moveTo(u * lw.w, v * lw.h)));
+      x.closePath(); x.fill();
+    }
+    const m = x.getImageData(0, 0, lw.w, lw.h).data;
+    for (let i = 0; i < lw.w * lw.h; i++) lw.data[i * 4 + 2] = m[i * 4 + 3];
+    gl.activeTexture(gl.TEXTURE7);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, lw.w, lw.h, gl.RGBA, gl.UNSIGNED_BYTE, lw.data);
+    if (!this.motion) this.draw();
   }
 
   private resize() {
