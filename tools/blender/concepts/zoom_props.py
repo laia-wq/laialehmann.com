@@ -70,22 +70,15 @@ def frame_of(o, toward):
 # ---------------------------------------------------------------- sill things
 def lathe(name, prof, mat, loc, verts=48, smooth=True):
     """A solid of revolution: prof is [(radius, height), ...] going round the
-    outline (out up the outside, back down the inside), closed at the axis."""
+    outline from the axis, out and up the outside, back down the inside, to
+    the axis again. Spun into one closed, manifold surface."""
     import bmesh
     me = bpy.data.meshes.new(name); bm = bmesh.new()
-    rings = []
-    for (r, z) in prof:
-        ring = [bm.verts.new((r * math.cos(2 * math.pi * k / verts), r * math.sin(2 * math.pi * k / verts), z)) for k in range(verts)]
-        rings.append(ring)
-    for r0, r1 in zip(rings, rings[1:]):
-        for k in range(verts):
-            try: bm.faces.new((r0[k], r0[(k + 1) % verts], r1[(k + 1) % verts], r1[k]))
-            except ValueError: pass
-    for ring, (r, z) in ((rings[0], prof[0]), (rings[-1], prof[-1])):
-        if r > 1e-6:
-            try: bm.faces.new(ring if ring is rings[-1] else list(reversed(ring)))
-            except ValueError: pass
+    vs = [bm.verts.new((r, 0.0, z)) for (r, z) in prof]
+    es = [bm.edges.new((a, b)) for a, b in zip(vs, vs[1:])]
+    bmesh.ops.spin(bm, geom=vs + es, cent=(0, 0, 0), axis=(0, 0, 1), angle=2 * math.pi, steps=verts, use_duplicate=False)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-7)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me); bm.free()
     if smooth:
@@ -95,18 +88,22 @@ def lathe(name, prof, mat, loc, verts=48, smooth=True):
     return o
 
 
-def _clear_glass(name, ior=1.5, tint=(0.96, 0.98, 1.0)):
-    m = solid(name, tint, 0.0)
+def _clear_glass(name, ior=1.5, tint=(0.96, 0.98, 1.0), alpha=0.12):
+    """See-through glass that doesn't depend on light bounces (the street's
+    render keeps those few): mostly transparent, with a clear-coat sheen and
+    sharp highlights, faintly tinted."""
+    m = solid(name, tint, 0.02)
     b = m.node_tree.nodes['Principled BSDF']
-    b.inputs['Transmission Weight'].default_value = 1.0; b.inputs['IOR'].default_value = ior; b.inputs['Roughness'].default_value = 0.0
+    b.inputs['Alpha'].default_value = alpha; b.inputs['Coat Weight'].default_value = 1.0; b.inputs['Coat Roughness'].default_value = 0.02
+    b.inputs['Specular IOR Level'].default_value = 0.8
     return m
 
 
 def glass_of_water(p):
     """A heavy tumbler, three-quarters full: thick base, real wall thickness,
     water with a meniscus, so it refracts the window behind it like the real thing."""
-    g = _clear_glass('zp_glass2', 1.5)
-    water = _clear_glass('zp_water2', 1.333, (0.86, 0.95, 1.0))
+    g = _clear_glass('zp_glass2', 1.5, (0.92, 0.96, 0.98), 0.14)
+    water = _clear_glass('zp_water2', 1.333, (0.5, 0.72, 0.92), 0.2)
     R0, R1, H = 0.024, 0.028, 0.095     # base and rim radius, height
     wall = 0.0022
     prof = [(0.0, 0.0), (R0 - 0.002, 0.0), (R0, 0.002), (R0 + (R1 - R0) * 0.5, H * 0.5), (R1, H), (R1 - wall, H),
@@ -182,7 +179,7 @@ def soup_pot(p, yaw):
     R = Matrix.Rotation(yaw, 3, 'Z'); P = lambda x, y, z: p + R @ Vector((x, y, z))
     glaze = solid('zp_glaze', (0.16, 0.3, 0.42), 0.18, coat=0.6)
     inside = solid('zp_glaze_in', (0.88, 0.84, 0.76), 0.2, coat=0.6)
-    soup = solid('zp_soup2', (0.62, 0.14, 0.04), 0.15, coat=0.5)
+    soup = solid('zp_soup2', (0.7, 0.16, 0.04), 0.4)
     cream = solid('zp_cream', (0.95, 0.9, 0.8), 0.3)
     cloth = varied('zp_cloth', (0.78, 0.2, 0.16), 0.05, 0.9, bump=0.5, bump_scale=600)
     bread = varied('zp_bread', (0.72, 0.46, 0.2), 0.12, 0.8, bump=1.0, bump_scale=120)
@@ -194,8 +191,7 @@ def soup_pot(p, yaw):
     c = P(0.018, 0.0, 0.004)
     lathe('zp_bowl', [(0.0, 0.0), (0.016, 0.0), (0.017, 0.004), (0.022, 0.006), (0.034, 0.016), (0.041, 0.03), (0.043, 0.036),
                       (0.0425, 0.039), (0.04, 0.038), (0.037, 0.03), (0.03, 0.017), (0.016, 0.009), (0.0, 0.008)], glaze, c)
-    lathe('zp_bowl_in', [(0.0, 0.0085), (0.016, 0.0095), (0.03, 0.0175), (0.0368, 0.0302), (0.0396, 0.0378), (0.0, 0.0378)], inside, c)
-    lathe('zp_soup', [(0.0, 0.0), (0.0365, 0.0), (0.0385, 0.0345), (0.0, 0.0345)], soup, c)
+    lathe('zp_soup', [(0.0, 0.026), (0.0352, 0.026), (0.0383, 0.0345), (0.0, 0.0345)], soup, c)
     # a swirl of cream on top
     for k in range(10):
         a_ = k * 0.6; rr = 0.004 + k * 0.0022
@@ -241,6 +237,7 @@ def place_all(sc, toward):
             PROP_AT[zid] = at.copy()
             k_ = spec.get('prop_scale', 1.0)
             if k_ != 1.0:   # scale the whole set about where it stands
+                bpy.context.view_layer.update()        # so matrix_world reflects where they were just put
                 M = Matrix.Translation(at) @ Matrix.Scale(k_, 4) @ Matrix.Translation(-at)
                 for nm in set(bpy.data.objects.keys()) - before:
                     o = bpy.data.objects[nm]
