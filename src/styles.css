@@ -621,8 +621,9 @@ html[data-mode='scene'] .panel { z-index: 8; }
 .room.window-view.is-settled .window-pic { transform: translate(calc(-50% - min(520px, 42vw) / 2), -50%) scale(var(--settle-scale, 0.9)); }
 .room.window-view .room-panel { grid-column: 2; grid-row: 1; z-index: 1; }
 @media (max-width: 820px) {
-  .room.window-view .room-panel { grid-column: 1; grid-row: 2; }
-  .room.window-view.is-settled .window-pic { transform: translate(-50%, calc(-50% - 22dvh)); }
+  /* on a phone the write-up is a sheet over the bottom half; the window sits above it */
+  .room.window-view .room-panel { position: absolute; left: 0; right: 0; bottom: 0; height: 50dvh; grid-column: 1; grid-row: 1; }
+  .room.window-view.is-settled .window-pic { transform: translate(-50%, calc(-50% - 25dvh)) scale(var(--settle-scale-m, 1)); }
 }
 @media (prefers-reduced-motion: reduce) { .room.window-view .window-pic { transition: none; } }
 /* while flying in, only the canvas's own edge applies (else it would be feathered twice) */

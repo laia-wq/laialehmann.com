@@ -375,6 +375,8 @@ export class WindowView {
     const free = wide ? innerWidth - (panel?.offsetWidth ?? 0) : innerWidth;
     const fit = Math.min(1, (free - 24) / W);
     this.el.style.setProperty('--settle-scale', String(this.panes.length > 1 ? Math.min(0.92, fit) : Math.min(0.9, Math.max(fit, 0.82))));
+    // on a phone the picture has the top half of the screen above the write-up
+    this.el.style.setProperty('--settle-scale-m', String(Math.min(1, (innerHeight * 0.5 - 12) / H)));
     this.el.querySelectorAll<SVGSVGElement>('.window-svg').forEach((svg, k) => {
       const q = this.panes[k]; if (!q) return;
       const { tl, tr, bl } = q;
