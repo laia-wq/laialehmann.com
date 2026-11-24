@@ -23,7 +23,7 @@ silhouette_m = solid('silhouette', (0.02, 0.02, 0.02), 0.9)
 FLOWERS = [(0.75, 0.12, 0.12), (0.95, 0.92, 0.85), (0.95, 0.8, 0.25), (0.62, 0.45, 0.85), (0.95, 0.55, 0.68), (0.95, 0.5, 0.15), (0.45, 0.6, 0.9)]
 lamp_glow = solid('lamp_glow', (1, 0.85, 0.6), 0.3, emit=(1.0, 0.62, 0.28), strength=10)
 
-def old_bricks(name, base, soot=0.35, scale=5.5):
+def old_bricks(name, base, soot=0.35, scale=5.5, speckle=0.0):
     """Brick that lies flat on every wall (box-projected by face normal), with
     per-brick colour variation and soot creeping down from the top."""
     m, n, l, b = node_mat(name)
@@ -46,10 +46,56 @@ def old_bricks(name, base, soot=0.35, scale=5.5):
     mx = n.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.inputs['B'].default_value = (0.06, 0.05, 0.05, 1)
     mul = n.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = soot
     l.new(st.outputs['Result'], mul.inputs[0]); l.new(mul.outputs['Value'], mx.inputs['Factor'])
-    l.new(br.outputs['Color'], mx.inputs['A']); l.new(mx.outputs['Result'], b.inputs['Base Color'])
-    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.6
-    l.new(br.outputs['Fac'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
+    l.new(br.outputs['Color'], mx.inputs['A'])
+    if speckle:
+        # fired clay: each brick a slightly different tone, pitted and speckled,
+        # mortar raked back so every course casts a little shadow
+        cell = n.new('ShaderNodeTexVoronoi'); cell.inputs['Scale'].default_value = scale * 2.2
+        l.new(comb.outputs['Vector'], cell.inputs['Vector'])
+        tone = n.new('ShaderNodeMapRange'); tone.inputs['To Min'].default_value = 1 - speckle; tone.inputs['To Max'].default_value = 1 + speckle * 0.5
+        l.new(cell.outputs['Color'], tone.inputs['Value'])
+        sp = n.new('ShaderNodeTexNoise'); sp.inputs['Scale'].default_value = scale * 60; sp.inputs['Detail'].default_value = 6
+        l.new(tc.outputs['Object'], sp.inputs['Vector'])
+        spm = n.new('ShaderNodeMapRange'); spm.inputs['From Min'].default_value = 0.3; spm.inputs['From Max'].default_value = 0.7
+        spm.inputs['To Min'].default_value = 0.78; spm.inputs['To Max'].default_value = 1.08
+        l.new(sp.outputs['Fac'], spm.inputs['Value'])
+        k1 = n.new('ShaderNodeMath'); k1.operation = 'MULTIPLY'; l.new(tone.outputs['Result'], k1.inputs[0]); l.new(spm.outputs['Result'], k1.inputs[1])
+        cm_ = n.new('ShaderNodeMix'); cm_.data_type = 'RGBA'; cm_.blend_type = 'MULTIPLY'; cm_.inputs['Factor'].default_value = 1.0
+        l.new(mx.outputs['Result'], cm_.inputs['A'])
+        gg = n.new('ShaderNodeCombineColor'); [l.new(k1.outputs['Value'], gg.inputs[i]) for i in range(3)]
+        l.new(gg.outputs['Color'], cm_.inputs['B'])
+        l.new(cm_.outputs['Result'], b.inputs['Base Color'])
+        hb = n.new('ShaderNodeMath'); hb.operation = 'MULTIPLY_ADD'; hb.inputs[1].default_value = 0.08
+        l.new(sp.outputs['Fac'], hb.inputs[0]); l.new(br.outputs['Fac'], hb.inputs[2])
+        bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.9; bp.inputs['Distance'].default_value = 0.004
+        l.new(hb.outputs['Value'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
+    else:
+        l.new(mx.outputs['Result'], b.inputs['Base Color'])
+        bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.6
+        l.new(br.outputs['Fac'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
     b.inputs['Roughness'].default_value = 0.88
+    return m
+
+
+def stained_wood(name, along='z', base=(0.36, 0.22, 0.12)):
+    """Oiled timber: long grain running along the piece (x, y or z), darker
+    late-wood lines, a soft satin sheen."""
+    m, n, l, b = node_mat(name)
+    tc = n.new('ShaderNodeTexCoord')
+    mp = n.new('ShaderNodeMapping')
+    mp.inputs['Scale'].default_value = {'x': (2, 60, 60), 'y': (60, 2, 60), 'z': (60, 60, 2)}[along]
+    l.new(tc.outputs['Object'], mp.inputs['Vector'])
+    gr = n.new('ShaderNodeTexWave'); gr.wave_type = 'BANDS'; gr.bands_direction = {'x': 'Y', 'y': 'X', 'z': 'X'}[along]
+    gr.inputs['Scale'].default_value = 0.6; gr.inputs['Distortion'].default_value = 9; gr.inputs['Detail'].default_value = 4
+    l.new(mp.outputs['Vector'], gr.inputs['Vector'])
+    ramp = n.new('ShaderNodeMix'); ramp.data_type = 'RGBA'
+    ramp.inputs['A'].default_value = (*base, 1); ramp.inputs['B'].default_value = (base[0] * 0.55, base[1] * 0.5, base[2] * 0.45, 1)
+    gp = n.new('ShaderNodeMapRange'); gp.inputs['From Min'].default_value = 0.55; gp.inputs['From Max'].default_value = 0.95
+    l.new(gr.outputs['Fac'], gp.inputs['Value']); l.new(gp.outputs['Result'], ramp.inputs['Factor'])
+    l.new(ramp.outputs['Result'], b.inputs['Base Color'])
+    bp = n.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.15; bp.inputs['Distance'].default_value = 0.001
+    l.new(gr.outputs['Fac'], bp.inputs['Height']); l.new(bp.outputs['Normal'], b.inputs['Normal'])
+    b.inputs['Roughness'].default_value = 0.42
     return m
 
 # ------------------------------------------------------------------ windows with lives behind them
@@ -222,8 +268,10 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
         # windows on the front and both sides, panelled below, a cornice and a
         # lead roof above. Painted timber, matt and brushy, not lacquer.
         bw, bd = w + 0.22, 0.36
-        paint = varied('bay_paint', (0.4, 0.09, 0.07), 0.1, 0.85, bump=0.7, bump_scale=90)
+        paint = old_bricks('bay_brick', (0.5, 0.15, 0.1), 0.12, 5.5, speckle=0.22)
         trim = varied('bay_trim', (0.82, 0.76, 0.64), 0.06, 0.8, bump=0.4, bump_scale=90)
+        wood_v = stained_wood('bay_wood_v', 'z'); wood_h = stained_wood('bay_wood_h', 'x' if W.axis == 'y' else 'y')
+        wood_s = stained_wood('bay_wood_s', 'y' if W.axis == 'y' else 'x')
         lead = varied('bay_lead', (0.24, 0.25, 0.27), 0.12, 0.55, bump=0.5, bump_scale=25)
         glass = gmat if lit else dark_win
         zb, zt = z - 0.1, z + h + 0.12          # apron bottom, cornice top
@@ -232,11 +280,7 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
         # apron (panelled) and frieze, front and both sides
         box('bay', W.P(u, bd / 2, (zb + za) / 2), W.S(bw, bd, za - zb), paint, bevel=0.01)
         box('bay', W.P(u, bd / 2, (zf + zt) / 2), W.S(bw, bd, zt - zf), paint, bevel=0.01)
-        for k in range(3):
-            pu = u - bw / 2 + (k + 0.5) * bw / 3
-            box('bay_panel', W.P(pu, bd + 0.006, (zb + za) / 2), W.S(bw / 3 - 0.05, 0.012, (za - zb) - 0.06), paint, bevel=0.006)
-        for sg in sides:
-            box('bay_panel', W.P(u + sg * (bw / 2 + 0.006), bd / 2 + 0.02, (zb + za) / 2), W.S(0.012, bd - 0.1, (za - zb) - 0.06), paint, bevel=0.006)
+        # (solid brick below the glass: no panels)
         # corner posts
         for sg in sides:
             box('bay_post', W.P(u + sg * (bw / 2 - 0.022), bd - 0.022, (za + zf) / 2), W.S(0.05, 0.05, zf - za), paint, bevel=0.006)
@@ -245,16 +289,16 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
         gz = (za + zf) / 2; gh = zf - za; tz = zf - gh * 0.28
         box('bay_glass', W.P(u, bd - 0.02, gz), W.S(bw - 0.06, 0.01, gh), glass, bevel=0)
         for k in range(4):
-            box('bay_mull', W.P(u - (bw - 0.06) / 2 + k * (bw - 0.06) / 3, bd - 0.012, gz), W.S(0.028, 0.022, gh), trim, bevel=0.003)
-        box('bay_mull', W.P(u, bd - 0.014, tz), W.S(bw - 0.06, 0.016, 0.024), trim, bevel=0.003)
+            box('bay_mull', W.P(u - (bw - 0.06) / 2 + k * (bw - 0.06) / 3, bd - 0.012, gz), W.S(0.028, 0.022, gh), wood_v, bevel=0.003)
+        box('bay_mull', W.P(u, bd - 0.014, tz), W.S(bw - 0.06, 0.016, 0.024), wood_h, bevel=0.003)
         for sg in sides:
             xs = u + sg * (bw / 2 - 0.02)
             box('bay_glass', W.P(xs, bd / 2 + 0.01, gz), W.S(0.01, bd - 0.1, gh), glass, bevel=0)
             for dd in (0.04, bd / 2 + 0.01, bd - 0.05):
-                box('bay_mull', W.P(xs + sg * 0.008, dd, gz), W.S(0.022, 0.028, gh), trim, bevel=0.003)
-            box('bay_mull', W.P(xs + sg * 0.008, bd / 2 + 0.01, tz), W.S(0.016, bd - 0.08, 0.024), trim, bevel=0.003)
+                box('bay_mull', W.P(xs + sg * 0.008, dd, gz), W.S(0.022, 0.028, gh), wood_v, bevel=0.003)
+            box('bay_mull', W.P(xs + sg * 0.004, bd / 2 + 0.01, tz), W.S(0.014, bd - 0.08, 0.024), wood_s, bevel=0.003)
         # sill all round
-        box('bay_sill', W.P(u, bd / 2 + 0.015, za - 0.005), W.S(bw + 0.05, bd + 0.03, 0.03), trim, bevel=0.006)
+        box('bay_sill', W.P(u, bd / 2 + 0.015, za - 0.005), W.S(bw + 0.05, bd + 0.03, 0.03), wood_h, bevel=0.006)
         # cornice: a crown moulding and a row of little dentils
         box('bay_cornice', W.P(u, bd / 2 + 0.02, zt + 0.015), W.S(bw + 0.08, bd + 0.07, 0.035), trim, bevel=0.008)
         nd = 9
@@ -286,7 +330,7 @@ def window(W, u, z, w, h, style, lit=True, shutters=None, balcony=False, flowers
     for k in range(cols + 1):
         box('mull', W.P(u - w / 2 + k * w / cols, rec + 0.01, z + top / 2), W.S(t, 0.025, top), fr, bevel=0)
     for k in range(rows + 1):
-        box('mull', W.P(u, rec + 0.01, z + k * top / rows), W.S(w, 0.025, t), fr, bevel=0)
+        box('mull', W.P(u, rec + 0.007, z + k * top / rows), W.S(w, 0.019, t), fr, bevel=0)
     if style == 'arch':
         box('mull', W.P(u, rec + 0.01, z + top + w / 4), W.S(t, 0.025, w / 2), fr, bevel=0)
     # sill and lintel: stone on brick, timber on plaster
@@ -1970,6 +2014,18 @@ if os.environ.get('NO_SMOKE'):
         o.hide_render = True
 import window_closeup as WCU
 WCU.shop_squirrel(sc)
+if os.environ.get('GLASS_NEAR'):
+    # list the glass (and what's round it) inside a box: x0,y0,z0,x1,y1,z1
+    q = [float(v) for v in os.environ['GLASS_NEAR'].split(',')]
+    bpy.context.view_layer.update()
+    for o in sc.objects:
+        if o.type != 'MESH' or o.hide_render: continue
+        cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
+        lo = Vector([min(c[i] for c in cs) for i in range(3)]); hi = Vector([max(c[i] for c in cs) for i in range(3)]); m = (lo + hi) / 2
+        if all(q[i] <= m[i] <= q[i + 3] for i in range(3)) and (o.name.split('.')[0] in ('pane', 'bay_glass', 'win_glass', 'shop_glass', 'shutter', 'mull', 'bay', 'bay_mull', 'sill') or os.environ.get('GLASS_ALL')):
+            mat = o.active_material.name if o.active_material else '-'
+            print('GN', o.name, mat, tuple(round(v, 3) for v in lo), tuple(round(v, 3) for v in hi))
+    sys.exit(0)
 if os.environ.get('CLOSEUP') == 'shop':
     WCU.shop_window(sc, cam, globals())
 if os.environ.get('CLOSEUP') == 'design':

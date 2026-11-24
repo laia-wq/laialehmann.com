@@ -123,7 +123,7 @@ def shop_squirrel(sc):
 
 def shop_window(sc, street_cam, G):
     out = os.environ['CLOSE_OUT']; os.makedirs(out, exist_ok=True)
-    SAMPLES = G['SAMPLES']; quay = G['quay']
+    SAMPLES = G['SAMPLES']; quay = G['quay']; spec = {}
     bpy.context.view_layer.update()
     near = lambda pre: min((o for o in sc.objects if o.name.startswith(pre) and o.type == 'MESH'),
                            key=lambda o: (o.matrix_world.translation - Vector((-0.56, 2.3, 0.88))).length)
@@ -299,7 +299,7 @@ def design_windows(sc, street_cam, G):
     window (pane_0..2.png) and closeup.json with each window's glass corners."""
     import design_props as DP
     out = os.environ['CLOSE_OUT']; os.makedirs(out, exist_ok=True)
-    SAMPLES = G['SAMPLES']
+    SAMPLES = G['SAMPLES']; spec = {}
     bpy.context.view_layer.update()
     yf, yp = DP.A_FACE_Y, DP.A_FACE_Y + 0.08
     w, h = DP.WIN_W, DP.WIN_H
@@ -325,22 +325,27 @@ def design_windows(sc, street_cam, G):
             m_ = (p0 + p1) / 2; L = (p1 - p0).length * 1.08
             b_ = box(name, m_, (L, depth, thick), mat, bevel=0.002)
             b_.rotation_euler = (0, -((a0 + a1) / 2 + math.pi / 2), 0)
-    # neighbouring windows' shutters overlap where they meet: keep one of each pair
+    # neighbouring windows' shutters overlap where they meet: rather than drop
+    # one (leaving some windows with one shutter), narrow both of each pair
+    # towards its own window so they meet with a hairline gap, and every
+    # window keeps two
     shs = [(o, *_bb(o)) for o in sc.objects if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] == 'shutter']
     shs = [t for t in shs if t[1].z > z0 - 0.3 and t[2].z < z0 + h + 0.3 and t[2].y < yf + 0.01]
-    gone = []
-    for i, (a, alo, ahi) in enumerate(shs):
-        for b, blo, bhi in shs[i + 1:]:
-            if b in gone or a in gone: continue
-            if min(ahi.x, bhi.x) - max(alo.x, blo.x) > 0.02:
-                gone.append(b if blo.x > alo.x else a)
-    for g in gone:
-        glo, ghi = _bb(g); g.hide_render = True
-        for o in sc.objects:
-            if o.type == 'MESH' and o.name.split('.')[0] == 'louvre':
-                lo, hi = _bb(o)
-                if abs(lo.x - glo.x) < 0.03 and abs(hi.x - ghi.x) < 0.03 and glo.z - 0.01 < lo.z < ghi.z: o.hide_render = True
-    print('DESIGN shutters dropped', [g.name for g in gone])
+    shs.sort(key=lambda t: t[1].x)
+    lv = [(o, *_bb(o)) for o in sc.objects if o.type == 'MESH' and not o.hide_render and o.name.split('.')[0] == 'louvre']
+    def squeeze(o, lo, hi, pivot, f):
+        M = Matrix.Translation((pivot, 0, 0)) @ Matrix.Diagonal((f, 1, 1, 1)) @ Matrix.Translation((-pivot, 0, 0))
+        for q, qlo, qhi in [(o, lo, hi)] + [(l_, llo, lhi) for l_, llo, lhi in lv if llo.x > lo.x - 0.02 and lhi.x < hi.x + 0.02 and lo.z - 0.01 < llo.z < hi.z]:
+            q.matrix_world = M @ q.matrix_world
+    narrowed = []
+    for (a, alo, ahi), (b, blo, bhi) in zip(shs, shs[1:]):
+        if ahi.x - blo.x > 0.005 and min(ahi.z, bhi.z) - max(alo.z, blo.z) > 0.1:
+            mid = (ahi.x + blo.x) / 2
+            squeeze(a, alo, ahi, alo.x, (mid - 0.004 - alo.x) / (ahi.x - alo.x))
+            squeeze(b, blo, bhi, bhi.x, (bhi.x - (mid + 0.004)) / (bhi.x - blo.x))
+            narrowed += [a.name, b.name]
+    bpy.context.view_layer.update()
+    print('DESIGN shutters narrowed', narrowed)
     # the shutters are open louvres over nothing: give each a board behind
     shut = solid('dw_shutter_back', (0.12, 0.16, 0.13), 0.8)
     for o in list(sc.objects):
@@ -469,15 +474,18 @@ def zoom_generic(sc, street_cam, G, zid):
     # clear the street's glazing and whatever was behind it
     keep = ('A', 'B', 'C', 'D', 'shutter', 'louvre', 'bay', 'bay_mull', 'bay_post', 'bay_panel', 'bay_sill', 'bay_cornice', 'bay_dentil', 'bay_roof',
             'win_frame', 'win_mull', 'win_box', 'wb_flower', 'trimband', 'cabin', 'board', 'roof', 'hull', 'sill', 'string', 'voussoir', 'lintel')
-    for g, c, t, n, w, h in wins:
+    keep_mull = spec.get('keep_mull', [False] * len(wins))
+    for wi, (g, c, t, n, w, h) in enumerate(wins):
         g.hide_render = True
         for o in list(sc.objects):
             if o.type not in ('MESH', 'CURVE') or o.name.startswith(('zp_', 'dt_', 'plush')) or o is g: continue
             lo, hi = ZP._bb(o); q = (lo + hi) / 2 - c
             along, depth = q.dot(t), -q.dot(n)
-            if abs(along) < w / 2 + 0.01 and -0.03 < depth < 0.9 and abs(q.z) < h / 2 + 0.01:
+            if abs(along) < w / 2 + 0.01 and -0.06 < depth < 0.9 and abs(q.z) < h / 2 + 0.01:
                 base = o.name.split('.')[0]
-                if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass', 'head', 'body') or (depth > 0.004 and base not in keep):
+                if keep_mull[wi] and base == 'mull' and depth < 0.05: continue
+                if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass', 'head', 'body') or (depth > 0.004 and base not in keep) \
+                        or (depth > -0.06 and base not in keep and max(hi - lo) < w * 0.8):
                     o.hide_render = True
             elif spec.get('clear_front') and abs(along) < w / 2 - 0.02 and -spec['clear_front'] < depth <= -0.03 and abs(q.z) < h / 2 \
                     and max(hi - lo) < w and o.name.split('.')[0] not in keep:
@@ -608,6 +616,7 @@ def zoom_generic(sc, street_cam, G, zid):
     place(1.0)
     rr.resolution_x, rr.resolution_y = fx, fy
     meta['panes'] = [{'tl': uvv(ccam, p['tl']), 'tr': uvv(ccam, p['tr']), 'bl': uvv(ccam, p['bl']), 'aspect': round(p['aspect'], 4), 'team': p['team']} for p in panes]
+    if zid in ZP.PROP_AT: meta['prop'] = uvv(ccam, ZP.PROP_AT[zid])
     json.dump(meta, open(os.path.join(out, 'closeup.json'), 'w'))
     if os.environ.get('PROBE'):
         dg = bpy.context.evaluated_depsgraph_get(); fr_ = ccam.data.view_frame(scene=sc); mw = ccam.matrix_world

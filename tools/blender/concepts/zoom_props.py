@@ -10,7 +10,7 @@ that shows its front and its side together).
   robot      tall house, 3rd floor middle window: a glass of water
   watif      cream shop, 2nd floor: a little flip calendar
   saas       cream shop, top floor: a mug and a pad of sticky notes
-  lilies     the red bay: front pane (rain) and the narrower side pane (fire); a potted lily
+  lilies     the red bay's front and side (rain) and the casement beside it (fire); nothing outside
   community  bakery shopfront: a soup pot and a ladle
 """
 import math
@@ -22,14 +22,17 @@ from canal_extras import limb
 ZOOMS = {
     'firsts':    {'glass': [(0.14, -1.45, 0.45), (0.55, -1.3, 0.45), (0.96, -1.15, 0.45)], 'frame': False, 'frost_out': 0.002, 'W0': 2.2, 'W1': 1.25, 'elev': 0.2,
                   'teams': ['forest-loss', 'physics-engine', 'signwise']},
-    'robot':     {'glass': [(-3.45, 1.33, 3.16)], 'arch': True, 'clip_keep': 0.172, 'clear_front': 0.15, 'W0': 1.55, 'W1': 1.2, 'elev': 0.1, 'lens': 20, 'arc': 0.6, 'teams': ['brita-robot']},   # the bakery stands close in front: a wide lens from the gap
+    'robot':     {'glass': [(-3.45, 1.33, 3.16)], 'sill_out': 0.055, 'prop_scale': 1.3, 'arch': True, 'clip_keep': 0.172, 'clear_front': 0.15, 'W0': 1.55, 'W1': 1.2, 'elev': 0.1, 'lens': 20, 'arc': 0.6, 'teams': ['brita-robot']},   # the bakery stands close in front: a wide lens from the gap
     'watif':     {'glass': [(0.21, 2.33, 2.08)], 'W0': 1.55, 'W1': 1.25, 'elev': 0.12, 'teams': ['watif']},
     'saas':      {'glass': [(0.21, 2.33, 3.28)], 'W0': 1.55, 'W1': 1.25, 'elev': 0.12, 'teams': ['saas']},
-    'lilies':    {'glass': [(3.49, -0.14, 1.97), (3.79, 0.01, 1.97)], 'frame': False, 'frost_out': 0.002, 'W0': 1.6, 'W1': 1.25, 'elev': 0.18, 'side': 0.75,
-                  'teams': ['lily-and-rain', 'lily-and-fire']},
-    'community': {'glass': [(-2.93, -2.42, 0.83)], 'W0': 1.55, 'W1': 1.3, 'elev': 0.15, 'teams': ['community']},   # the bakery's canal side: open water in front
+    # the red bay's front and side glass (rain) and the casement to its right (fire)
+    'lilies':    {'glass': [(3.49, -0.14, 1.97), (3.79, 0.01, 1.97), (4.26, 0.28, 1.95)], 'frame': False, 'frost_out': 0.002, 'keep_mull': [False, False, True],
+                  'W0': 2.3, 'W1': 1.95, 'elev': 0.16, 'side': 0.45,
+                  'teams': ['lily-and-rain', 'lily-and-rain', 'lily-and-fire']},
+    'community': {'glass': [(-2.93, -2.42, 0.83)], 'prop_scale': 1.55, 'W0': 1.55, 'W1': 1.3, 'elev': 0.24, 'teams': ['community']},   # the bakery's canal side: open water in front
 }
 GLASS_NAMES = ('pane', 'bay_glass', 'win_glass', 'shop_glass')
+PROP_AT = {}     # where each zoom's sill thing stands (for the browser's steam etc.)
 
 
 def _bb(o):
@@ -65,15 +68,59 @@ def frame_of(o, toward):
 
 
 # ---------------------------------------------------------------- sill things
+def lathe(name, prof, mat, loc, verts=48, smooth=True):
+    """A solid of revolution: prof is [(radius, height), ...] going round the
+    outline (out up the outside, back down the inside), closed at the axis."""
+    import bmesh
+    me = bpy.data.meshes.new(name); bm = bmesh.new()
+    rings = []
+    for (r, z) in prof:
+        ring = [bm.verts.new((r * math.cos(2 * math.pi * k / verts), r * math.sin(2 * math.pi * k / verts), z)) for k in range(verts)]
+        rings.append(ring)
+    for r0, r1 in zip(rings, rings[1:]):
+        for k in range(verts):
+            try: bm.faces.new((r0[k], r0[(k + 1) % verts], r1[(k + 1) % verts], r1[k]))
+            except ValueError: pass
+    for ring, (r, z) in ((rings[0], prof[0]), (rings[-1], prof[-1])):
+        if r > 1e-6:
+            try: bm.faces.new(ring if ring is rings[-1] else list(reversed(ring)))
+            except ValueError: pass
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me); bm.free()
+    if smooth:
+        for f in me.polygons: f.use_smooth = True
+    o = link(bpy.data.objects.new(name, me)); o.location = loc
+    if mat: o.data.materials.append(mat)
+    return o
+
+
+def _clear_glass(name, ior=1.5, tint=(0.96, 0.98, 1.0)):
+    m = solid(name, tint, 0.0)
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Transmission Weight'].default_value = 1.0; b.inputs['IOR'].default_value = ior; b.inputs['Roughness'].default_value = 0.0
+    return m
+
+
 def glass_of_water(p):
-    g = solid('zp_glass', (0.85, 0.9, 0.92), 0.04)
-    g.node_tree.nodes['Principled BSDF'].inputs['Transmission Weight'].default_value = 1.0
-    water = solid('zp_water', (0.7, 0.85, 0.9), 0.02)
-    water.node_tree.nodes['Principled BSDF'].inputs['Transmission Weight'].default_value = 1.0
-    water.node_tree.nodes['Principled BSDF'].inputs['IOR'].default_value = 1.33
-    o = cyl('zp_glass', p + Vector((0, 0, 0.045)), 0.022, 0.09, g, verts=24, r2=0.026)
-    cyl('zp_water', p + Vector((0, 0, 0.032)), 0.02, 0.06, water, verts=24, r2=0.023)
-    cyl('zp_glass_base', p + Vector((0, 0, 0.003)), 0.021, 0.006, g, verts=24)
+    """A heavy tumbler, three-quarters full: thick base, real wall thickness,
+    water with a meniscus, so it refracts the window behind it like the real thing."""
+    g = _clear_glass('zp_glass2', 1.5)
+    water = _clear_glass('zp_water2', 1.333, (0.86, 0.95, 1.0))
+    R0, R1, H = 0.024, 0.028, 0.095     # base and rim radius, height
+    wall = 0.0022
+    prof = [(0.0, 0.0), (R0 - 0.002, 0.0), (R0, 0.002), (R0 + (R1 - R0) * 0.5, H * 0.5), (R1, H), (R1 - wall, H),
+            (R1 - wall - (R1 - R0) * 0.5, H * 0.5), (R0 - wall, 0.012), (0.0, 0.012)]
+    o = lathe('zp_glass', prof, g, p)
+    lvl = H * 0.74
+    rt = R0 - wall + (R1 - R0) * (lvl - 0.012) / (H - 0.012) - 0.0003
+    wprof = [(0.0, 0.0121), (R0 - wall - 0.0003, 0.0121), (rt, lvl - 0.0015), (rt - 0.0006, lvl), (rt * 0.7, lvl - 0.0004), (0.0, lvl - 0.0005)]
+    lathe('zp_water', wprof, water, p)
+    # a cork coaster under it, so it stands out from the stone
+    cyl('zp_coaster', p + Vector((0, 0, -0.0015)), 0.04, 0.003, varied('zp_cork', (0.55, 0.38, 0.22), 0.1, 0.9, bump=0.6, bump_scale=300), verts=40)
+    # a small light on it so the glass catches a highlight
+    L = bpy.data.lights.new('zp_glint', 'POINT'); L.energy = 0.25; L.color = (1.0, 0.9, 0.75); L.shadow_soft_size = 0.01
+    link(bpy.data.objects.new('zp_glint', L)).location = p + Vector((0.06, -0.12, 0.16))
     return o
 
 
@@ -129,17 +176,41 @@ def potted_lily(p):
 
 
 def soup_pot(p, yaw):
+    """A bowl of soup, steaming hot: a glazed stoneware bowl full of tomato
+    soup with a swirl of cream, a spoon resting in it, a torn hunk of bread
+    beside it on a folded cloth. Unmistakably a meal someone's been given."""
     R = Matrix.Rotation(yaw, 3, 'Z'); P = lambda x, y, z: p + R @ Vector((x, y, z))
-    steel = solid('zp_steel', (0.55, 0.55, 0.57), 0.3, metal=1.0)
-    o = cyl('zp_pot', P(0, 0, 0.035), 0.04, 0.07, steel, verts=24)
-    cyl('zp_soup', P(0, 0, 0.066), 0.037, 0.004, solid('zp_soup', (0.6, 0.32, 0.1), 0.3), verts=24)
-    for sg in (-1, 1):
-        h = cyl('zp_pot_handle', P(sg * 0.046, 0, 0.06), 0.008, 0.004, steel, verts=12); h.rotation_euler = (R @ Matrix.Rotation(math.pi / 2, 3, 'X')).to_euler()
-    limb(P(0.012, 0.0, 0.05), P(0.03, 0.012, 0.14), 0.0035, steel)        # the ladle's handle
-    sphere('zp_ladle', P(0.008, -0.004, 0.05), 0.012, steel, 10, (1, 1, 0.6))
-    for k in range(3):   # a stack of bowls beside it
-        cyl('zp_bowl', P(-0.075, 0.0, 0.012 + k * 0.012), 0.028, 0.016, varied('zp_bowl', (0.9, 0.88, 0.82), 0.02, 0.35), verts=20, r2=0.018)
-    return o
+    glaze = solid('zp_glaze', (0.16, 0.3, 0.42), 0.18, coat=0.6)
+    inside = solid('zp_glaze_in', (0.88, 0.84, 0.76), 0.2, coat=0.6)
+    soup = solid('zp_soup2', (0.62, 0.14, 0.04), 0.15, coat=0.5)
+    cream = solid('zp_cream', (0.95, 0.9, 0.8), 0.3)
+    cloth = varied('zp_cloth', (0.78, 0.2, 0.16), 0.05, 0.9, bump=0.5, bump_scale=600)
+    bread = varied('zp_bread', (0.72, 0.46, 0.2), 0.12, 0.8, bump=1.0, bump_scale=120)
+    crumb = varied('zp_crumb', (0.92, 0.84, 0.66), 0.06, 0.9, bump=1.0, bump_scale=400)
+    steel = solid('zp_spoon', (0.75, 0.75, 0.77), 0.15, metal=1.0)
+    # the cloth, folded square under everything
+    box('zp_cloth', P(-0.005, 0.0, 0.002), (0.13, 0.09, 0.004), cloth, bevel=0.002)
+    # the bowl: a foot ring, a rounded body, a rolled rim; glazed blue outside, cream inside
+    c = P(0.018, 0.0, 0.004)
+    lathe('zp_bowl', [(0.0, 0.0), (0.016, 0.0), (0.017, 0.004), (0.022, 0.006), (0.034, 0.016), (0.041, 0.03), (0.043, 0.036),
+                      (0.0425, 0.039), (0.04, 0.038), (0.037, 0.03), (0.03, 0.017), (0.016, 0.009), (0.0, 0.008)], glaze, c)
+    lathe('zp_bowl_in', [(0.0, 0.0085), (0.016, 0.0095), (0.03, 0.0175), (0.0368, 0.0302), (0.0396, 0.0378), (0.0, 0.0378)], inside, c)
+    lathe('zp_soup', [(0.0, 0.0), (0.0365, 0.0), (0.0385, 0.0345), (0.0, 0.0345)], soup, c)
+    # a swirl of cream on top
+    for k in range(10):
+        a_ = k * 0.6; rr = 0.004 + k * 0.0022
+        sphere('zp_cream', c + R @ Vector((rr * math.cos(a_), rr * math.sin(a_), 0.0347)), 0.0032, cream, 8, (1.2, 1.2, 0.18))
+    # the spoon: bowl in the soup, handle up over the rim
+    sphere('zp_spoon_bowl', P(0.01, -0.004, 0.034), 0.009, steel, 14, (1.4, 1.0, 0.25))
+    limb(P(0.018, -0.006, 0.035), P(0.07, -0.022, 0.06), 0.0022, steel)
+    # a torn hunk of bread: crust round, open crumb on the torn face
+    bc = P(-0.05, 0.012, 0.004)
+    sphere('zp_bread', bc + R @ Vector((0, 0, 0.014)), 0.026, bread, 18, (1.25, 0.9, 0.62))
+    sphere('zp_crumb', bc + R @ Vector((0.022, 0.0, 0.014)), 0.016, crumb, 14, (0.35, 0.85, 0.8))
+    for k in range(3):   # score marks across the crust
+        b_ = box('zp_score', bc + R @ Vector((-0.012 + k * 0.011, 0, 0.03)), (0.003, 0.03, 0.002), solid('zp_score', (0.42, 0.24, 0.1), 0.85), bevel=0.001)
+        b_.rotation_euler = (R @ Matrix.Rotation(0.5, 3, 'Z')).to_euler()
+    return c
 
 
 def place_all(sc, toward):
@@ -159,17 +230,23 @@ def place_all(sc, toward):
                 if abs(along) < w / 2 + 0.06 and 0.005 < out < 0.25 and bottom - 0.02 < q.z + c.z < bottom + 0.3:
                     if o.name.split('.')[0] not in ('sill', 'shutter', 'louvre', 'voussoir', 'string', 'A', 'B', 'C', 'D', 'mull', 'pane', 'wc', 'wct', 'lintel'):
                         o.hide_render = True
-            sp = c + n * 0.13 + Vector((0, 0, bottom - c.z - 0.005))
+            sp = c + n * spec.get('sill_out', 0.13) + Vector((0, 0, bottom - c.z - 0.005))
             yaw = math.atan2(n.y, n.x) + math.pi / 2
-            if zid == 'robot': glass_of_water(sp + t * (w * 0.28))
-            elif zid == 'watif': flip_calendar(sp - t * (w * 0.26), yaw)
-            elif zid == 'saas': mug_and_notes(sp + t * (w * 0.25), yaw)
-            elif zid == 'community': soup_pot(sp - t * (w * 0.22), yaw)
-        if zid == 'lilies':
-            g = find_glass(sc, spec['glass'][0])
-            if g is not None:
-                c, t, n, w, h = frame_of(g, toward)
-                potted_lily(c + n * 0.02 - t * (w * 0.3) + Vector((0, 0, -h / 2 + 0.01)))
+            before = set(bpy.data.objects.keys())
+            if zid == 'robot': at = sp + t * (w * 0.2); glass_of_water(at)
+            elif zid == 'watif': at = sp - t * (w * 0.26); flip_calendar(at, yaw)
+            elif zid == 'saas': at = sp + t * (w * 0.25); mug_and_notes(at, yaw)
+            elif zid == 'community': at = sp - t * (w * 0.12); soup_pot(at, yaw)
+            else: continue
+            PROP_AT[zid] = at.copy()
+            k_ = spec.get('prop_scale', 1.0)
+            if k_ != 1.0:   # scale the whole set about where it stands
+                M = Matrix.Translation(at) @ Matrix.Scale(k_, 4) @ Matrix.Translation(-at)
+                for nm in set(bpy.data.objects.keys()) - before:
+                    o = bpy.data.objects[nm]
+                    if o.parent is None: o.matrix_world = M @ o.matrix_world
+                if zid == 'community': PROP_AT[zid] = at + Vector((0, 0, 0.045 * k_))   # the steam rises from the bowl
+                if zid == 'robot': PROP_AT[zid] = at + Vector((0, 0, 0.1 * k_))
 
 
 STREET_DIR = Vector((math.sin(math.radians(45)) * math.sin(math.radians(58)), -math.cos(math.radians(45)) * math.sin(math.radians(58)), math.cos(math.radians(58))))

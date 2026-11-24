@@ -16,6 +16,7 @@
  */
 import { projects } from '../content/projects';
 import { projectBody } from './panel';
+import { LilyScene, type LilyPane } from './lilyscene';
 import { boxesPlay, dronePlay, rescuePlay, vrPlay, forestPlay, physicsPlay, signPlay, robotPlay, calendarPlay, blocksPlay, servePlay, rainPlay, firePlay, type Play } from './shadowplays';
 
 export interface WindowSpec {
@@ -28,6 +29,10 @@ export interface WindowSpec {
   label: string;
   /** every window's play shows (still) before a pick; picking one sets it going */
   idle?: boolean;
+  /** one scene drawn across all the glass instead of a play per pane */
+  scene?: 'lilies';
+  /** steam rising off the thing on the sill (closeup.json says where it is) */
+  steam?: boolean;
   /** one per window, in the order closeup.json lists them */
   panes: { project: string; label: string; play: Play }[];
 }
@@ -41,6 +46,8 @@ interface CloseJson {
   panes?: PaneJson[];
   street_target: UV;
   scale: number;
+  /** where the sill thing stands in the still */
+  prop?: UV;
   /** how many frames the camera's swing has */
   frames?: number;
 }
@@ -123,7 +130,7 @@ export class WindowView {
     this.panes = this.meta.panes ?? [{ ...this.meta.pane!, aspect: this.meta.aspect ?? 0.75 }];
     const multi = this.panes.length > 1;
     const pw = (k: number) => Math.round(PANE_H * this.panes[k].aspect);
-    const plays = this.panes.map((_, k) => `
+    const plays = spec.scene ? '' : this.panes.map((_, k) => `
           <div class="window-play" data-k="${k}" style="-webkit-mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png${V});mask-image:url(${base}${multi ? `pane_${k}` : 'pane'}.png${V})">
             <svg class="window-svg" viewBox="0 0 ${pw(k)} ${PANE_H}" width="${pw(k)}" height="${PANE_H}" aria-hidden="true"></svg>
           </div>`).join('');
@@ -151,6 +158,7 @@ export class WindowView {
           <picture><source srcset="${base}${spec.id}.avif${V}" type="image/avif"><img class="room-img window-still" src="${base}${spec.id}.webp${V}" alt="" decoding="async"></picture>
           ${plays}
           ${glows}
+          ${spec.steam && this.meta.prop ? `<svg class="sill-steam" viewBox="0 0 1000 750" preserveAspectRatio="none" aria-hidden="true">${[0, 1, 2, 3].map(() => '<path/>').join('')}</svg>` : ''}
           ${hits}
         </div>
         ${multi ? `<button class="room-back window-back-float" type="button"><span aria-hidden="true">←</span> back to the street</button>
@@ -163,7 +171,8 @@ export class WindowView {
     this.el.querySelectorAll('.room-back').forEach((b) => b.addEventListener('click', () => this.close()));
     this.el.querySelectorAll<HTMLButtonElement>('.pane-hit').forEach((b) => {
       const k = Number(b.dataset.k);
-      const glow = (on: boolean) => this.el.querySelector(`.pane-glow[data-k="${k}"]`)?.classList.toggle('is-hot', on);
+      const proj = spec.panes[k]?.project;
+      const glow = (on: boolean) => spec.panes.forEach((pp, j) => { if (pp.project === proj) this.el.querySelector(`.pane-glow[data-k="${j}"]`)?.classList.toggle('is-hot', on); });
       b.addEventListener('click', () => this.select(k));
       b.addEventListener('pointerenter', () => glow(true));
       b.addEventListener('pointerleave', () => glow(false));
@@ -178,6 +187,11 @@ export class WindowView {
     });
     this.canvas = this.el.querySelector('.window-fly');
     this.steps = [...this.el.querySelectorAll<SVGSVGElement>('.window-svg')].map((svg, k) => (spec.panes[k]?.play ?? boxesPlay)(svg, pw(k)));
+    this.scene?.dispose(); this.scene = null;
+    if (spec.scene === 'lilies') {
+      const lp: LilyPane[] = this.panes.map((q, k) => ({ ...q, kind: spec.panes[k]?.project === 'lily-and-fire' ? 'fire' : 'rain' }));
+      this.scene = new LilyScene(this.el.querySelector('.window-pic') as HTMLElement, lp, this.panes.map((_, k) => `${base}pane_${k}.png${V}`));
+    }
     this.current = -1;
     // the camera's swing round to face the window: pre-rendered frames. All
     // are fetched (compressed), but only a few around the playhead are kept
@@ -221,26 +235,52 @@ export class WindowView {
       this.steps.forEach((st) => st(0));
       this.el.querySelectorAll<HTMLElement>('.window-play').forEach((e) => e.classList.add('is-on'));
     }
+    this.startSteam();
     if (!multi) this.select(0);
     else (this.el.querySelector('.pane-hit') as HTMLElement)?.focus({ preventScroll: true });
   }
 
   /** Light up one window's shadow play and show its write-up. */
+  private scene: LilyScene | null = null;
+  private steamRaf = 0;
+  /** Soft wisps rising off the sill thing (the bowl of soup), drifting and fading. */
+  private startSteam() {
+    const svg = this.el.querySelector('.sill-steam'); const at = this.meta.prop;
+    if (!svg || !at) return;
+    const paths = [...svg.querySelectorAll('path')];
+    const x0 = at[0] * 1000, y0 = at[1] * 750;
+    const t0 = performance.now();
+    const tick = () => {
+      const t = (performance.now() - t0) / 1000;
+      paths.forEach((p, k) => {
+        const ph = ((this.motion ? t : 1.3) * 0.32 + k / paths.length) % 1;
+        const sw = Math.sin(t * 1.3 + k * 2.1) * 6;
+        const x = x0 - 12 + k * 8 + ph * 10, y = y0 - ph * 90, h = 46;
+        p.setAttribute('d', `M ${x} ${y} q ${7 + sw} ${-h * 0.25} ${sw * 0.6} ${-h * 0.5} q ${-7 + sw * 0.3} ${-h * 0.25} ${sw + 4} ${-h * 0.5}`);
+        p.setAttribute('opacity', String(Math.sin(ph * Math.PI) * 0.55));
+      });
+      if (this.motion) this.steamRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
   private select(k: number) {
     if (k === this.current) return;
+    // panes showing the same project (the bay's front and side) are one pick
+    if (this.current >= 0 && this.spec.panes[k]?.project === this.spec.panes[this.current]?.project) return;
     this.current = k;
+    if (this.scene) this.scene.setMode(this.spec.panes[k]?.project === 'lily-and-fire' ? 'fire' : 'rain');
     cancelAnimationFrame(this.raf);
     const p = byId(this.spec.panes[k]?.project ?? '');
     const body = this.el.querySelector('.room-body') as HTMLElement;
     body.innerHTML = p ? projectBody(p, 2) : '';
     if (this.spec.idle) this.steps.forEach((st, j) => { if (j !== k) st(0); });
     else this.el.querySelectorAll<HTMLElement>('.window-play').forEach((e) => e.classList.toggle('is-on', Number(e.dataset.k) === k));
-    this.el.querySelectorAll<HTMLElement>('.pane-hit').forEach((e) => e.setAttribute('aria-pressed', String(Number(e.dataset.k) === k)));
+    this.el.querySelectorAll<HTMLElement>('.pane-hit').forEach((e) => e.setAttribute('aria-pressed', String(this.spec.panes[Number(e.dataset.k)]?.project === this.spec.panes[k]?.project)));
     const wasSettled = this.el.classList.contains('is-settled');
     this.el.classList.add('is-settled');
     // the picture moves aside for the write-up: lay the plays on again once it has
     setTimeout(() => this.fitPane(), wasSettled ? 0 : 650);
-    const step = this.steps[k];
+    const step = this.steps[k] ?? (() => {});
     const t0 = performance.now();
     const tick = () => { step(this.motion ? (performance.now() - t0) / 1000 : 4.5); if (this.motion) this.raf = requestAnimationFrame(tick); };
     tick();
@@ -361,6 +401,7 @@ export class WindowView {
     this.el.classList.remove('is-open');
     this.el.hidden = true; this.el.innerHTML = '';
     for (const f of this.frames) f?.close();
+    this.scene?.dispose(); this.scene = null; cancelAnimationFrame(this.steamRaf);
     this.frames = []; this.blobs = []; this.geo = null; this.u = 0; this.u0 = 0; this.current = -1; this.steps = [];
   }
 }
@@ -382,12 +423,13 @@ export const WINDOWS: WindowSpec[] = [
   { id: 'robot', building: 'tall', label: 'Sink-finding robot', panes: [{ project: 'brita-robot', label: 'Sink-finding robot', play: robotPlay }] },
   { id: 'watif', building: 'shop', label: 'Waterloo API + WatIf', panes: [{ project: 'watif', label: 'Waterloo API + WatIf', play: calendarPlay }] },
   { id: 'saas', building: 'shop', label: 'SaaS from scratch', panes: [{ project: 'saas', label: 'SaaS from scratch', play: blocksPlay }] },
-  { id: 'lilies', building: 'corner', label: 'Lily and Rain, Lily and Fire', hint: 'two lilies. pick a window.', idle: true,
+  { id: 'lilies', building: 'corner', label: 'Lily and Rain, Lily and Fire', hint: 'two lilies. the bay for rain, the window beside it for fire.', scene: 'lilies',
     panes: [
+      { project: 'lily-and-rain', label: 'Lily and Rain', play: rainPlay },
       { project: 'lily-and-rain', label: 'Lily and Rain', play: rainPlay },
       { project: 'lily-and-fire', label: 'Lily and Fire', play: firePlay },
     ] },
-  { id: 'community', building: 'bakery', label: 'Community', panes: [{ project: 'community', label: 'Community', play: servePlay }] },
+  { id: 'community', building: 'bakery', label: 'Community', steam: true, panes: [{ project: 'community', label: 'Community', play: servePlay }] },
 ];
 export const windowById = (id: string) => WINDOWS.find((w) => w.id === id) ?? null;
 

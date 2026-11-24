@@ -27,6 +27,9 @@ const idxPath = `${out}/../index.json`;
 if (existsSync(idxPath)) {
   const idx = JSON.parse(readFileSync(idxPath, 'utf8'));
   idx.ready = [...new Set([...(idx.ready ?? []), id])];
+  // where its windows are on the street, straight from the close-up's render
+  const sq = JSON.parse(readFileSync(`${src}/closeup.json`, 'utf8')).street_quads;
+  if (Array.isArray(sq) && sq.length) idx[id] = sq;
   writeFileSync(idxPath, JSON.stringify(idx));
 }
 console.log('packaged window', id, 'to', out);
