@@ -125,13 +125,15 @@ void main() {
   c.rgb *= 1.0 + f * k;
   c.rgb += vec3(1.0, 0.66, 0.36) * halo * k;
 
-  // Windows with a project behind them glow a touch rosier than the rest,
+  // Windows with a project behind them glow a clear yellow (they are the yellow windows),
   // only where the glass is lit, so they read as different without shouting.
   float zm = texture2D(uLightW, uv).b;
   if (zm > 0.0) {
     float lum = dot(c.rgb, vec3(0.3, 0.59, 0.11));
     float wz = zm * smoothstep(0.32, 0.7, lum) * k;
-    c.rgb = mix(c.rgb, c.rgb * vec3(1.02, 0.9, 1.0) + vec3(0.025, 0.0, 0.035) * lum, wz * 0.7);
+    // a clear warm yellow, breathing very slowly so the eye finds it
+    float breathe = 0.85 + 0.15 * sin(uTime * 1.3);
+    c.rgb = mix(c.rgb, vec3(1.0, 0.86, 0.38) * (0.55 + 0.75 * lum), wz * 0.8 * breathe);
   }
 
   // Chimney smoke. Each plume is noise carried up the column, so it billows
@@ -154,7 +156,7 @@ void main() {
     // the breeze: bends the column over more the higher it gets, gusting
     float gust = 0.75 + 0.25 * sin(t * 0.21 + S.w * 6.0) + 0.12 * sin(t * 0.53 + S.w * 3.0);
     float cx = 0.055 * pow(hh, 1.55) * gust + 0.25 * sin(hh * 0.35 - t * 0.6 * K.x + S.w * 9.0) * min(1.0, hh * 0.2);
-    float wdt = 0.75 + 0.2 * hh;
+    float wdt = 0.7 + 0.16 * hh;
     float x = (rel.x - cx) / wdt;
     if (abs(x) > 2.6) continue;
     // noise rising with the smoke (advected up), warped so it curls
@@ -166,7 +168,7 @@ void main() {
     // puffs: blobs leaving the pot at intervals (K.w = 0 steady, 1 all puffs)
     float puff = 0.5 + 0.5 * sin((hh * 0.55 - t * 0.9 * K.x) * 3.0 + S.w * 11.0);
     puff = mix(1.0, smoothstep(0.15, 0.85, puff), K.w);
-    float rise = smoothstep(-0.4, 0.6, h) * exp(-hh / K.z * 1.6) * smoothstep(K.z * 1.35, K.z * 0.6, hh);
+    float rise = smoothstep(-0.2, 0.8, h) * exp(-hh / K.z * 1.6) * smoothstep(K.z * 1.35, K.z * 0.6, hh);
     float d = body * rise * puff * smoothstep(0.26, 0.8, n + 0.22 * body) * K.y;
     a += d;
     // fresh smoke near the pot catches the warm light from inside
@@ -331,21 +333,20 @@ export class CanalScene {
     const sarr = new Float32Array(MAX_SMOKE * 4), karr = new Float32Array(MAX_SMOKE * 4);
     // each chimney's character: [rise speed, density, reach in widths, puffiness];
     // scene.json can name it (s.k), otherwise it's picked from a small set
+    // per opening: [rise speed, density, reach in widths, puffiness]. Kept
+    // simple: a soft column leaving each opening and drifting off with the breeze
     const KINDS: Record<string, [number, number, number, number]> = {
-      hearth: [0.8, 0.85, 22, 0.15],     // a steady coal fire: a full, lazy column
-      oven: [0.6, 1.05, 26, 0.05],       // the bakery: thick, rolling, carried far
-      wisp: [1.4, 0.45, 15, 0.1],        // a thin draught, fast and soon gone
-      stove: [1.1, 0.7, 12, 0.75],       // a stove pipe: short puffs
-      banked: [0.5, 0.4, 18, 0.35],      // a fire banked low: faint, slow
+      pot: [0.9, 0.55, 26, 0.1],
+      hood: [0.7, 0.45, 22, 0.1],
+      flue: [1.2, 0.4, 22, 0.15],
+      cowl: [0.9, 0.5, 24, 0.1],
+      oven: [0.7, 0.6, 28, 0.05],
+      stove: [1.1, 0.55, 18, 0.6],
     };
-    // in the order the street's chimneys are built: tall house ×2, cream shop ×2, corner house, bakery, houseboat
-    const order = ['banked', 'hearth', 'wisp', 'banked', 'hearth', 'oven', 'stove'];
     S.forEach((s, i) => {
-      // smoke.json marks where the old baked puffs began, a little above the pot
-      const k = (s as { k?: string }).k ?? order[i % order.length];
-      const drop = k === 'stove' ? 0.8 : 3.2;
-      sarr.set([s.x, s.y + s.r * drop * (img.naturalWidth / img.naturalHeight), Math.max(s.r, 0.004), (i * 0.37) % 1], i * 4);
-      karr.set(KINDS[k] ?? KINDS.hearth, i * 4);
+      const k = (s as { k?: string }).k ?? 'pot';
+      sarr.set([s.x, s.y, Math.max(s.r, 0.003), (i * 0.37) % 1], i * 4);
+      karr.set(KINDS[k] ?? KINDS.pot, i * 4);
     });
     gl.uniform4fv(gl.getUniformLocation(p, 'uSmoke'), sarr);
     gl.uniform4fv(gl.getUniformLocation(p, 'uSmokeK'), karr);

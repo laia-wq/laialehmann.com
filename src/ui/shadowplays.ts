@@ -710,31 +710,73 @@ export const calendarPlay: Play = (svg, PW) => {
   };
 };
 
-/** SaaS: someone at a laptop builds a stack of blocks one at a time, then
- *  slides the finished stack off along the desk and starts again. */
+/** SaaS: one person at a laptop runs a whole service. They type and push an
+ *  update; it travels up to the cloud, then out along lines to customers,
+ *  who pop up one by one (a phone, a laptop, a shop till), each lighting up
+ *  as it connects. On the wall a dashboard's user count climbs a step with
+ *  each one, and the server rack's lights blink with the traffic. */
 export const blocksPlay: Play = (svg, PW) => {
-  const { room } = stage(svg, PW);
+  const { room, sx } = stage(svg, PW);
   desk(room);
-  const who = person(room);
-  const blocks = Array.from({ length: 5 }, () => el('rect', { width: 34, height: 18, rx: 2, stroke: 'none' }, room));
-  const LOOP = 11;
+  const who = person(room, { hair: 'curly', build: 1.02 });
+  // the wall dashboard: a frame, axis, a stepped line of users, a little bar row
+  el('rect', { x: 112, y: 58, width: 118, height: 84, rx: 4, fill: 'none', 'stroke-width': 4 }, room);
+  el('path', { d: 'M 124 128 L 220 128 M 124 128 L 124 70', fill: 'none', 'stroke-width': 2 }, room);
+  const chart = el('path', { fill: 'none', 'stroke-width': 3.2 }, room);
+  const bars = [0, 1, 2, 3].map((k) => el('rect', { x: 196 + k * 0, y: 0, width: 5, height: 0, stroke: 'none' }, room));
+  // a server rack in the corner
+  el('rect', { x: 262, y: 236, width: 34, height: 160, rx: 2, stroke: 'none' }, room);
+  for (let k = 0; k < 6; k++) el('rect', { x: 266, y: 244 + k * 24, width: 26, height: 3, stroke: 'none', opacity: 0.4 }, room);
+  // the cloud, and the lines out of it
+  const CL = { x: 240, y: 32 };
+  el('path', { d: `M ${CL.x - 34} ${CL.y + 12} a 12 12 0 0 1 8 -20 a 16 16 0 0 1 28 -6 a 13 13 0 0 1 24 6 a 11 11 0 0 1 4 20 Z`, stroke: 'none' }, room);
+  const up = el('circle', { r: 3.6, stroke: 'none' }, room);
+  const custs = [
+    { x: 296, y: 120, kind: 'phone' }, { x: 288, y: 186, kind: 'laptop' }, { x: 60, y: 40, kind: 'till' },
+  ].map((c) => ({ ...c, g: el('g', {}, room), line: el('path', { fill: 'none', 'stroke-width': 1.6, 'stroke-dasharray': '4 5' }, room), pkt: el('circle', { r: 3, stroke: 'none' }, room) }));
+  for (const c of custs) {
+    // a small person behind their device
+    el('circle', { cx: 0, cy: -16, r: 6.5, stroke: 'none' }, c.g);
+    el('path', { d: 'M -10 4 Q -10 -6 0 -7 Q 10 -6 10 4 Z', stroke: 'none' }, c.g);
+    if (c.kind === 'phone') el('rect', { x: 6, y: -12, width: 6, height: 11, rx: 1.5, stroke: 'none' }, c.g);
+    else if (c.kind === 'laptop') el('path', { d: 'M -14 4 L 14 4 L 12 7 L -12 7 Z M -10 4 L -8 -8 L 8 -8 L 10 4', stroke: 'none' }, c.g);
+    else el('path', { d: 'M -16 4 L 16 4 L 16 10 L -16 10 Z M 4 -2 L 14 -2 L 14 4 L 4 4 Z', stroke: 'none' }, c.g);
+  }
+  // LEDs: light dots laid over the ink (they're holes the room light shows through)
+  const leds = Array.from({ length: 6 }, (_, k) => el('circle', { cx: 287 * sx, cy: 245.5 + k * 24, r: 1.8, fill: '#ffe7b8', stroke: 'none' }, svg));
+  const LOOP = 13;
   return (time: number) => {
     const t = time % LOOP;
-    const typing = Math.sin(time * 14) * 2;
-    const ship = seg(t, 8.8, 10.4);
-    let reach: [number, number] | null = null;
-    blocks.forEach((b, i) => {
-      const t0 = 0.6 + i * 1.5;
-      const land = seg(t, t0, t0 + 0.6);
-      const bx = 222 + (i % 2) * 4 + ship * 120, by = 290 - 18 * (i + 1);
-      const x = lerp(170, bx, land), y = lerp(250, by, land) - Math.sin(land * Math.PI) * 20;
-      b.setAttribute('x', String(x)); b.setAttribute('y', String(y));
-      b.setAttribute('opacity', String(t < t0 ? 0 : 1));
-      if (t > t0 - 0.3 && t < t0 + 0.7) reach = [x + 6, y + 9];
+    const typing = Math.sin(time * 14) * 2 * (t < 2.4 || (t > 5.2 && t < 6.4) ? 1 : 0.2);
+    const pushed = seg(t, 2.4, 2.7);
+    who({ x: 84, face: 1, walk: 0, ph: 0, sit: true, hipY: 296, lean: 6, look: t > 2.6 && t < 10 ? 0.45 : -0.1,
+      hand: [164 + typing, 284 - pushed * (1 - seg(t, 3, 3.4)) * 6], hand2: [154 - typing, 286] });
+    // the update rides up from the laptop to the cloud
+    const rise = seg(t, 2.6, 3.8);
+    const ux = lerp(200, CL.x - 6, rise), uy = lerp(244, CL.y + 6, rise) - Math.sin(rise * Math.PI) * 30;
+    up.setAttribute('cx', String(ux)); up.setAttribute('cy', String(uy)); up.setAttribute('opacity', String(t > 2.6 && t < 3.8 ? 1 : 0));
+    // then out to each customer in turn
+    let n = 0;
+    custs.forEach((c, k) => {
+      const t0 = 3.9 + k * 1.7, go = seg(t, t0, t0 + 0.9), show = seg(t, t0 + 0.8, t0 + 1.1) * (1 - seg(t, 12.2, 12.9));
+      const sxp = CL.x + (c.x > CL.x ? 22 : -26), syp = CL.y + 8;
+      set(c.line, show > 0.01 || (t > t0 && t < t0 + 1) ? `M ${sxp} ${syp} Q ${(sxp + c.x) / 2} ${Math.min(syp, c.y) - 10} ${c.x} ${c.y - 26}` : '');
+      c.line.setAttribute('opacity', String(Math.max(show, t > t0 && t < t0 + 1 ? 0.7 : 0) * 0.8));
+      const px = lerp(sxp, c.x, go), py = lerp(syp, c.y - 26, go) - Math.sin(go * Math.PI) * 14;
+      c.pkt.setAttribute('cx', String(px)); c.pkt.setAttribute('cy', String(py)); c.pkt.setAttribute('opacity', String(t > t0 && t < t0 + 0.95 ? 1 : 0));
+      const pop = show < 1 ? 0.6 + 0.4 * show + Math.sin(show * Math.PI) * 0.25 : 1;
+      c.g.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${pop})`);
+      c.g.setAttribute('opacity', String(show));
+      if (show > 0.5) n++;
     });
-    const r = reach as [number, number] | null;
-    who({ x: 84, face: 1, walk: 0, ph: 0, sit: true, hipY: 296, lean: 6, look: r ? 0.05 : -0.1,
-      hand: r ?? [164 + typing, 284], hand2: [154 - typing, 286] });
+    // the dashboard: users climb a step per customer
+    const steps = [0, 1, 2, 3].map((k) => (k <= n ? 1 : 0));
+    const lvl = (k: number) => 124 - 12 - k * 16;
+    set(chart, `M 126 ${lvl(0)} L 150 ${lvl(0) - 2} L 160 ${lvl(Math.min(n, 1))} L 182 ${lvl(Math.min(n, 1)) - 2} L 192 ${lvl(Math.min(n, 2))} L 206 ${lvl(Math.min(n, 2)) - 1} L 216 ${lvl(n)}`);
+    bars.forEach((b, k) => { b.setAttribute('x', String(128 + k * 8)); const h = 6 + steps[k] * (k + 1) * 4; b.setAttribute('y', String(80 - h)); b.setAttribute('height', String(h)); });
+    // the rack's lights flicker faster while traffic is flowing
+    const busy = t > 2.6 && t < 9.6 ? 1 : 0.25;
+    leds.forEach((l, k) => l.setAttribute('opacity', String(Math.sin(time * (3 + k * 1.7) * (1 + busy * 2) + k) > 0.2 ? 0.9 : 0.15)));
   };
 };
 

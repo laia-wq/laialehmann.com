@@ -1627,6 +1627,8 @@ gable_end(-2.85, -2.9, -0.05, topD + 0.1, 0.75, oldbrick2, 'lunette')
 # C's roof: ridge along y — build as gable on a rotated footprint by swapping: use a mansard-ish hip of boxes
 gable_roof('roofC', 3.875, 2.05, 1.55, 3.7, topC + 0.1, 0.9, slate, over=0.15)
 _b = set(bpy.data.objects.keys()); timbered_gable(4.65, 0.2, 3.9, topC, topC + 0.1, 0.9, plaster_o); GROUPS_EXTRA['gableC'] = set(bpy.data.objects.keys()) - _b
+VENTS = []   # every opening smoke leaves a chimney by: (world point, radius, kind) for the browser
+
 def chimney(style, x, y, z, h, wall):
     """Six kinds of chimney, so the roofline isn't one stack repeated. Each
     is built of its own house's wall (same colour, same brick or plaster), so
@@ -1645,6 +1647,7 @@ def chimney(style, x, y, z, h, wall):
         for k, (dx, ph, pr, m) in enumerate(((-0.1, 0.2, 0.04, potm), (0.0, 0.28, 0.035, potm2), (0.1, 0.14, 0.045, potm))):
             cyl('ch_pot', (x + dx, y, top + ph / 2), pr, ph, m, verts=12, r2=pr * 0.8)
             cyl('ch_pot_rim', (x + dx, y, top + ph), pr * 1.15, 0.025, m, verts=12)
+            VENTS.append((Vector((x + dx, y, top + ph + 0.02)), 0.05, 'pot'))
         return Vector((x, y, top + 0.3))
     if style == 'hood':            # stone stack with a slab hood on four little piers
         box('chimney', (x, y, z + h / 2), (0.3, 0.26, h), wall, bevel=0.012)
@@ -1653,6 +1656,7 @@ def chimney(style, x, y, z, h, wall):
             for dy in (-0.09, 0.09):
                 box('ch_pier', (x + dx, y + dy, top + 0.07), (0.05, 0.05, 0.14), wall, bevel=0.004)
         box('ch_slab', (x, y, top + 0.16), (0.38, 0.34, 0.04), stone, bevel=0.008)
+        for dx in (-0.16, 0.16): VENTS.append((Vector((x + dx, y, top + 0.1)), 0.05, 'hood'))
         return Vector((x, y, top + 0.12))
     if style == 'flue':            # tin stovepipe through a flashing collar, a conical rain cap, guy wires
         box('ch_stack', (x, y, z + 0.14), (0.24, 0.24, 0.28), wall, bevel=0.01)
@@ -1664,6 +1668,7 @@ def chimney(style, x, y, z, h, wall):
         for a in (0.0, 2.1, 4.2):
             limb(Vector((x + 0.05 * math.cos(a), y + 0.05 * math.sin(a), top - 0.1)),
                  Vector((x + 0.45 * math.cos(a), y + 0.45 * math.sin(a), z + 0.01)), 0.0025, iron)
+        VENTS.append((Vector((x, y, top + 0.08)), 0.05, 'flue'))
         return Vector((x, y, top + 0.06))
     if style == 'cowl':            # short brick stack with a turning metal cowl
         box('chimney', (x, y, z + h / 2), (0.26, 0.26, h), wall, bevel=0.01)
@@ -1673,6 +1678,7 @@ def chimney(style, x, y, z, h, wall):
         c = cyl('ch_cowl_mouth', (x - 0.06, y - 0.06, top + 0.2), 0.05, 0.08, zinc, verts=12)
         c.rotation_euler = (math.pi / 2, 0, math.radians(-45))
         cyl('ch_vane', (x, y, top + 0.31), 0.004, 0.08, iron, verts=6)
+        VENTS.append((Vector((x - 0.09, y - 0.09, top + 0.2)), 0.05, 'cowl'))
         return Vector((x - 0.08, y - 0.08, top + 0.2))
     if style == 'rendered':        # plastered chimney, a brick string course, two pots, a pigeon
         box('chimney', (x, y, z + h / 2), (0.3, 0.3, h), wall, bevel=0.012)
@@ -1682,6 +1688,7 @@ def chimney(style, x, y, z, h, wall):
             cyl('ch_pot', (x - 0.07 + k * 0.14, y, top + 0.09), 0.045, 0.18, potm, verts=12, r2=0.035)
         sphere('pigeon', (x + 0.13, y - 0.1, top + 0.05), 0.035, solid('pigeon_g', (0.45, 0.46, 0.5), 0.7), 10, (1.3, 0.9, 0.9))
         sphere('pigeon', (x + 0.17, y - 0.12, top + 0.09), 0.02, solid('pigeon_g', (0.45, 0.46, 0.5), 0.7), 8)
+        for k in range(2): VENTS.append((Vector((x - 0.07 + k * 0.14, y, top + 0.19)), 0.05, 'pot'))
         return Vector((x - 0.07, y, top + 0.2))
     # 'oven': the bakery's broad chimney, a little pitched roof over arched vents
     box('chimney', (x, y, z + h / 2), (0.42, 0.3, h), wall, bevel=0.01)
@@ -1692,6 +1699,9 @@ def chimney(style, x, y, z, h, wall):
     for sg in (-1, 1):
         r_ = box('ch_roof', (x, y + sg * 0.09, top + 0.25), (0.5, 0.21, 0.025), tile_mat('rt_old', (0.42, 0.22, 0.15)), bevel=0.004)
         r_.rotation_euler = (sg * 0.5, 0, 0)
+    # smoke leaves through the arched vents between the piers, on both sides
+    for dx in (-0.085, 0.085):
+        for sg in (-1, 1): VENTS.append((Vector((x + dx, y + sg * 0.16, top + 0.1)), 0.06, 'oven'))
     return Vector((x, y, top + 0.18))
 
 
@@ -2010,8 +2020,17 @@ if os.environ.get('NO_SMOKE'):
         lower = [q for q in puffs if q is not o and (q.matrix_world.translation.xy - p.xy).length < 0.45 and q.matrix_world.translation.z < p.z - 0.05]
         if not lower:
             v = world_to_camera_view(sc, cam, p)
-            SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5)})
+            # chimneys say exactly where their openings are (VENTS); a puff
+            # only stands for a source that isn't a chimney (the boat's stove)
+            if not any((Vector((vp.x, vp.y)) - p.xy).length < 0.7 for vp, _, _ in VENTS):
+                SMOKE.append({'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(max(o.dimensions) / 2 / 15.5, 5), 'k': 'stove'})
         o.hide_render = True
+    for vp, vr, kind in VENTS:
+        v = world_to_camera_view(sc, cam, vp)
+        SMOKE.insert(0, {'x': round(v.x, 4), 'y': round(1 - v.y, 4), 'r': round(vr / 15.5, 5), 'k': kind})
+    if os.environ.get('SMOKE_ONLY'):
+        import json
+        json.dump(SMOKE, open(os.environ['SMOKE_JSON'], 'w')); print('SMOKE', len(SMOKE)); sys.exit(0)
 import window_closeup as WCU
 WCU.shop_squirrel(sc)
 if os.environ.get('GLASS_NEAR'):

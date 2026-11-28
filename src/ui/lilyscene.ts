@@ -239,8 +239,39 @@ export class LilyScene {
         const [a, b, cc, d, e, f] = this.paneM(k);
         c.setTransform(a * s, b * s, cc * s, d * s, e * s, f * s);
         for (const L of this.rows[k][which]) drawLily(c, L, t + (which === 'back' ? 0.7 : 0));
+        if (which === 'front' && this.panes[k].kind === 'rain' && this.rainAmt > 0.01) this.drawRainInk(c, k, t);
       });
     }
+  }
+
+  /** Rain as part of the shadow play: dark streaks slanting down behind the
+   *  glass, thickening as it sets in, with little splashes at the bottom. */
+  private drawRainInk(c: CanvasRenderingContext2D, k: number, t: number) {
+    const PW = H * this.panes[k].aspect, n = Math.round((PW / 4) * this.rainAmt);
+    c.save();
+    c.lineCap = 'round';
+    c.strokeStyle = `rgba(${INK}, ${0.55 * Math.min(1, this.rainAmt * 1.5)})`;
+    c.lineWidth = 1.7;
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+      const sp = 0.9 + ((i * 7919) % 13) / 13 * 0.6, ph = ((i * 0.618) % 1);
+      const u = this.motion ? (t * sp + ph) % 1 : ph;
+      const x = ((i * 37.7) % (PW + 40)) - 20, y = -30 + u * (H + 40), len = 14 + (i % 5) * 3;
+      c.moveTo(x + u * 18, y); c.lineTo(x + u * 18 - len * 0.18, y - len);
+    }
+    c.stroke();
+    // splashes where it lands
+    c.lineWidth = 1.2;
+    c.beginPath();
+    for (let i = 0; i < n / 3; i++) {
+      const ph = ((i * 0.381) % 1), u = this.motion ? (t * 1.7 + ph) % 1 : ph;
+      if (u > 0.35) continue;
+      const x = ((i * 53.3) % PW), y = H - 6, r = 2 + u * 14;
+      c.moveTo(x - r, y - r * 0.5); c.quadraticCurveTo(x - r * 0.4, y - r * 0.2, x, y);
+      c.moveTo(x + r, y - r * 0.5); c.quadraticCurveTo(x + r * 0.4, y - r * 0.2, x, y);
+    }
+    c.stroke();
+    c.restore();
   }
 
   // ---------------------------------------------------------------- fire
@@ -321,7 +352,7 @@ export class LilyScene {
     const inGlass = (x: number, y: number) => quads.some((q, k) => this.panes[k].kind && x > Math.min(q.tl[0], q.bl[0]) && x < Math.max(q.tr[0], q.br[0]) && y > Math.min(q.tl[1], q.tr[1]) && y < Math.max(q.bl[1], q.br[1]));
     const wind = 0.16;
     // rain: keep about `want` drops in the air
-    const want = Math.round(650 * this.rainAmt);
+    const want = 0;   // the rain now falls in the shadow play, behind the glass (drawRainInk)
     if (this.motion) {
       while (this.drops.length < want) {
         const z = Math.random();                         // 0 far .. 1 near
@@ -365,7 +396,7 @@ export class LilyScene {
     this.splashes = this.splashes.filter((sp) => sp.t < 0.32);
     // beads on the glass: gather while it rains, grow, some run down, dry off after
     if (this.motion) {
-      if (this.rainAmt > 0.2 && this.beads.length < 140 && Math.random() < dt * 22 * this.rainAmt) {
+      if (false && this.rainAmt > 0.2 && this.beads.length < 140 && Math.random() < dt * 22 * this.rainAmt) {
         const k = rainPanes[Math.floor(Math.random() * rainPanes.length)];
         if (k !== undefined) {
           const q = quads[k], u = Math.random(), v = Math.random();
@@ -398,7 +429,7 @@ export class LilyScene {
       c.fillStyle = 'rgba(255, 255, 255, 0.7)'; c.beginPath(); c.arc(b.x - b.r * 0.35, b.y - b.r * 0.4, Math.max(0.4, b.r * 0.22), 0, Math.PI * 2); c.fill();
     }
     c.restore();
-    if (!this.motion && this.rainAmt > 0) {
+    if (false && !this.motion && this.rainAmt > 0) {
       // reduced motion: rain as still streaks
       const r = rng(7);
       c.strokeStyle = 'rgba(205, 215, 230, 0.22)'; c.lineWidth = 1;
