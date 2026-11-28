@@ -53,13 +53,13 @@ const GROUP_NAMES: Record<string, string> = {
 
 /** Rooms in the canal scene and the projects each one holds (rooms open later). */
 const ROOMS: { room: string; where: string; ids: string[] }[] = [
-  { room: 'Squirrels and Seeds', where: 'the corner shop', ids: ['squirrels-and-seeds'] },
+  { room: 'Squirrels & Seeds', where: 'the corner shop', ids: ['squirrels-and-seeds'] },
   { room: 'Lilies & Rain, Lilies & Fire', where: 'the greenhouse, the blue-shuttered house', ids: ['lily-and-rain', 'lily-and-fire'] },
   { room: 'Waterloo API & WatIf', where: 'upstairs, the corner shop', ids: ['watif'] },
   { room: 'The workshop', where: 'the tall brick house', ids: ['brita-robot'] },
   { room: 'Design teams', where: 'the tall brick house', ids: ['wrl', 'warg', 'medtechresolve'] },
   { room: 'Hackathons & competitions', where: 'the attic', ids: ['bridgeway', 'physics-olympics'] },
-  { room: 'Community', where: 'the bakery', ids: ['donation-drives', 'youth-council'] },
+  { room: 'Community', where: 'the bakery', ids: ['community', 'wusa'] },
   { room: 'Late night projects', where: 'the houseboat', ids: ['forest-loss', 'physics-engine', 'signwise', 'saas'] },
 ];
 

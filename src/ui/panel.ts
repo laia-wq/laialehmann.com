@@ -19,6 +19,7 @@ export function projectBody(p: Project, headingLevel: 2 | 3 = 2): string {
         : `<figure class="p-media p-media--placeholder" role="img" aria-label="${esc(m.alt)} (coming soon)"><span>${esc(m.caption ?? 'Image coming soon')}</span></figure>`,
     )
     .join('');
+  const gallery = (p.media?.length ?? 0) > 1 ? `<div class="p-gallery">${media}</div>` : media;
   const stack = p.stack?.length
     ? `<ul class="p-stack" aria-label="Built with">${p.stack.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`
     : '';
@@ -34,7 +35,7 @@ export function projectBody(p: Project, headingLevel: 2 | 3 = 2): string {
     <p class="p-summary">${esc(p.summary)}</p>
     ${highlights}
     ${p.body.map((b) => `<p class="p-text">${esc(b)}</p>`).join('')}
-    ${media}
+    ${gallery}
     ${stack}
     ${links}
   `;

@@ -29,7 +29,7 @@ export interface Room {
 export const rooms: Room[] = [
   {
     id: 'shop',
-    name: 'Squirrels and Seeds',
+    name: 'Squirrels & Seeds',
     building: 'shop',
     projects: ['squirrels-and-seeds'],
     spots: [

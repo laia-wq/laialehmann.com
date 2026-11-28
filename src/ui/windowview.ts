@@ -409,7 +409,7 @@ export class WindowView {
 }
 
 export const WINDOWS: WindowSpec[] = [
-  { id: 'shop', building: 'shop', label: 'Squirrels and Seeds', panes: [{ project: 'squirrels-and-seeds', label: 'Squirrels and Seeds', play: boxesPlay }] },
+  { id: 'shop', building: 'shop', label: 'Squirrels & Seeds', panes: [{ project: 'squirrels-and-seeds', label: 'Squirrels & Seeds', play: boxesPlay }] },
   { id: 'design', building: 'tall', label: 'Design teams', hint: 'three design teams, three windows. pick one.',
     panes: [
       { project: 'warg', label: 'WARG', play: dronePlay },
@@ -425,11 +425,11 @@ export const WINDOWS: WindowSpec[] = [
   { id: 'robot', building: 'tall', label: 'Sink-finding robot', panes: [{ project: 'brita-robot', label: 'Sink-finding robot', play: robotPlay }] },
   { id: 'watif', building: 'shop', label: 'Waterloo API + WatIf', panes: [{ project: 'watif', label: 'Waterloo API + WatIf', play: calendarPlay }] },
   { id: 'saas', building: 'shop', label: 'SaaS from scratch', panes: [{ project: 'saas', label: 'SaaS from scratch', play: blocksPlay }] },
-  { id: 'lilies', building: 'corner', label: 'Lily and Rain, Lily and Fire', hint: 'two lilies. the bay for rain, the window beside it for fire.', scene: 'lilies',
+  { id: 'lilies', building: 'corner', label: 'Lilies & Rain, Lilies & Fire', hint: 'two lilies. the bay for rain, the window beside it for fire.', scene: 'lilies',
     panes: [
-      { project: 'lily-and-rain', label: 'Lily and Rain', play: rainPlay },
-      { project: 'lily-and-rain', label: 'Lily and Rain', play: rainPlay },
-      { project: 'lily-and-fire', label: 'Lily and Fire', play: firePlay },
+      { project: 'lily-and-rain', label: 'Lilies & Rain', play: rainPlay },
+      { project: 'lily-and-rain', label: 'Lilies & Rain', play: rainPlay },
+      { project: 'lily-and-fire', label: 'Lilies & Fire', play: firePlay },
     ] },
   { id: 'community', building: 'bakery', label: 'Community', steam: true, panes: [{ project: 'community', label: 'Community', play: servePlay }] },
 ];
