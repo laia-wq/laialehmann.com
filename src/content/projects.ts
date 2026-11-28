@@ -256,7 +256,7 @@ export const person = {
   invite: {
     word: 'sonder',
     definition: 'the realization that each passerby has a life as vivid and complex as your own.',
-    window: "it's walking past a lit window at night, seeing someone cooking dinner or reading on the couch, and knowing their whole life is in there.",
+    window: "it's the feeling of passing a lit window at night and knowing a whole life is going on inside.",
     me: 'i have lived everywhere, but nothing made me understand the complexity and importance of strangers like building did. look through the yellow windows with me.',
   },
   /** Top of the About sheet: why the site is a street of windows. */
