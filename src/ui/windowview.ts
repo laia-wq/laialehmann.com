@@ -464,6 +464,11 @@ export async function loadZoomIndex() {
   } catch { ZOOM_INDEX = []; }
   return ZOOM_INDEX.map((z) => z.quads);
 }
+
+/** street quads of one zoom (after loadZoomIndex) */
+export function quadsFor(id: string): Quad[] {
+  return ZOOM_INDEX.find((z) => z.id === id)?.quads ?? [];
+}
 const inQuad = (q: Quad, u: number, v: number) => {
   let inside = false;
   for (let i = 0, j = q.length - 1; i < q.length; j = i++) {

@@ -7,7 +7,7 @@ import { Panel, projectBody } from './ui/panel';
 import { drawSignature } from './ui/signature';
 import { RoomView } from './ui/room';
 import { roomForBuilding } from './content/rooms';
-import { WindowView, zoomAt, loadZoomIndex, type WindowSpec } from './ui/windowview';
+import { WindowView, zoomAt, loadZoomIndex, quadsFor, type WindowSpec } from './ui/windowview';
 
 type Mode = 'scene' | '2d';
 
@@ -235,7 +235,8 @@ async function bootScene() {
     live.textContent = on ? 'Lights on.' : 'Lights off.';
   });
   await scene.ready;
-  scene.setHighlights((await zoomQuads).flat());
+  // the boat's glass isn't in the rendered glass mask, so its window shapes are always added
+  scene.setHighlights((await zoomQuads).flat(), quadsFor('firsts'));
   if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __scene: unknown }).__scene = scene;
 }
 

@@ -407,7 +407,7 @@ export class CanalScene {
   private lw: { data: Uint8Array; w: number; h: number } | null = null;
   /** Mark the windows that open a project (quads in image uv): they get a
    *  slightly different hue. Drawn into the light-weight map's spare channel. */
-  async setHighlights(quads: [number, number][][]) {
+  async setHighlights(quads: [number, number][][], always: [number, number][][] = []) {
     const gl = this.gl, lw = this.lw;
     if (!gl || !lw) return;
     const c = document.createElement('canvas'); c.width = lw.w; c.height = lw.h;
@@ -417,9 +417,9 @@ export class CanalScene {
     // rectangles only if that mask is missing
     const mask = await loadImage(BASE + 'zoomglass.png' + V).catch(() => null);
     if (mask) x.drawImage(mask, 0, 0, lw.w, lw.h);
-    else {
+    {
       x.fillStyle = '#fff';
-      for (const q of quads) {
+      for (const q of mask ? always : quads) {
         x.beginPath();
         q.forEach(([u, v], i) => (i ? x.lineTo(u * lw.w, v * lw.h) : x.moveTo(u * lw.w, v * lw.h)));
         x.closePath(); x.fill();
