@@ -728,12 +728,12 @@ export const blocksPlay: Play = (svg, PW) => {
   el('rect', { x: 262, y: 236, width: 34, height: 160, rx: 2, stroke: 'none' }, room);
   for (let k = 0; k < 6; k++) el('rect', { x: 266, y: 244 + k * 24, width: 26, height: 3, stroke: 'none', opacity: 0.4 }, room);
   // the cloud, and the lines out of it
-  const CL = { x: 240, y: 32 };
-  el('path', { d: `M ${CL.x - 34} ${CL.y + 12} a 12 12 0 0 1 8 -20 a 16 16 0 0 1 28 -6 a 13 13 0 0 1 24 6 a 11 11 0 0 1 4 20 Z`, stroke: 'none' }, room);
-  const up = el('circle', { r: 3.6, stroke: 'none' }, room);
+  const CL = { x: 236, y: 40 };
+  el('path', { d: `M ${CL.x - 34} ${CL.y + 12} a 12 12 0 0 1 8 -20 a 16 16 0 0 1 28 -6 a 13 13 0 0 1 24 6 a 11 11 0 0 1 4 20 Z`, stroke: 'none', transform: `translate(${CL.x} ${CL.y}) scale(1.45) translate(${-CL.x} ${-CL.y})` }, room);
+  const up = el('circle', { r: 5, stroke: 'none' }, room);
   const custs = [
-    { x: 296, y: 120, kind: 'phone' }, { x: 288, y: 186, kind: 'laptop' }, { x: 60, y: 40, kind: 'till' },
-  ].map((c) => ({ ...c, g: el('g', {}, room), line: el('path', { fill: 'none', 'stroke-width': 1.6, 'stroke-dasharray': '4 5' }, room), pkt: el('circle', { r: 3, stroke: 'none' }, room) }));
+    { x: 270, y: 236, kind: 'phone' }, { x: 196, y: 208, kind: 'laptop' }, { x: 52, y: 110, kind: 'till' },
+  ].map((c) => ({ ...c, g: el('g', {}, room), line: el('path', { fill: 'none', 'stroke-width': 2.4, 'stroke-dasharray': '6 6' }, room), pkt: el('circle', { r: 5, stroke: 'none' }, room) }));
   for (const c of custs) {
     // a small person behind their device
     el('circle', { cx: 0, cy: -16, r: 6.5, stroke: 'none' }, c.g);
@@ -759,13 +759,13 @@ export const blocksPlay: Play = (svg, PW) => {
     let n = 0;
     custs.forEach((c, k) => {
       const t0 = 3.9 + k * 1.7, go = seg(t, t0, t0 + 0.9), show = seg(t, t0 + 0.8, t0 + 1.1) * (1 - seg(t, 12.2, 12.9));
-      const sxp = CL.x + (c.x > CL.x ? 22 : -26), syp = CL.y + 8;
-      set(c.line, show > 0.01 || (t > t0 && t < t0 + 1) ? `M ${sxp} ${syp} Q ${(sxp + c.x) / 2} ${Math.min(syp, c.y) - 10} ${c.x} ${c.y - 26}` : '');
+      const sxp = CL.x + (c.x > CL.x ? 30 : -38), syp = CL.y + 14;
+      set(c.line, show > 0.01 || (t > t0 && t < t0 + 1) ? `M ${sxp} ${syp} Q ${(sxp + c.x) / 2} ${Math.min(syp, c.y) - 10} ${c.x} ${c.y - 46}` : '');
       c.line.setAttribute('opacity', String(Math.max(show, t > t0 && t < t0 + 1 ? 0.7 : 0) * 0.8));
-      const px = lerp(sxp, c.x, go), py = lerp(syp, c.y - 26, go) - Math.sin(go * Math.PI) * 14;
+      const px = lerp(sxp, c.x, go), py = lerp(syp, c.y - 46, go) - Math.sin(go * Math.PI) * 14;
       c.pkt.setAttribute('cx', String(px)); c.pkt.setAttribute('cy', String(py)); c.pkt.setAttribute('opacity', String(t > t0 && t < t0 + 0.95 ? 1 : 0));
       const pop = show < 1 ? 0.6 + 0.4 * show + Math.sin(show * Math.PI) * 0.25 : 1;
-      c.g.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${pop})`);
+      c.g.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${pop * 1.8})`);
       c.g.setAttribute('opacity', String(show));
       if (show > 0.5) n++;
     });
