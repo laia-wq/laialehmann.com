@@ -93,7 +93,11 @@ async function bootScene() {
     <main id="content" tabindex="-1">
       <h1 class="visually-hidden">${escHtml(person.name)}, ${escHtml(person.role)}</h1>
       <div class="canal-stage" id="stage"></div>
-      <p class="invite">${escHtml(person.invite)}</p>
+      <div class="invite">
+        <p class="invite-word">${escHtml(person.invite.word)} <span>(n.)</span></p>
+        <p class="invite-def">${escHtml(person.invite.definition)} ${escHtml(person.invite.window)}</p>
+        <p class="invite-me">${escHtml(person.invite.me)}</p>
+      </div>
       <nav class="dock" aria-label="Sections">
         <button type="button" data-open="projects">${ICONS.projects}<span>projects</span></button>
         <button type="button" data-open="about">${ICONS.profile}<span>profile</span></button>

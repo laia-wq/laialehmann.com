@@ -514,8 +514,17 @@ html[data-mode='scene'] .panel { z-index: 8; }
 .sig { display: block; padding: 0; margin: -6px 0 0 -10px; transform: none; font-size: inherit; text-shadow: none; }
 .sig-canvas { display: block; filter: drop-shadow(0 0 10px rgba(255, 190, 120, 0.12)); }
 .sig-sub { margin: 0 0 0 4px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--cream-dim); }
-.invite { position: fixed; left: clamp(16px, 3vw, 32px); bottom: clamp(18px, 3.6vh, 32px); z-index: 3; margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--cream-dim); max-width: 22ch; line-height: 1.6; }
-@media (max-width: 720px) { .invite { display: none; } .sig-sub { font-size: 9px; } }
+.invite { position: fixed; left: clamp(16px, 3vw, 32px); bottom: clamp(18px, 3.6vh, 32px); z-index: 3; margin: 0; max-width: min(34ch, 30vw); color: var(--cream-dim); pointer-events: none; }
+.invite p { margin: 0; text-shadow: 0 1px 8px rgba(4, 5, 8, 0.9); }
+.invite-word { font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 26px; line-height: 1; color: var(--cream); }
+.invite-word span { font-style: normal; font-size: 13px; letter-spacing: 0.06em; color: var(--cream-dim); }
+.invite-def { margin-top: 6px !important; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 16px; line-height: 1.35; color: #d9ccb6; }
+.invite-me { margin-top: 14px !important; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; line-height: 1.6; }
+@media (max-width: 720px) {
+  .invite { left: 20px; right: 20px; max-width: none; bottom: 112px; }
+  .invite-word { font-size: 20px; } .invite-def { font-size: 13.5px; } .invite-me { font-size: 10px; margin-top: 8px !important; }
+  .sig-sub { font-size: 9px; }
+}
 
 /* ---- entering a room: the street leans in and dims */
 .canal-stage { transition: transform 0.6s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.5s ease, filter 0.6s ease; }

@@ -253,7 +253,12 @@ export const person = {
   phraseEm: 'the overlooked.',
   tagLeft: 'systems design engineering',
   tagRight: 'recently: syde @uwaterloo',
-  invite: "a few of these windows hold things i've built. look through them with me.",
+  invite: {
+    word: 'sonder',
+    definition: 'the realization that each passerby has a life as vivid and complex as your own.',
+    window: 'like a lit window at night: you only catch a glimpse, but behind it is a whole world.',
+    me: 'i have lived everywhere, but nothing made me understand the complexity and importance of strangers like building did. look through the windows with me.',
+  },
   /** Top of the About sheet: why the site is a street of windows. */
   sonder: {
     word: 'sonder',
