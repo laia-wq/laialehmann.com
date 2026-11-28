@@ -31,7 +31,8 @@ ZOOMS = {
                   'teams': ['lily-and-rain', 'lily-and-rain', 'lily-and-fire']},
     # the bakery's canal side, two windows: North Vancouver (soup) and the WUSA committee
     'community': {'glass': [(-2.93, -2.42, 0.83), (-2.93, -1.47, 0.83)], 'prop_scale': 1.55, 'W0': 2.2, 'W1': 2.05, 'elev': 0.22,
-                  'teams': ['community', 'wusa']},   # the bakery's canal side: open water in front
+                  'teams': ['community', 'wusa'],
+                  'hide_box': [(-3.0, -2.2, -2.15, -0.4, 0.0, 1.7)]},   # the poster and bike that hid the WUSA window   # the bakery's canal side: open water in front
 }
 GLASS_NAMES = ('pane', 'bay_glass', 'win_glass', 'shop_glass')
 PROP_AT = {}     # where each zoom's sill thing stands (for the browser's steam etc.)

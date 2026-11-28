@@ -492,6 +492,14 @@ def zoom_generic(sc, street_cam, G, zid):
             elif spec.get('clear_front') and abs(along) < w / 2 - 0.02 and -spec['clear_front'] < depth <= -0.03 and abs(q.z) < h / 2 \
                     and max(hi - lo) < w and o.name.split('.')[0] not in keep:
                 o.hide_render = True; print('ZOOM cleared in front', o.name)
+    for (x0, x1, y0, y1, z0, z1) in spec.get('hide_box', []):
+        for o in list(sc.objects):
+            if o.type not in ('MESH', 'CURVE') or o.hide_render or o.name.startswith(('zp_', 'dt_', 'plush')): continue
+            base = o.name.split('.')[0]
+            if base in keep or base in ('wall', 'ground', 'pave', 'kerb', 'coping'): continue
+            lo, hi = ZP._bb(o); m = (lo + hi) / 2
+            if x0 < m.x < x1 and y0 < m.y < y1 and z0 < m.z < z1 and max(hi - lo) < 1.2:
+                o.hide_render = True; print('ZOOM hid', o.name)
     if os.environ.get('ZPROBE'):
         g, c, t, n, w, h = wins[0]
         for o in sc.objects:
