@@ -407,17 +407,23 @@ export class CanalScene {
   private lw: { data: Uint8Array; w: number; h: number } | null = null;
   /** Mark the windows that open a project (quads in image uv): they get a
    *  slightly different hue. Drawn into the light-weight map's spare channel. */
-  setHighlights(quads: [number, number][][]) {
+  async setHighlights(quads: [number, number][][]) {
     const gl = this.gl, lw = this.lw;
     if (!gl || !lw) return;
     const c = document.createElement('canvas'); c.width = lw.w; c.height = lw.h;
     const x = c.getContext('2d', { willReadFrequently: true })!;
-    x.fillStyle = '#fff';
-    x.filter = 'blur(0.6px)';
-    for (const q of quads) {
-      x.beginPath();
-      q.forEach(([u, v], i) => (i ? x.lineTo(u * lw.w, v * lw.h) : x.moveTo(u * lw.w, v * lw.h)));
-      x.closePath(); x.fill();
+    // the exact glass of the project windows, rendered from the street camera
+    // (anything in front of it, like a lantern, is cut out); the window
+    // rectangles only if that mask is missing
+    const mask = await loadImage(BASE + 'zoomglass.png' + V).catch(() => null);
+    if (mask) x.drawImage(mask, 0, 0, lw.w, lw.h);
+    else {
+      x.fillStyle = '#fff';
+      for (const q of quads) {
+        x.beginPath();
+        q.forEach(([u, v], i) => (i ? x.lineTo(u * lw.w, v * lw.h) : x.moveTo(u * lw.w, v * lw.h)));
+        x.closePath(); x.fill();
+      }
     }
     const m = x.getImageData(0, 0, lw.w, lw.h).data;
     for (let i = 0; i < lw.w * lw.h; i++) lw.data[i * 4 + 2] = m[i * 4 + 3];

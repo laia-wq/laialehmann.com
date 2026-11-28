@@ -17,7 +17,7 @@
 import { projects } from '../content/projects';
 import { projectBody } from './panel';
 import { LilyScene, type LilyPane } from './lilyscene';
-import { boxesPlay, dronePlay, rescuePlay, vrPlay, forestPlay, physicsPlay, signPlay, robotPlay, calendarPlay, blocksPlay, servePlay, rainPlay, firePlay, type Play } from './shadowplays';
+import { boxesPlay, dronePlay, rescuePlay, vrPlay, forestPlay, physicsPlay, signPlay, robotPlay, calendarPlay, blocksPlay, servePlay, votePlay, rainPlay, firePlay, type Play } from './shadowplays';
 
 export interface WindowSpec {
   id: string;
@@ -431,7 +431,11 @@ export const WINDOWS: WindowSpec[] = [
       { project: 'lily-and-rain', label: 'Lilies & Rain', play: rainPlay },
       { project: 'lily-and-fire', label: 'Lilies & Fire', play: firePlay },
     ] },
-  { id: 'community', building: 'bakery', label: 'Community', steam: true, panes: [{ project: 'community', label: 'Community', play: servePlay }] },
+  { id: 'community', building: 'bakery', label: 'Community', steam: true, hint: 'two windows: north vancouver, and the student union. pick one.',
+    panes: [
+      { project: 'community', label: 'Community Work in North Vancouver', play: servePlay },
+      { project: 'wusa', label: 'WUSA Advocacy Committee', play: votePlay },
+    ] },
 ];
 export const windowById = (id: string) => WINDOWS.find((w) => w.id === id) ?? null;
 

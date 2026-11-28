@@ -484,6 +484,8 @@ def zoom_generic(sc, street_cam, G, zid):
             if abs(along) < w / 2 + 0.01 and -0.06 < depth < 0.9 and abs(q.z) < h / 2 + 0.01:
                 base = o.name.split('.')[0]
                 if keep_mull[wi] and base == 'mull' and depth < 0.05: continue
+                if base in ('board', 'loaf', 'cheese') and zid != 'firsts':   # a bread board on an inner sill
+                    o.hide_render = True; continue
                 if base in ('mull', 'curtain', 'pane', 'win_glass', 'bay_glass', 'head', 'body') or (depth > 0.004 and base not in keep) \
                         or (depth > -0.06 and base not in keep and max(hi - lo) < w * 0.8):
                     o.hide_render = True

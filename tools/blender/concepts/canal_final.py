@@ -680,9 +680,33 @@ def houseboat(x, y, a, L=2.2):
         col = cloths[(k * 2 + 1) % 6]
         box('curtain', P(u - 0.085, -0.263, 0.45), (0.05, 0.004, 0.19), varied('curtain%d' % ((k * 2 + 1) % 6), col, 0.06, 0.95), bevel=0, rot=R_)
         box('win_box', P(u, -0.285, 0.31), (0.26, 0.05, 0.05), wood('winbox', (0.45, 0.16, 0.11), 6), bevel=0.004, rot=R_)
-        for q in range(3):
+        box('win_box', P(u, -0.285, 0.336), (0.245, 0.04, 0.004), solid('soil', (0.13, 0.09, 0.06), 0.95), bevel=0, rot=R_)
+        box('win_frame', P(u, -0.27, 0.327), (0.3, 0.03, 0.014), trim, bevel=0.003, rot=R_)          # a proper sill
+        for sg in (-1, 1):   # little iron brackets under the box
+            box('win_box', P(u + sg * 0.09, -0.29, 0.28), (0.01, 0.04, 0.03), iron, bevel=0.002, rot=R_)
+        # the box planted up: stems, leaves, five-petal flowers, ivy trailing over the front
+        leaf_m = solid('wb_leaf', (0.17, 0.33, 0.12), 0.6)
+        rr = random.Random(31 + k)
+        for q in range(7):
             fc = FLOWERS[(k * 3 + q) % len(FLOWERS)]
-            sphere('wb_flower', P(u - 0.08 + q * 0.08, -0.285, 0.35), 0.022, solid('fl%.2f%.2f' % fc[:2], fc, 0.6), 8)
+            fm = solid('fl%.2f%.2f' % fc[:2], fc, 0.6)
+            bx = P(u - 0.1 + q * 0.033 + rr.uniform(-0.008, 0.008), -0.285 + rr.uniform(-0.012, 0.012), 0.338)
+            top = bx + Vector((rr.uniform(-0.01, 0.01), rr.uniform(-0.01, 0.01), 0.04 + rr.uniform(0, 0.035)))
+            limb(bx, top, 0.0022, leaf_m).name = 'wb_flower'
+            for j in range(2):   # a pair of leaves on each stem
+                lp = bx.lerp(top, 0.35 + j * 0.25) + s_ * (0.008 * (1 if j else -1))
+                sphere('wb_flower', lp, 0.009, leaf_m, 6, (1.6, 0.5, 0.25))
+            for j in range(5):   # petals round a dark centre
+                aa = j * 2 * math.pi / 5 + q
+                pp = top + d * math.cos(aa) * 0.008 + Vector((0, 0, math.sin(aa) * 0.008)) - s_ * 0.004
+                sphere('wb_flower', pp, 0.0065, fm, 6, (1, 0.5, 1))
+            sphere('wb_flower', top - s_ * 0.006, 0.004, solid('fl_eye', (0.35, 0.22, 0.05), 0.6), 6)
+        for q in range(4):   # ivy spilling over the front edge
+            st = P(u - 0.09 + q * 0.06, -0.31, 0.335)
+            pts = [st + Vector((0.005 * math.sin(j), -0.006 * j, -0.022 * j)) for j in range(5 + q % 2)]
+            for a_, b_ in zip(pts, pts[1:]):
+                limb(a_, b_, 0.0015, leaf_m).name = 'wb_flower'
+                sphere('wb_flower', b_ - s_ * 0.004, 0.007, leaf_m, 6, (1.3, 0.4, 1.0))
     room_light(tuple(P(cx, 0, 0.45)), 18)
     # end door with a round porthole
     door = P(cx + cl / 2 + 0.005, 0, 0.4)
@@ -717,6 +741,43 @@ def houseboat(x, y, a, L=2.2):
     lantern(tuple(P(L * 0.47, 0, 0.32)), 0.6)
     hanging_lanterns(tuple(P(-L * 0.45, 0, 0.95)), tuple(P(cx - cl / 2, -0.1, 0.8)), 2, 0.05)
     lr = cyl('lifering', P(0.07, -0.27, 0.45), 0.064, 0.026, varied('ring', (0.85, 0.3, 0.2), 0.05, 0.6), verts=24, rot=(math.pi / 2, 0, a)); cut(lr, cyl('lr_hole', P(0.07, -0.27, 0.45), 0.034, 0.2, None, verts=16, rot=(math.pi / 2, 0, a)))
+    lc = P(0.07, -0.285, 0.45)
+    ringw = solid('ring_white', (0.9, 0.88, 0.82), 0.5)
+    for j in range(4):   # four white quarters and four rope lashings round the ring
+        aa = j * math.pi / 2 + math.pi / 4
+        c_ = lc + d * math.cos(aa) * 0.049 + Vector((0, 0, math.sin(aa) * 0.049))
+        b_ = box('lifering', c_, (0.034, 0.03, 0.03), ringw, bevel=0.012, rot=(0, -aa + math.pi / 2, a))
+        aa2 = aa + math.pi / 4
+        c2 = lc + d * math.cos(aa2) * 0.049 + Vector((0, 0, math.sin(aa2) * 0.049))
+        tor = cyl('lifering', c2, 0.034, 0.006, varied('rope', (0.6, 0.52, 0.38), 0.05, 0.9), verts=12, rot=(0, -aa2, a))
+    limb(lc + Vector((0, 0, 0.065)), lc + Vector((0, 0, 0.1)) + s_ * 0.01, 0.003, iron)   # its hook
+    # a small brass wall lamp between the first two windows, lit
+    wl = P(cx - cl / 2 + 0.25 + (cl - 0.5) / 4, -0.27, 0.55)
+    box('wall_lamp', wl, (0.02, 0.03, 0.012), brass_d, bevel=0.002, rot=R_)
+    cyl('wall_lamp', wl - s_ * 0.03 + Vector((0, 0, 0.02)), 0.018, 0.04, solid('lamp_glass', (1, 0.9, 0.7), 0.2, emit=(1.0, 0.7, 0.35), strength=6), verts=12)
+    cyl('wall_lamp', wl - s_ * 0.03 + Vector((0, 0, 0.045)), 0.024, 0.01, brass_d, verts=12, r2=0.008)
+    Lw = bpy.data.lights.new('candle', 'POINT'); Lw.energy = 1.2; Lw.color = (1.0, 0.7, 0.4); Lw.shadow_soft_size = 0.02
+    link(bpy.data.objects.new('candle', Lw)).location = wl - s_ * 0.06 + Vector((0, 0, 0.02))
+    # a ship's bell by the door, on a curly iron bracket
+    bl = P(cx + cl / 2 - 0.08, -0.275, 0.56)
+    limb(bl, bl - s_ * 0.05, 0.004, iron); limb(bl - s_ * 0.05, bl - s_ * 0.05 - Vector((0, 0, 0.02)), 0.003, iron)
+    cyl('bell', bl - s_ * 0.05 - Vector((0, 0, 0.045)), 0.016, 0.035, brass_d, verts=16, r2=0.008)
+    # a drip edge along the roof, and cleats with rope at the gunwale
+    box('trimband', P(cx, -0.296, 0.645), (cl + 0.08, 0.008, 0.018), iron, bevel=0.002, rot=R_)
+    for k in range(2):
+        cp_ = P(-L * 0.2 + k * L * 0.45, -0.31, sheer(-0.4 + k * 0.9) + 0.01)
+        box('cleat', cp_, (0.07, 0.014, 0.012), iron, bevel=0.004, rot=R_)
+        box('cleat', cp_ - Vector((0, 0, 0.012)), (0.014, 0.012, 0.014), iron, bevel=0.002, rot=R_)
+        for j in range(3):
+            limb(cp_ + d * (-0.025 + j * 0.025) + Vector((0, 0, 0.008)), cp_ + d * (0.025 - j * 0.025) + Vector((0, 0, 0.008)) - s_ * 0.006, 0.004, varied('rope', (0.6, 0.52, 0.38), 0.05, 0.9))
+    # ivy trailing off the two front corners of the roof
+    leaf_m2 = solid('wb_leaf', (0.17, 0.33, 0.12), 0.6)
+    for sgn in (-1, 1):
+        st = P(cx + sgn * (cl / 2 + 0.02), -0.29, 0.66)
+        pts = [st + Vector((0.006 * math.sin(j * 1.3), -0.004, -0.03 * j)) for j in range(7)]
+        for a_, b_ in zip(pts, pts[1:]):
+            limb(a_, b_, 0.002, leaf_m2)
+            sphere('roof_ivy', b_ + d * 0.008 * math.sin(j), 0.011, leaf_m2, 6, (1.3, 0.4, 1.0))
     # the sign: a big piece of cardboard, lettered in a hurry, propped on the roof
     sb = P(cx - cl * 0.05, -0.2, 0.98)
     card = solid('cardboard', (0.44, 0.32, 0.21), 0.85)
@@ -2033,6 +2094,25 @@ if os.environ.get('NO_SMOKE'):
         json.dump(SMOKE, open(os.environ['SMOKE_JSON'], 'w')); print('SMOKE', len(SMOKE)); sys.exit(0)
 import window_closeup as WCU
 WCU.shop_squirrel(sc)
+if os.environ.get('GLASS_MASK'):
+    # Only the glass of the windows that open a project, as an alpha mask from
+    # the street camera (things in front of it, like lanterns, cut it out):
+    # the browser tints exactly these pixels.
+    import zoom_props as ZP_, design_props as DP_
+    bpy.context.view_layer.update()
+    pts = [g for spec in ZP_.ZOOMS.values() for g in spec['glass']] + [(-0.56, 2.3, 0.88)] + [(u, DP_.A_FACE_Y + 0.08, DP_.SILL_Z + 0.3) for u in DP_.WIN_U]
+    keepg = set()
+    for gp in pts:
+        g = ZP_.find_glass(sc, gp)
+        if g is not None: keepg.add(g.name)
+    print('GLASS_MASK', len(keepg), sorted(keepg))
+    for o in sc.objects:
+        if o.type in ('MESH', 'CURVE', 'FONT', 'META') and not o.hide_render:
+            o.is_holdout = o.name not in keepg
+    sc.render.film_transparent = True; sc.cycles.use_denoising = False
+    sc.render.resolution_x, sc.render.resolution_y = 1400, 1050
+    render(sc, os.environ['GLASS_MASK'], 4)
+    sys.exit(0)
 if os.environ.get('GLASS_NEAR'):
     # list the glass (and what's round it) inside a box: x0,y0,z0,x1,y1,z1
     q = [float(v) for v in os.environ['GLASS_NEAR'].split(',')]

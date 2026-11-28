@@ -878,6 +878,76 @@ export const servePlay: Play = (svg, PW) => {
   };
 };
 
+// ---------------------------------------------------------------- WUSA advocacy committee
+/** A committee meeting. Three members sit along a table, papers in front of
+ *  them, facing the chair, who stands by a screen showing the survey (a tall
+ *  bar: 91%) and points at it. One member raises a hand and asks something,
+ *  gesturing; the chair answers. Then the vote: each member lifts a voting
+ *  card in turn, the chair counts them along, and a tick lands on the screen.
+ *  Cards down, pages turn, and the next item comes up. */
+export const votePlay: Play = (svg, PW) => {
+  const { room } = stage(svg, PW);
+  // the screen on the wall: frame, a bar chart with one tall bar, the number
+  el('rect', { x: 176, y: 64, width: 112, height: 78, rx: 3, fill: 'none', 'stroke-width': 4 }, room);
+  el('path', { d: 'M 186 130 L 280 130', fill: 'none', 'stroke-width': 2 }, room);
+  const bars = [0, 1, 2].map(() => el('rect', { width: 14, stroke: 'none' }, room));
+  const pct = el('text', { x: 240, y: 98, 'font-size': 21, 'font-family': 'Georgia, serif', 'font-weight': 700, stroke: 'none' }, room);
+  pct.textContent = '91%';
+  const leaf = el('path', { d: 'M 266 82 q 10 -14 18 -2 q -8 12 -18 2 Z M 266 82 l 10 -6', stroke: 'none' }, room);
+  const tick = el('path', { fill: 'none', 'stroke-width': 7, d: 'M 200 104 l 16 16 l 34 -40' }, room);
+  // the table, its legs, and papers on it
+  el('rect', { x: 8, y: 288, width: 196, height: 9, rx: 2, stroke: 'none' }, room);
+  el('path', { d: 'M 18 297 L 18 396 M 194 297 L 194 396', fill: 'none', 'stroke-width': 6 }, room);
+  const papers = [34, 92, 150].map(() => el('path', { stroke: 'none' }, room));
+  // three members, all different, facing the chair; the chair standing
+  const looks: Look[] = [{ hair: 'long', build: 0.95 }, { hair: 'short', build: 1.1, height: 1.04 }, { hair: 'curly', build: 1.0 }];
+  const members = looks.map((l) => person(room, l));
+  const cards = members.map(() => el('rect', { width: 12, height: 16, rx: 1.5, stroke: 'none' }, room));
+  const chair = person(room, { hair: 'pony', height: 1.02 });
+  const pointer = el('path', { fill: 'none', 'stroke-width': 2.4 }, room);
+  const MX = [22, 80, 138], LOOP = 14;
+  return (time: number) => {
+    const t = time % LOOP;
+    // the screen fills in, holds, and clears for the next item at the end
+    const show = seg(t, 0.2, 1.2) * (1 - seg(t, 12.6, 13.4));
+    [17, 24, 56].forEach((h0, k) => {     // two short bars and the tall one: 91% want the university to act
+      const h = h0 * show;
+      bars[k].setAttribute('x', String(188 + k * 18)); bars[k].setAttribute('y', String(130 - h)); bars[k].setAttribute('height', String(h));
+    });
+    pct.setAttribute('opacity', String(show)); leaf.setAttribute('opacity', String(show));
+    const ticked = seg(t, 9.4, 9.8) * (1 - seg(t, 12.4, 12.9));
+    tick.setAttribute('stroke-dasharray', '90'); tick.setAttribute('stroke-dashoffset', String(90 * (1 - ticked)));
+    tick.setAttribute('opacity', String(ticked > 0.01 ? 1 : 0));
+    // the chair: points at the chart, turns to the member asking, then counts the votes
+    const point = seg(t, 1.0, 1.6) * (1 - seg(t, 3.4, 3.9));
+    const answer = seg(t, 5.4, 5.9) * (1 - seg(t, 6.8, 7.2));
+    const count = t > 7.6 && t < 9.4 ? Math.min(2, Math.floor((t - 7.6) / 0.6)) : -1;
+    const cx = 262;
+    let ch: [number, number] = [cx - 16, 300], ch2: [number, number] = [cx - 4, 300];
+    if (point > 0.01) ch = [lerp(cx - 16, 230, point), lerp(300, 120, point)];
+    else if (answer > 0.01) ch = [lerp(cx - 16, 214, answer), lerp(300, 230 + Math.sin(time * 6) * 4, answer)];
+    else if (count >= 0) ch = [MX[count] + 30, 212];
+    chair({ x: cx, face: -1, walk: 0, ph: 0, lean: 2 + point * 2, look: point > 0.3 ? 0.5 : count >= 0 ? 0.05 : -0.05, hand: ch, hand2: ch2 });
+    set(pointer, point > 0.3 ? `M ${ch[0]} ${ch[1]} L ${ch[0] - 22 * point} ${ch[1] - 18 * point}` : '');
+    // the members
+    members.forEach((m, k) => {
+      const x = MX[k];
+      const ask = k === 1 ? seg(t, 3.8, 4.2) * (1 - seg(t, 5.2, 5.6)) : 0;
+      const talk = k === 1 && t > 4.2 && t < 5.4 ? Math.sin(time * 7) * 5 : 0;
+      const vote = seg(t, 6.6 + k * 0.4, 7.0 + k * 0.4) * (1 - seg(t, 10.6, 11.2));
+      const turnPage = seg(t, 11.4 + k * 0.2, 11.9 + k * 0.2) * (1 - seg(t, 12.2 + k * 0.2, 12.6 + k * 0.2));
+      let hand: [number, number] = [x + 34 + turnPage * 10, 284 - turnPage * 6], hand2: [number, number] = [x + 24, 286];
+      if (ask > 0.01) hand = [lerp(x + 34, x + 30, ask), lerp(284, 196, ask)];
+      if (talk) hand = [x + 40 + talk, 250 + talk];
+      if (vote > 0.01) hand = [lerp(x + 34, x + 26, vote), lerp(284, 176, vote)];
+      const r = m({ x, face: 1, walk: 0, ph: 0, sit: true, hipY: 300, lean: 4 + ask * 3, look: k === 1 && ask > 0.3 ? 0.25 : count === k ? 0.1 : -0.05 + (point > 0.5 ? 0.3 : 0), hand, hand2 });
+      cards[k].setAttribute('x', String(r.hand[0] - 6)); cards[k].setAttribute('y', String(r.hand[1] - 20));
+      cards[k].setAttribute('opacity', String(vote > 0.5 ? 1 : 0));
+      set(papers[k], `M ${x + 26} 288 L ${x + 52} 288 L ${x + 50} 284 L ${x + 28} 284 Z`);
+    });
+  };
+};
+
 // ---------------------------------------------------------------- lilies
 function lilies(room: Element, x0: number, n = 3) {
   const g = el('g', {}, room);

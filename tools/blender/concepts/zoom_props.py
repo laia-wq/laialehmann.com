@@ -29,7 +29,9 @@ ZOOMS = {
     'lilies':    {'glass': [(3.49, -0.14, 1.97), (3.79, 0.01, 1.97), (4.26, 0.28, 1.95)], 'frame': False, 'frost_out': 0.002, 'keep_mull': [False, False, True],
                   'W0': 2.3, 'W1': 1.95, 'elev': 0.16, 'side': 0.45,
                   'teams': ['lily-and-rain', 'lily-and-rain', 'lily-and-fire']},
-    'community': {'glass': [(-2.93, -2.42, 0.83)], 'prop_scale': 1.55, 'W0': 1.55, 'W1': 1.3, 'elev': 0.24, 'teams': ['community']},   # the bakery's canal side: open water in front
+    # the bakery's canal side, two windows: North Vancouver (soup) and the WUSA committee
+    'community': {'glass': [(-2.93, -2.42, 0.83), (-2.93, -1.47, 0.83)], 'prop_scale': 1.55, 'W0': 2.2, 'W1': 2.05, 'elev': 0.22,
+                  'teams': ['community', 'wusa']},   # the bakery's canal side: open water in front
 }
 GLASS_NAMES = ('pane', 'bay_glass', 'win_glass', 'shop_glass')
 PROP_AT = {}     # where each zoom's sill thing stands (for the browser's steam etc.)
@@ -209,6 +211,40 @@ def soup_pot(p, yaw):
     return c
 
 
+def committee_papers(p, yaw):
+    """A committee member's things: the meeting papers squared up in a stack
+    with a black binder clip, the top sheet printed (lines of text and a small
+    green leaf, the sustainability position), a pen across it, and a folded
+    name card standing beside."""
+    R = Matrix.Rotation(yaw, 3, 'Z'); P = lambda x, y, z: p + R @ Vector((x, y, z)); rot = lambda m=Matrix.Identity(3): (R @ m).to_euler()
+    paper = varied('zp_paper2', (0.93, 0.92, 0.88), 0.02, 0.8)
+    ink = solid('zp_ink2', (0.12, 0.12, 0.14), 0.6)
+    for k in range(9):   # the stack, a little ragged
+        b_ = box('zp_sheet', P(0.004 * math.sin(k * 2.1), 0.003 * math.cos(k * 1.7), 0.0015 + k * 0.0022), (0.085, 0.11, 0.0018), paper, bevel=0)
+        b_.rotation_euler = rot(Matrix.Rotation(0.03 * math.sin(k * 1.3), 3, 'Z'))
+    ztop = 0.0015 + 9 * 0.0022
+    b_ = box('zp_text', P(0.0, 0.042, ztop + 0.0002), (0.05, 0.007, 0.0004), ink, bevel=0); b_.rotation_euler = rot()   # the heading
+    for r in range(8):   # lines of text
+        L = 0.066 if r % 3 != 2 else 0.042
+        b_ = box('zp_text', P(-0.002 - (0.066 - L) / 2, 0.026 - r * 0.0085, ztop + 0.0002), (L, 0.0022, 0.0004), solid('zp_ink_g', (0.35, 0.35, 0.37), 0.6), bevel=0); b_.rotation_euler = rot()
+    leaf = solid('zp_leafmark', (0.18, 0.5, 0.2), 0.5)
+    sphere('zp_leafmark', P(0.03, 0.043, ztop + 0.0004), 0.006, leaf, 8, (1.6, 0.8, 0.12))
+    # a black binder clip on the top edge, its silver arms folded back
+    b_ = box('zp_clip', P(0.0, 0.054, ztop - 0.006), (0.03, 0.006, 0.016), solid('zp_clipk', (0.04, 0.04, 0.045), 0.35), bevel=0.002); b_.rotation_euler = rot()
+    steel = solid('zp_clipwire', (0.75, 0.75, 0.78), 0.2, metal=1.0)
+    for sg in (-1, 1):
+        limb(P(sg * 0.012, 0.054, ztop + 0.002), P(sg * 0.012, 0.04, ztop + 0.003), 0.0012, steel)
+    # a pen across the stack
+    limb(P(-0.035, -0.04, ztop + 0.004), P(0.04, -0.02, ztop + 0.004), 0.0035, solid('zp_pen', (0.08, 0.15, 0.4), 0.3))
+    limb(P(0.04, -0.02, ztop + 0.004), P(0.047, -0.018, ztop + 0.004), 0.0022, steel)
+    # a folded name card standing beside it: white, with a dark band where a name would be
+    for sg in (-1, 1):
+        b_ = box('zp_tent', P(0.085, sg * 0.009, 0.017), (0.07, 0.0016, 0.036), paper, bevel=0)
+        b_.rotation_euler = rot(Matrix.Rotation(sg * 0.42, 3, 'X'))
+    b_ = box('zp_tent_band', P(0.085, -0.0175, 0.02), (0.05, 0.0006, 0.008), ink, bevel=0); b_.rotation_euler = rot(Matrix.Rotation(-0.42, 3, 'X'))
+    return p
+
+
 def place_all(sc, toward):
     """Clear each zoom window's sill and reveal, then put its thing there."""
     bpy.context.view_layer.update()
@@ -232,9 +268,10 @@ def place_all(sc, toward):
             if zid == 'robot': at = sp + t * (w * 0.2); glass_of_water(at)
             elif zid == 'watif': at = sp - t * (w * 0.26); flip_calendar(at, yaw)
             elif zid == 'saas': at = sp + t * (w * 0.25); mug_and_notes(at, yaw)
-            elif zid == 'community': at = sp - t * (w * 0.12); soup_pot(at, yaw)
+            elif zid == 'community' and k == 0: at = sp - t * (w * 0.12); soup_pot(at, yaw)
+            elif zid == 'community': at = sp + t * (w * 0.05); committee_papers(at, yaw)
             else: continue
-            PROP_AT[zid] = at.copy()
+            if zid not in PROP_AT: PROP_AT[zid] = at.copy()
             k_ = spec.get('prop_scale', 1.0)
             if k_ != 1.0:   # scale the whole set about where it stands
                 bpy.context.view_layer.update()        # so matrix_world reflects where they were just put
@@ -242,7 +279,7 @@ def place_all(sc, toward):
                 for nm in set(bpy.data.objects.keys()) - before:
                     o = bpy.data.objects[nm]
                     if o.parent is None: o.matrix_world = M @ o.matrix_world
-                if zid == 'community': PROP_AT[zid] = at + Vector((0, 0, 0.045 * k_))   # the steam rises from the bowl
+                if zid == 'community' and k == 0: PROP_AT[zid] = at + Vector((0, 0, 0.045 * k_))   # the steam rises from the bowl
                 if zid == 'robot': PROP_AT[zid] = at + Vector((0, 0, 0.1 * k_))
 
 
